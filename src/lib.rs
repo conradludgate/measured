@@ -94,8 +94,11 @@ mod tests {
     };
 
     #[derive(Clone, Copy, PartialEq, Debug)]
+    // #[derive(LabelGroup)] #[label_set(ErrorsSet)]
     struct Error {
+        // #[label(fixed)]
         kind: ErrorKind,
+        // #[label(fixed_with = IndexSet<&'static str>)]
         route: &'static str,
     }
 
@@ -104,6 +107,7 @@ mod tests {
     }
 
     #[derive(Clone, Copy, PartialEq, Debug)]
+    // #[derive(FixedCardinalityLabel)] #[label(rename_all = "kebab-case")]
     enum ErrorKind {
         User,
         Internal,
@@ -140,9 +144,10 @@ mod tests {
     impl LabelGroupSet for ErrorsSet {
         type Group = Error;
 
-        #[allow(clippy::needless_question_mark)]
         fn cardinality(&self) -> Option<usize> {
-            Some(ErrorKind::cardinality().checked_mul(self.routes.cardinality())?)
+            Some(1usize)
+                .and_then(|x| x.checked_mul(ErrorKind::cardinality()))
+                .and_then(|x| x.checked_mul(self.routes.cardinality()))
         }
 
         type Unique = (usize,);
