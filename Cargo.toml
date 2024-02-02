@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -13,6 +13,7 @@ repository = "https://github.com/conradludgate/measured"
 # TODO: add features for the dependencies
 indexmap = "2"
 lasso = { version = "0.7", features = ["multi-threaded"] }
+dashmap = "5"
 
 [dev-dependencies]
 fake = "2.9.2"

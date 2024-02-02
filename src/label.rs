@@ -2,20 +2,20 @@ use std::hash::Hash;
 
 mod impls;
 
-trait LabelVisitor {
+pub trait LabelVisitor {
     fn write_int(&mut self, x: u64);
     fn write_float(&mut self, x: f64);
     fn write_str(&mut self, x: &str);
 }
 
-trait LabelGroup {
+pub trait LabelGroup {
     /// Get all the label names in order
     fn label_names() -> impl IntoIterator<Item = &'static str>;
 
     fn label_values(self, v: &mut impl LabelVisitor);
 }
 
-trait LabelGroupSet {
+pub trait LabelGroupSet {
     type Group<'a>: LabelGroup
     where
         Self: 'a;
@@ -30,11 +30,11 @@ trait LabelGroupSet {
     fn decode(&self, value: Self::Unique) -> Self::Group<'_>;
 }
 
-trait LabelValue {
+pub trait LabelValue {
     fn visit(&self, v: &mut impl LabelVisitor);
 }
 
-trait FixedCardinalityLabel: LabelValue {
+pub trait FixedCardinalityLabel: LabelValue {
     /// The number of possible label values
     fn cardinality() -> usize;
 
@@ -42,7 +42,7 @@ trait FixedCardinalityLabel: LabelValue {
     fn decode(value: usize) -> Self;
 }
 
-trait FixedCardinalityDynamicLabel {
+pub trait FixedCardinalityDynamicLabel {
     type Value<'a>: LabelValue
     where
         Self: 'a;
@@ -53,7 +53,7 @@ trait FixedCardinalityDynamicLabel {
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 
-trait DynamicLabel {
+pub trait DynamicLabel {
     type Value<'a>: LabelValue
     where
         Self: 'a;
