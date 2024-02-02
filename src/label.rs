@@ -1,6 +1,6 @@
-use std::hash::{BuildHasher, Hash};
+use std::hash::Hash;
 
-use indexmap::IndexSet;
+mod impls;
 
 trait LabelVisitor {
     fn write_int(&mut self, x: u64);
@@ -16,7 +16,9 @@ trait LabelGroup {
 }
 
 trait LabelGroupSet {
-    type Group: LabelGroup;
+    type Group<'a>: LabelGroup
+    where
+        Self: 'a;
 
     /// The number of possible labels
     fn cardinality(&self) -> Option<usize>;
@@ -24,8 +26,8 @@ trait LabelGroupSet {
     /// A type that can uniquely represent all possible labels
     type Unique: Hash + Eq;
 
-    fn encode(&self, value: Self::Group) -> Self::Unique;
-    fn decode(&self, value: Self::Unique) -> Self::Group;
+    fn encode<'a>(&'a self, value: Self::Group<'a>) -> Self::Unique;
+    fn decode(&self, value: Self::Unique) -> Self::Group<'_>;
 }
 
 trait LabelValue {
@@ -41,53 +43,19 @@ trait FixedCardinalityLabel: LabelValue {
 }
 
 trait FixedCardinalityDynamicLabel {
-    type Value: LabelValue;
+    type Value<'a>: LabelValue
+    where
+        Self: 'a;
 
     /// The number of possible label values
     fn cardinality(&self) -> usize;
-    fn encode(&self, value: Self::Value) -> usize;
-    fn decode(&self, value: usize) -> Self::Value;
-}
-
-impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalityDynamicLabel
-    for IndexSet<T, S>
-{
-    type Value = T;
-
-    fn cardinality(&self) -> usize {
-        self.len()
-    }
-
-    fn encode(&self, value: Self::Value) -> usize {
-        self.get_index_of(&value).unwrap()
-    }
-
-    fn decode(&self, value: usize) -> Self::Value {
-        self.get_index(value).unwrap().clone()
-    }
-}
-
-impl LabelValue for String {
-    fn visit(&self, v: &mut impl LabelVisitor) {
-        v.write_str(self)
-    }
-}
-
-impl LabelValue for str {
-    fn visit(&self, v: &mut impl LabelVisitor) {
-        v.write_str(self)
-    }
-}
-
-impl<T: LabelValue + ?Sized> LabelValue for &T {
-    fn visit(&self, v: &mut impl LabelVisitor) {
-        T::visit(self, v)
-    }
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize;
+    fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 
 #[cfg(test)]
 mod tests {
-    use indexmap::IndexSet;
+    use lasso::{Rodeo, RodeoReader};
 
     use super::{
         FixedCardinalityDynamicLabel, FixedCardinalityLabel, LabelGroup, LabelGroupSet, LabelValue,
@@ -95,15 +63,15 @@ mod tests {
 
     #[derive(Clone, Copy, PartialEq, Debug)]
     // #[derive(LabelGroup)] #[label_set(ErrorsSet)]
-    struct Error {
+    struct Error<'a> {
         // #[label(fixed)]
         kind: ErrorKind,
         // #[label(fixed_with = IndexSet<&'static str>)]
-        route: &'static str,
+        route: &'a str,
     }
 
     struct ErrorsSet {
-        routes: IndexSet<&'static str>,
+        routes: RodeoReader,
     }
 
     #[derive(Clone, Copy, PartialEq, Debug)]
@@ -116,20 +84,20 @@ mod tests {
 
     #[test]
     fn encoding_happy_path() {
+        let mut rodeo = Rodeo::new();
+
+        rodeo.get_or_intern("/user/:id/home");
+        rodeo.get_or_intern("/playlist/:id");
+        rodeo.get_or_intern("/user/:id/subscribe");
+        rodeo.get_or_intern("/user/:id/videos");
+
         let set = ErrorsSet {
-            routes: [
-                "/user/:id/home",
-                "/playlist/:id",
-                "/user/:id/subscribe",
-                "/user/:id/videos",
-            ]
-            .into_iter()
-            .collect(),
+            routes: rodeo.into_reader(),
         };
         assert_eq!(set.cardinality(), Some(12));
 
         let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
-        for route in &set.routes {
+        for route in set.routes.strings() {
             for kind in error_kinds {
                 let error = Error { kind, route };
                 let index = set.encode(error);
@@ -142,7 +110,7 @@ mod tests {
     // TODO: generate with macros
 
     impl LabelGroupSet for ErrorsSet {
-        type Group = Error;
+        type Group<'a> = Error<'a>;
 
         fn cardinality(&self) -> Option<usize> {
             Some(1usize)
@@ -153,7 +121,7 @@ mod tests {
         type Unique = (usize,);
 
         #[allow(unused_assignments)]
-        fn encode(&self, value: Self::Group) -> Self::Unique {
+        fn encode<'a>(&'a self, value: Self::Group<'a>) -> Self::Unique {
             let mut mul = 1;
             let mut index = 0;
 
@@ -166,7 +134,7 @@ mod tests {
             (index,)
         }
 
-        fn decode(&self, value: Self::Unique) -> Self::Group {
+        fn decode(&self, value: Self::Unique) -> Self::Group<'_> {
             let (index,) = value;
             let (index, index1) = (
                 index / ErrorKind::cardinality(),
@@ -183,7 +151,7 @@ mod tests {
         }
     }
 
-    impl LabelGroup for Error {
+    impl LabelGroup for Error<'_> {
         fn label_names() -> impl IntoIterator<Item = &'static str> {
             ["kind", "route"]
         }

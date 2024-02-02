@@ -11,3 +11,4 @@ repository = "https://github.com/conradludgate/measured"
 
 [dependencies]
 indexmap = "2"
+lasso = "0.7"
