@@ -10,5 +10,9 @@ repository = "https://github.com/conradludgate/measured"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# TODO: add features for the dependencies
 indexmap = "2"
-lasso = "0.7"
+lasso = { version = "0.7", features = ["multi-threaded"] }
+
+[dev-dependencies]
+fake = "2.9.2"

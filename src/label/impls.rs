@@ -1,7 +1,6 @@
 use std::hash::{BuildHasher, Hash};
 
-use super::{FixedCardinalityDynamicLabel, LabelValue, LabelVisitor};
-
+use super::{DynamicLabel, FixedCardinalityDynamicLabel, LabelValue, LabelVisitor};
 
 impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalityDynamicLabel
     for indexmap::IndexSet<T, S>
@@ -48,6 +47,18 @@ impl<K: lasso::Key, S: BuildHasher> FixedCardinalityDynamicLabel for lasso::Rode
 
     fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize {
         self.get(value).unwrap().into_usize()
+    }
+
+    fn decode(&self, value: usize) -> Self::Value<'_> {
+        self.resolve(&K::try_from_usize(value).unwrap())
+    }
+}
+
+impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::ThreadedRodeo<K, S> {
+    type Value<'a> = &'a str where Self: 'a;
+
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize {
+        self.get_or_intern(value).into_usize()
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
