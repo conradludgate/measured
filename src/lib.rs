@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use std::{hash::Hash, sync::atomic::AtomicU64};
 
 use dashmap::DashMap;
 use label::LabelGroupSet;
@@ -83,15 +83,38 @@ pub trait Metric: Default {
 }
 
 pub struct MetricVec<M: Metric, L: label::LabelGroupSet> {
-    metrics: DashMap<L::Unique, M>,
+    metrics: VecInner<L::Unique, M>,
     metadata: M::Metadata,
     label_set: L,
 }
 
+enum VecInner<U: Hash + Eq, M: Metric> {
+    Dense(Box<[M]>),
+    Sparse(DashMap<U, M>),
+}
+
 impl<M: Metric, L: label::LabelGroupSet> MetricVec<M, L> {
     pub fn new_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+        let metrics = match label_set.cardinality() {
+            Some(c) => {
+                let mut vec = Vec::with_capacity(c);
+                vec.resize_with(c, M::default);
+                VecInner::Dense(vec.into_boxed_slice())
+            }
+            None => VecInner::Sparse(DashMap::new()),
+        };
+
         Self {
-            metrics: DashMap::new(),
+            metrics,
+            metadata,
+            label_set,
+        }
+    }
+
+    /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
+    pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+        Self {
+            metrics: VecInner::Sparse(DashMap::new()),
             metadata,
             label_set,
         }
@@ -111,12 +134,19 @@ impl<M: Metric, L: label::LabelGroupSet> MetricVec<M, L> {
         f: impl for<'a> FnOnce(MetricRef<'a, M>) -> R,
     ) -> R {
         let index = id.0;
-        let m = self
-            .metrics
-            .get(&index)
-            .unwrap_or_else(|| self.metrics.entry(index).or_default().downgrade());
+        match &self.metrics {
+            VecInner::Dense(metrics) => {
+                let m = &metrics[self.label_set.encode_dense(index).unwrap()];
+                f(MetricRef(m, &self.metadata))
+            }
+            VecInner::Sparse(metrics) => {
+                let m = metrics
+                    .get(&index)
+                    .unwrap_or_else(|| metrics.entry(index).or_default().downgrade());
 
-        f(MetricRef(&m, &self.metadata))
+                f(MetricRef(&m, &self.metadata))
+            }
+        }
     }
 }
 

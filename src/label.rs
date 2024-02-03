@@ -23,6 +23,10 @@ pub trait LabelGroupSet {
     /// The number of possible labels
     fn cardinality(&self) -> Option<usize>;
 
+    /// If the label set is fixed in cardinality, it must return a value here in the range of
+    /// 0..cardinality
+    fn encode_dense(&self, _value: Self::Unique) -> Option<usize>;
+
     /// A type that can uniquely represent all possible labels
     type Unique: Hash + Eq;
 
@@ -208,6 +212,10 @@ mod tests {
             debug_assert_eq!(index, 0);
             Self::Group { kind, route }
         }
+
+        fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
+            Some(value)
+        }
     }
 
     impl LabelGroup for Error<'_> {
@@ -258,6 +266,10 @@ mod tests {
         type Group<'a> = Error2<'a>;
 
         fn cardinality(&self) -> Option<usize> {
+            None
+        }
+
+        fn encode_dense(&self, _value: Self::Unique) -> Option<usize> {
             None
         }
 
