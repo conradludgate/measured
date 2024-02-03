@@ -25,7 +25,7 @@ impl TextEncoder {
         self.b.split().freeze()
     }
 
-    pub fn write_help(&mut self, help: &str, name: &impl MetricName) {
+    pub fn write_help(&mut self, name: &impl MetricName, help: &str) {
         self.b.extend_from_slice(b"# HELP ");
         name.encode_text(&mut self.b);
         self.b.extend_from_slice(b" ");
@@ -33,7 +33,7 @@ impl TextEncoder {
         self.b.extend_from_slice(b"\n");
     }
 
-    pub fn write_type(&mut self, typ: MetricType, name: &impl MetricName) {
+    pub fn write_type(&mut self, name: &impl MetricName, typ: MetricType) {
         self.b.extend_from_slice(b"# TYPE ");
         name.encode_text(&mut self.b);
         match typ {
@@ -183,11 +183,11 @@ impl<S: Suffix, T: MetricName + ?Sized> MetricName for WithSuffix<S, T> {
     }
 }
 
-struct Total;
-struct Created;
-struct Count;
-struct Sum;
-struct Bucket;
+pub struct Total;
+pub struct Created;
+pub struct Count;
+pub struct Sum;
+pub struct Bucket;
 
 impl Suffix for Total {
     fn encode_text(&self, b: &mut BytesMut) {
@@ -220,7 +220,10 @@ impl Suffix for Bucket {
 mod tests {
     use bytes::BytesMut;
 
-    use crate::label::{FixedCardinalityLabel, LabelGroup, LabelGroupSet, LabelValue};
+    use crate::{
+        label::{FixedCardinalityLabel, LabelGroup, LabelGroupSet, LabelValue},
+        CounterVec, Histogram, Thresholds,
+    };
 
     use super::{write_str, MetricName, TextEncoder, Total};
 
@@ -257,30 +260,25 @@ This is on a new line"#,
 
     #[test]
     fn text_encoding() {
-        let mut encoder = TextEncoder { b: BytesMut::new() };
-        let name = "http_request".with_suffix(Total);
-        let metrics = [
-            (
-                RequestLabels {
-                    method: Method::Post,
-                    code: StatusCode::Ok,
-                },
-                1027,
-            ),
-            (
-                RequestLabels {
-                    method: Method::Get,
-                    code: StatusCode::BadRequest,
-                },
-                3,
-            ),
-        ];
+        let counters = CounterVec::new_sparse_counter_vec(RequestLabelSet);
 
-        encoder.write_help("The total number of HTTP requests.", &name);
-        encoder.write_type(super::MetricType::Counter, &name);
-        for (labels, count) in metrics {
-            encoder.write_metric(&name, labels, super::MetricValue::Int(count));
-        }
+        let post_ok = RequestLabels {
+            method: Method::Post,
+            code: StatusCode::Ok,
+        };
+        counters.get_metric(counters.with_labels(post_ok).unwrap(), |c| c.inc_by(1027));
+        let get_bad = RequestLabels {
+            method: Method::Get,
+            code: StatusCode::BadRequest,
+        };
+        counters.get_metric(counters.with_labels(get_bad).unwrap(), |c| c.inc_by(3));
+
+        let mut encoder = TextEncoder { b: BytesMut::new() };
+
+        let name = "http_request".with_suffix(Total);
+        encoder.write_help(&name, "The total number of HTTP requests.");
+        counters.collect_into(name, &mut encoder);
+
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
             s,
@@ -288,6 +286,41 @@ This is on a new line"#,
 # TYPE http_request_total counter
 http_request_total{method="post",code="200"} 1027
 http_request_total{method="get",code="400"} 3
+"#
+        );
+    }
+
+    #[test]
+    fn text_histogram() {
+        let thresholds = Thresholds::<8>::exponential_buckets(0.1, 2.0);
+        let histogram = Histogram::new_metric(thresholds);
+
+        histogram.get_metric().observe(0.7);
+        histogram.get_metric().observe(2.5);
+        histogram.get_metric().observe(1.2);
+        histogram.get_metric().observe(8.0);
+
+        let mut encoder = TextEncoder { b: BytesMut::new() };
+
+        let name = "http_request_duration_seconds";
+        encoder.write_help(&name, "A histogram of the request duration.");
+        histogram.collect_into(name, &mut encoder);
+
+        let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
+        assert_eq!(
+            s,
+            r#"# HELP http_request_duration_seconds A histogram of the request duration.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.1"} 0
+http_request_duration_seconds_bucket{le="0.2"} 0
+http_request_duration_seconds_bucket{le="0.4"} 0
+http_request_duration_seconds_bucket{le="0.8"} 1
+http_request_duration_seconds_bucket{le="1.6"} 2
+http_request_duration_seconds_bucket{le="3.2"} 3
+http_request_duration_seconds_bucket{le="6.4"} 3
+http_request_duration_seconds_bucket{le="inf"} 4
+http_request_duration_seconds_sum 12.4
+http_request_duration_seconds_count 4
 "#
         );
     }
@@ -319,7 +352,7 @@ http_request_total{method="get",code="400"} 3
             Some(index)
         }
 
-        fn decode(&self, value: Self::Unique) -> Self::Group<'_> {
+        fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
             let index = value;
             let (index, index1) = (index / Method::cardinality(), index % Method::cardinality());
             let method = Method::decode(index1);
@@ -335,6 +368,9 @@ http_request_total{method="get",code="400"} 3
         fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
             Some(value)
         }
+        fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+            self.decode(&value)
+        }
     }
 
     impl LabelGroup for RequestLabels {
@@ -342,7 +378,7 @@ http_request_total{method="get",code="400"} 3
             ["method", "code"]
         }
 
-        fn label_values(self, v: &mut impl super::LabelVisitor) {
+        fn label_values(&self, v: &mut impl super::LabelVisitor) {
             self.method.visit(v);
             self.code.visit(v);
         }

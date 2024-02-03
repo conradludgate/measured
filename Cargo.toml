@@ -18,6 +18,7 @@ bytes = "1"
 memchr = "2"
 ryu = "1"
 itoa = "1"
+rustc-hash = "1"
 
 [dev-dependencies]
 fake = "2.9.2"

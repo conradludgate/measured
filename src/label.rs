@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 mod impls;
+pub use impls::ComposedGroup;
 
 pub trait LabelVisitor {
     fn write_int(&mut self, x: u64);
@@ -12,7 +13,27 @@ pub trait LabelGroup {
     /// Get all the label names in order
     fn label_names() -> impl IntoIterator<Item = &'static str>;
 
-    fn label_values(self, v: &mut impl LabelVisitor);
+    fn label_values(&self, v: &mut impl LabelVisitor);
+
+    fn by_ref(&self) -> &Self {
+        self
+    }
+    fn compose_with<T: LabelGroup>(self, other: T) -> ComposedGroup<Self, T>
+    where
+        Self: Sized,
+    {
+        ComposedGroup(self, other)
+    }
+}
+
+pub struct NoLabels;
+
+impl LabelGroup for NoLabels {
+    fn label_names() -> impl IntoIterator<Item = &'static str> {
+        std::iter::empty()
+    }
+
+    fn label_values(&self, _v: &mut impl LabelVisitor) {}
 }
 
 pub trait LabelGroupSet {
@@ -26,12 +47,13 @@ pub trait LabelGroupSet {
     /// If the label set is fixed in cardinality, it must return a value here in the range of
     /// 0..cardinality
     fn encode_dense(&self, _value: Self::Unique) -> Option<usize>;
+    fn decode_dense(&self, value: usize) -> Self::Group<'_>;
 
     /// A type that can uniquely represent all possible labels
     type Unique: Hash + Eq;
 
     fn encode<'a>(&'a self, value: Self::Group<'a>) -> Option<Self::Unique>;
-    fn decode(&self, value: Self::Unique) -> Self::Group<'_>;
+    fn decode(&self, value: &Self::Unique) -> Self::Group<'_>;
 }
 
 pub trait LabelValue {
@@ -116,7 +138,7 @@ mod tests {
             for kind in error_kinds {
                 let error = Error { kind, route };
                 let index: usize = set.encode(error).unwrap();
-                let error2 = set.decode(index);
+                let error2 = set.decode(&index);
                 assert_eq!(error, error2);
             }
         }
@@ -163,7 +185,7 @@ mod tests {
                         user: &Name(EN).fake::<String>(),
                     };
                     let index: (usize, usize) = set.encode(error).unwrap();
-                    let error2 = set.decode(index);
+                    let error2 = set.decode(&index);
                     assert_eq!(error, error2);
                 }
             }
@@ -197,7 +219,7 @@ mod tests {
             Some(index)
         }
 
-        fn decode(&self, value: Self::Unique) -> Self::Group<'_> {
+        fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
             let index = value;
             let (index, index1) = (
                 index / ErrorKind::cardinality(),
@@ -216,6 +238,9 @@ mod tests {
         fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
             Some(value)
         }
+        fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+            self.decode(&value)
+        }
     }
 
     impl LabelGroup for Error<'_> {
@@ -223,7 +248,7 @@ mod tests {
             ["kind", "route"]
         }
 
-        fn label_values(self, v: &mut impl super::LabelVisitor) {
+        fn label_values(&self, v: &mut impl super::LabelVisitor) {
             self.kind.visit(v);
             self.route.visit(v);
         }
@@ -272,6 +297,9 @@ mod tests {
         fn encode_dense(&self, _value: Self::Unique) -> Option<usize> {
             None
         }
+        fn decode_dense(&self, _value: usize) -> Self::Group<'_> {
+            unreachable!("does not have a dense encoding")
+        }
 
         type Unique = (usize, usize);
 
@@ -291,7 +319,7 @@ mod tests {
             Some((index, dynamic_index0))
         }
 
-        fn decode(&self, value: Self::Unique) -> Self::Group<'_> {
+        fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
             let (index, dynamic_index0) = value;
             let (index, index1) = (
                 index / ErrorKind::cardinality(),
@@ -305,7 +333,7 @@ mod tests {
             let route = FixedCardinalityDynamicLabel::decode(&self.routes, index1);
             debug_assert_eq!(index, 0);
 
-            let user = DynamicLabel::decode(&self.users, dynamic_index0);
+            let user = DynamicLabel::decode(&self.users, *dynamic_index0);
 
             Self::Group { kind, route, user }
         }
@@ -316,7 +344,7 @@ mod tests {
             ["kind", "route", "user"]
         }
 
-        fn label_values(self, v: &mut impl super::LabelVisitor) {
+        fn label_values(&self, v: &mut impl super::LabelVisitor) {
             self.kind.visit(v);
             self.route.visit(v);
             self.user.visit(v);
