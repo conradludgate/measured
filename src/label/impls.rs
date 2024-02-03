@@ -11,8 +11,8 @@ impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalityDynamicL
         self.len()
     }
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize {
-        self.get_index_of(&value).unwrap()
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+        self.get_index_of(&value)
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
@@ -45,8 +45,8 @@ impl<K: lasso::Key, S: BuildHasher> FixedCardinalityDynamicLabel for lasso::Rode
         self.len()
     }
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize {
-        self.get(value).unwrap().into_usize()
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+        Some(self.get(value)?.into_usize())
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
@@ -57,8 +57,8 @@ impl<K: lasso::Key, S: BuildHasher> FixedCardinalityDynamicLabel for lasso::Rode
 impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::ThreadedRodeo<K, S> {
     type Value<'a> = &'a str where Self: 'a;
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize {
-        self.get_or_intern(value).into_usize()
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+        Some(self.try_get_or_intern(value).ok()?.into_usize())
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {

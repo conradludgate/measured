@@ -26,7 +26,7 @@ pub trait LabelGroupSet {
     /// A type that can uniquely represent all possible labels
     type Unique: Hash + Eq;
 
-    fn encode<'a>(&'a self, value: Self::Group<'a>) -> Self::Unique;
+    fn encode<'a>(&'a self, value: Self::Group<'a>) -> Option<Self::Unique>;
     fn decode(&self, value: Self::Unique) -> Self::Group<'_>;
 }
 
@@ -49,7 +49,7 @@ pub trait FixedCardinalityDynamicLabel {
 
     /// The number of possible label values
     fn cardinality(&self) -> usize;
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize;
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize>;
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 
@@ -58,7 +58,7 @@ pub trait DynamicLabel {
     where
         Self: 'a;
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> usize;
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize>;
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 
@@ -111,7 +111,7 @@ mod tests {
         for route in set.routes.strings() {
             for kind in error_kinds {
                 let error = Error { kind, route };
-                let index: usize = set.encode(error);
+                let index: usize = set.encode(error).unwrap();
                 let error2 = set.decode(index);
                 assert_eq!(error, error2);
             }
@@ -158,7 +158,7 @@ mod tests {
                         route,
                         user: &Name(EN).fake::<String>(),
                     };
-                    let index: (usize, usize) = set.encode(error);
+                    let index: (usize, usize) = set.encode(error).unwrap();
                     let error2 = set.decode(index);
                     assert_eq!(error, error2);
                 }
@@ -180,17 +180,17 @@ mod tests {
         type Unique = usize;
 
         #[allow(unused_assignments)]
-        fn encode<'a>(&'a self, value: Self::Group<'a>) -> Self::Unique {
+        fn encode<'a>(&'a self, value: Self::Group<'a>) -> Option<Self::Unique> {
             let mut mul = 1;
             let mut index = 0;
 
             index += value.kind.encode() * mul;
             mul *= ErrorKind::cardinality();
 
-            index += self.routes.encode(value.route) * mul;
+            index += self.routes.encode(value.route)? * mul;
             mul *= self.routes.cardinality();
 
-            index
+            Some(index)
         }
 
         fn decode(&self, value: Self::Unique) -> Self::Group<'_> {
@@ -264,19 +264,19 @@ mod tests {
         type Unique = (usize, usize);
 
         #[allow(unused_assignments)]
-        fn encode<'a>(&'a self, value: Self::Group<'a>) -> Self::Unique {
+        fn encode<'a>(&'a self, value: Self::Group<'a>) -> Option<Self::Unique> {
             let mut mul = 1;
             let mut index = 0;
 
             index += FixedCardinalityLabel::encode(&value.kind) * mul;
             mul *= ErrorKind::cardinality();
 
-            index += FixedCardinalityDynamicLabel::encode(&self.routes, value.route) * mul;
+            index += FixedCardinalityDynamicLabel::encode(&self.routes, value.route)? * mul;
             mul *= self.routes.cardinality();
 
-            let dynamic_index0 = DynamicLabel::encode(&self.users, value.user);
+            let dynamic_index0 = DynamicLabel::encode(&self.users, value.user)?;
 
-            (index, dynamic_index0)
+            Some((index, dynamic_index0))
         }
 
         fn decode(&self, value: Self::Unique) -> Self::Group<'_> {
