@@ -157,6 +157,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "measured-derive"
+version = "0.0.4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

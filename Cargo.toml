@@ -1,24 +1,2 @@
-[package]
-name = "measured"
-version = "0.0.4"
-edition = "2021"
-description = "A better way to measure your application performance"
-authors = ["Conrad Ludgate <conradludgate@gmail.com"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/conradludgate/measured"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-# TODO: add features for the dependencies
-indexmap = "2"
-lasso = { version = "0.7", features = ["multi-threaded"] }
-dashmap = "5"
-bytes = "1"
-memchr = "2"
-ryu = "1"
-itoa = "1"
-rustc-hash = "1"
-
-[dev-dependencies]
-fake = "2.9.2"
+[workspace]
+members = ["derive", "core"]
