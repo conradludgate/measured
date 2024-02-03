@@ -1,6 +1,8 @@
 use std::hash::{BuildHasher, Hash};
 
-use super::{DynamicLabel, FixedCardinalityDynamicLabel, LabelValue, LabelVisitor};
+use super::{
+    DynamicLabel, FixedCardinalityDynamicLabel, LabelGroup, LabelGroupSet, LabelValue, LabelVisitor,
+};
 
 impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalityDynamicLabel
     for indexmap::IndexSet<T, S>
@@ -63,5 +65,48 @@ impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::Threa
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
         self.resolve(&K::try_from_usize(value).unwrap())
+    }
+}
+
+#[derive(Hash, PartialEq, Eq)]
+pub struct ComposedGroup<A, B>(A, B);
+
+impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
+    type Group<'a> = ComposedGroup<A::Group<'a>, B::Group<'a>>
+    where
+        Self: 'a;
+
+    fn cardinality(&self) -> Option<usize> {
+        self.0
+            .cardinality()
+            .and_then(|x| x.checked_mul(self.1.cardinality()?))
+    }
+
+    fn encode_dense(&self, _value: Self::Unique) -> Option<usize> {
+        todo!()
+    }
+
+    type Unique = ComposedGroup<A::Unique, B::Unique>;
+
+    fn encode<'a>(&'a self, value: Self::Group<'a>) -> Option<Self::Unique> {
+        Some(ComposedGroup(
+            self.0.encode(value.0)?,
+            self.1.encode(value.1)?,
+        ))
+    }
+
+    fn decode(&self, value: Self::Unique) -> Self::Group<'_> {
+        ComposedGroup(self.0.decode(value.0), self.1.decode(value.1))
+    }
+}
+
+impl<A: LabelGroup, B: LabelGroup> LabelGroup for ComposedGroup<A, B> {
+    fn label_names() -> impl IntoIterator<Item = &'static str> {
+        A::label_names().into_iter().chain(B::label_names())
+    }
+
+    fn label_values(self, v: &mut impl LabelVisitor) {
+        self.0.label_values(v);
+        self.1.label_values(v);
     }
 }

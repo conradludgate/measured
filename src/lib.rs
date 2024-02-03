@@ -4,6 +4,7 @@ use dashmap::DashMap;
 use label::LabelGroupSet;
 
 pub mod label;
+pub mod text;
 
 #[derive(Default)]
 pub struct Counter {

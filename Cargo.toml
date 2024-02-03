@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -14,6 +14,10 @@ repository = "https://github.com/conradludgate/measured"
 indexmap = "2"
 lasso = { version = "0.7", features = ["multi-threaded"] }
 dashmap = "5"
+bytes = "1"
+memchr = "2"
+ryu = "1"
+itoa = "1"
 
 [dev-dependencies]
 fake = "2.9.2"
