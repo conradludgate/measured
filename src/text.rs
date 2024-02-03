@@ -125,6 +125,10 @@ pub trait MetricName {
             metric_name: self,
         }
     }
+
+    fn by_ref(&self) -> &Self {
+        self
+    }
 }
 
 fn write_str(s: &str, b: &mut BytesMut) {

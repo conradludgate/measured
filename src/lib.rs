@@ -35,6 +35,17 @@ impl MetricType for CounterState {
     type Metadata = ();
 }
 
+pub trait MetricEncoder<T>: MetricType {
+    fn write_type(name: impl MetricName, enc: &mut T);
+    fn collect_into(
+        &self,
+        metadata: &Self::Metadata,
+        labels: impl LabelGroup,
+        name: impl MetricName,
+        enc: &mut T,
+    );
+}
+
 pub struct HistogramState<const N: usize> {
     buckets: [AtomicU64; N],
     count: AtomicU64,
@@ -235,76 +246,95 @@ impl LabelGroup for HistogramLabelLe {
     }
 }
 
-impl<const N: usize> Histogram<N> {
-    pub fn collect_into(&self, name: impl MetricName, enc: &mut TextEncoder) {
+impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
+    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
         enc.write_type(&name, text::MetricType::Histogram);
+    }
+    fn collect_into(
+        &self,
+        metadata: &Thresholds<N>,
+        labels: impl LabelGroup,
+        name: impl MetricName,
+        enc: &mut TextEncoder,
+    ) {
         for i in 0..N {
-            let le = self.metadata.le[i];
-            let val = &self.metric.buckets[i];
+            let le = metadata.le[i];
+            let val = &self.buckets[i];
             enc.write_metric(
-                &(&name).with_suffix(Bucket),
-                NoLabels.compose_with(HistogramLabelLe { le }),
+                &name.by_ref().with_suffix(Bucket),
+                labels.by_ref().compose_with(HistogramLabelLe { le }),
                 text::MetricValue::Int(val.load(std::sync::atomic::Ordering::Relaxed) as i64),
             );
         }
         enc.write_metric(
-            &(&name).with_suffix(Sum),
-            NoLabels,
+            &name.by_ref().with_suffix(Sum),
+            labels.by_ref(),
             text::MetricValue::Float(f64::from_bits(
-                self.metric.sum.load(std::sync::atomic::Ordering::Relaxed),
+                self.sum.load(std::sync::atomic::Ordering::Relaxed),
             )),
         );
         enc.write_metric(
-            &(&name).with_suffix(Count),
-            NoLabels,
-            text::MetricValue::Int(
-                self.metric.count.load(std::sync::atomic::Ordering::Relaxed) as i64
-            ),
+            &name.by_ref().with_suffix(Count),
+            labels,
+            text::MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
         );
     }
 }
 
-impl Counter {
-    pub fn collect_into(&self, name: impl MetricName, enc: &mut TextEncoder) {
+impl MetricEncoder<TextEncoder> for CounterState {
+    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
         enc.write_type(&name, text::MetricType::Counter);
+    }
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        name: impl MetricName,
+        enc: &mut TextEncoder,
+    ) {
         enc.write_metric(
             &name,
-            NoLabels,
-            text::MetricValue::Int(
-                self.metric.count.load(std::sync::atomic::Ordering::Relaxed) as i64
-            ),
+            labels,
+            text::MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
         );
     }
 }
 
-impl<L: LabelGroupSet> CounterVec<L> {
-    pub fn collect_into(&self, name: impl MetricName, enc: &mut TextEncoder) {
-        enc.write_type(&name, text::MetricType::Counter);
+impl<M: MetricType> Metric<M> {
+    pub fn collect_into<T>(&self, name: impl MetricName, enc: &mut T)
+    where
+        M: MetricEncoder<T>,
+    {
+        M::write_type(&name, enc);
+        self.metric
+            .collect_into(&self.metadata, NoLabels, name, enc)
+    }
+}
+impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
+    pub fn collect_into<T>(&self, name: impl MetricName, enc: &mut T)
+    where
+        M: MetricEncoder<T>,
+    {
+        M::write_type(&name, enc);
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {
-                    enc.write_metric(
-                        &name,
+                    value.collect_into(
+                        &self.metadata,
                         self.label_set.decode_dense(index),
-                        text::MetricValue::Int(
-                            value.count.load(std::sync::atomic::Ordering::Relaxed) as i64,
-                        ),
-                    );
+                        &name,
+                        enc,
+                    )
                 }
             }
             VecInner::Sparse(m) => {
                 for values in m {
-                    enc.write_metric(
-                        &name,
+                    values.value().collect_into(
+                        &self.metadata,
                         self.label_set.decode(values.key()),
-                        text::MetricValue::Int(
-                            values
-                                .value()
-                                .count
-                                .load(std::sync::atomic::Ordering::Relaxed)
-                                as i64,
-                        ),
-                    );
+                        &name,
+                        enc,
+                    )
                 }
             }
         }
