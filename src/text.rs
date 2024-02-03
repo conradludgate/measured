@@ -63,7 +63,17 @@ impl TextEncoder {
             }
 
             fn write_float(&mut self, x: f64) {
-                self.write_str(ryu::Buffer::new().format(x))
+                if x.is_infinite() {
+                    if x.is_sign_positive() {
+                        self.write_str("+Inf")
+                    } else {
+                        self.write_str("-Inf")
+                    }
+                } else if x.is_nan() {
+                    self.write_str("NaN")
+                } else {
+                    self.write_str(ryu::Buffer::new().format(x))
+                }
             }
 
             fn write_str(&mut self, x: &str) {
@@ -322,7 +332,7 @@ http_request_duration_seconds_bucket{le="0.8"} 1
 http_request_duration_seconds_bucket{le="1.6"} 2
 http_request_duration_seconds_bucket{le="3.2"} 3
 http_request_duration_seconds_bucket{le="6.4"} 3
-http_request_duration_seconds_bucket{le="inf"} 4
+http_request_duration_seconds_bucket{le="+Inf"} 4
 http_request_duration_seconds_sum 12.4
 http_request_duration_seconds_count 4
 "#
