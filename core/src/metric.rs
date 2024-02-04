@@ -125,7 +125,7 @@ impl<M: MetricType> Metric<M> {
     {
         M::write_type(&name, enc);
         self.metric
-            .collect_into(&self.metadata, NoLabels, name, enc)
+            .collect_into(&self.metadata, NoLabels, name, enc);
     }
 }
 

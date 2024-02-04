@@ -1,4 +1,7 @@
-use std::hash::{BuildHasher, Hash};
+use std::{
+    hash::{BuildHasher, Hash},
+    sync::Arc,
+};
 
 use super::{
     DynamicLabel, FixedCardinalityDynamicLabel, LabelGroup, LabelGroupSet, LabelValue, LabelVisitor,
@@ -144,5 +147,79 @@ impl<T: LabelGroup> LabelGroup for &T {
 
     fn label_values(&self, v: &mut impl LabelVisitor) {
         T::label_values(self, v)
+    }
+}
+
+impl<T: LabelGroupSet + ?Sized> LabelGroupSet for &'static T {
+    type Group<'a> = T::Group<'a>
+    where
+        Self: 'a;
+
+    fn cardinality(&self) -> Option<usize> {
+        T::cardinality(self)
+    }
+
+    fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
+        T::encode_dense(self, value)
+    }
+
+    fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+        T::decode_dense(self, value)
+    }
+
+    type Unique = T::Unique;
+
+    fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        T::encode(self, value)
+    }
+
+    fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
+        T::decode(self, value)
+    }
+}
+
+impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
+    type Group<'a> = T::Group<'a>
+    where
+        Self: 'a;
+
+    fn cardinality(&self) -> Option<usize> {
+        T::cardinality(self)
+    }
+
+    fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
+        T::encode_dense(self, value)
+    }
+
+    fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+        T::decode_dense(self, value)
+    }
+
+    type Unique = T::Unique;
+
+    fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        T::encode(self, value)
+    }
+
+    fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
+        T::decode(self, value)
+    }
+}
+
+impl<T: FixedCardinalityDynamicLabel + ?Sized> FixedCardinalityDynamicLabel for Arc<T> {
+    type Value<'a> = T::Value<'a>
+    where
+        Self: 'a;
+
+    fn cardinality(&self) -> usize {
+        T::cardinality(self)
+    }
+
+    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+        T::encode(self, value)
+    }
+
+    fn decode(&self, value: usize) -> Self::Value<'_> {
+        T::decode(self, value)
     }
 }

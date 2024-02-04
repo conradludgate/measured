@@ -1,6 +1,6 @@
 //! Prometheus Text based exporter
 
-use bytes::{Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use memchr::memchr3_iter;
 
 use crate::{
@@ -15,7 +15,14 @@ use crate::{
 
 /// The prometheus text encoder helper
 pub struct TextEncoder {
+    state: State,
     b: BytesMut,
+}
+
+#[derive(PartialEq)]
+enum State {
+    Info,
+    Metrics,
 }
 
 /// Prometheus only supports these 5 types of metrics
@@ -40,16 +47,29 @@ impl Default for TextEncoder {
 
 impl TextEncoder {
     pub fn new() -> Self {
-        Self { b: BytesMut::new() }
+        Self {
+            state: State::Info,
+            b: BytesMut::new(),
+        }
     }
 
     /// Finish the text encoding and extract the bytes to send in a HTTP response.
     pub fn finish(&mut self) -> Bytes {
+        self.state = State::Info;
         self.b.split().freeze()
+    }
+
+    fn write_line(&mut self) {
+        self.b.put_u8(b'\n');
     }
 
     /// Write the help line for a metric
     pub fn write_help(&mut self, name: &impl MetricName, help: &str) {
+        if self.state == State::Metrics {
+            self.write_line();
+        }
+        self.state = State::Info;
+
         self.b.extend_from_slice(b"# HELP ");
         name.encode_text(&mut self.b);
         self.b.extend_from_slice(b" ");
@@ -59,6 +79,11 @@ impl TextEncoder {
 
     /// Write the type line for a metric
     pub fn write_type(&mut self, name: &impl MetricName, typ: MetricType) {
+        if self.state == State::Metrics {
+            self.write_line();
+        }
+        self.state = State::Info;
+
         self.b.extend_from_slice(b"# TYPE ");
         name.encode_text(&mut self.b);
         match typ {
@@ -77,6 +102,7 @@ impl TextEncoder {
         labels: L,
         value: MetricValue,
     ) {
+        self.state = State::Metrics;
         name.encode_text(&mut self.b);
         struct Visitor<'a, I> {
             first: bool,
@@ -173,6 +199,14 @@ impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
                 MetricValue::Int(val.load(std::sync::atomic::Ordering::Relaxed) as i64),
             );
         }
+        let count = self.count.load(std::sync::atomic::Ordering::Relaxed) as i64;
+        enc.write_metric(
+            &name.by_ref().with_suffix(Bucket),
+            labels
+                .by_ref()
+                .compose_with(HistogramLabelLe { le: f64::INFINITY }),
+            MetricValue::Int(count),
+        );
         enc.write_metric(
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
@@ -183,7 +217,7 @@ impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
         enc.write_metric(
             &name.by_ref().with_suffix(Count),
             labels,
-            MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
+            MetricValue::Int(count),
         );
     }
 }
@@ -284,7 +318,7 @@ This is on a new line"#,
         };
         requests.inc_by(labels, 3);
 
-        let mut encoder = TextEncoder { b: BytesMut::new() };
+        let mut encoder = TextEncoder::default();
 
         let name = "http_request".with_suffix(Total);
         encoder.write_help(&name, "The total number of HTTP requests.");
@@ -311,7 +345,7 @@ http_request_total{method="get",code="400"} 3
         histogram.get_metric().observe(1.2);
         histogram.get_metric().observe(8.0);
 
-        let mut encoder = TextEncoder { b: BytesMut::new() };
+        let mut encoder = TextEncoder::default();
 
         let name = "http_request_duration_seconds";
         encoder.write_help(&name, "A histogram of the request duration.");
@@ -329,6 +363,7 @@ http_request_duration_seconds_bucket{le="0.8"} 1
 http_request_duration_seconds_bucket{le="1.6"} 2
 http_request_duration_seconds_bucket{le="3.2"} 3
 http_request_duration_seconds_bucket{le="6.4"} 3
+http_request_duration_seconds_bucket{le="12.8"} 4
 http_request_duration_seconds_bucket{le="+Inf"} 4
 http_request_duration_seconds_sum 12.4
 http_request_duration_seconds_count 4

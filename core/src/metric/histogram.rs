@@ -1,5 +1,7 @@
 use std::sync::atomic::AtomicU64;
 
+use crate::{label::LabelGroupSet, HistogramVec};
+
 use super::{MetricRef, MetricType};
 
 pub struct HistogramState<const N: usize> {
@@ -45,12 +47,11 @@ impl<const N: usize> Thresholds<N> {
         }
 
         let mut next = start;
-        let mut buckets = std::array::from_fn(|_| {
+        let buckets = std::array::from_fn(|_| {
             let x = next;
             next *= factor;
             x
         });
-        buckets[N - 1] = f64::INFINITY;
 
         Thresholds { le: buckets }
     }
@@ -63,7 +64,7 @@ impl<const N: usize> Thresholds<N> {
 impl<const N: usize> HistogramRef<'_, N> {
     pub fn observe(self, x: f64) {
         for i in 0..N {
-            if x < self.1.le[i] {
+            if x <= self.1.le[i] {
                 self.0.buckets[i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
@@ -78,5 +79,15 @@ impl<const N: usize> HistogramRef<'_, N> {
                 |y| Some(f64::to_bits(f64::from_bits(y) + x)),
             )
             .expect("we always return Some in fetch_update");
+    }
+}
+
+impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
+    pub fn observe(&self, label: L::Group<'_>, y: f64) {
+        self.get_metric(
+            self.with_labels(label)
+                .expect("label group should be in the set"),
+            |x| x.observe(y),
+        )
     }
 }

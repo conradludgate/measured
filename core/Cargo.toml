@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -20,7 +20,7 @@ itoa = "1"
 rustc-hash = "1"
 hashbrown = "0.14"
 
-measured-derive = { path = "../derive", version = "0.0.5" }
+measured-derive = { path = "../derive", version = "0.0.6" }
 
 [dev-dependencies]
 fake = "2.9.2"
