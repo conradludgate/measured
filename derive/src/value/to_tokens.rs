@@ -95,7 +95,7 @@ impl ToTokens for FixedCardinalityLabel {
 
             #[automatically_derived]
             impl #krate::label::LabelValue for #ident {
-                fn visit(&self, v: &mut impl super::LabelVisitor) {
+                fn visit(&self, v: &mut impl #krate::label::LabelVisitor) {
                     match self {
                         #(#visits)*
                     }

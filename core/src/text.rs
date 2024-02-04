@@ -32,7 +32,17 @@ pub enum MetricValue {
     Float(f64),
 }
 
+impl Default for TextEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TextEncoder {
+    pub fn new() -> Self {
+        Self { b: BytesMut::new() }
+    }
+
     /// Finish the text encoding and extract the bytes to send in a HTTP response.
     pub fn finish(&mut self) -> Bytes {
         self.b.split().freeze()

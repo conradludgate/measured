@@ -24,3 +24,11 @@ measured-derive = { path = "../derive", version = "0.0.5" }
 
 [dev-dependencies]
 fake = "2.9.2"
+divan = "0.1.11"
+prometheus = "0.13"
+metrics = "0.22"
+metrics-exporter-prometheus = "0.13"
+
+[[bench]]
+name = "counters"
+harness = false
