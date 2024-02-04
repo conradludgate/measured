@@ -270,7 +270,7 @@ This is on a new line"#,
 
     #[test]
     fn text_encoding() {
-        let requests = CounterVec::new_sparse_counter_vec(RequestLabelSet {});
+        let requests = CounterVec::new_sparse(RequestLabelSet {});
 
         let labels = RequestLabels {
             method: Method::Post,

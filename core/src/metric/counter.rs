@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicU64;
 
-use crate::{label::LabelGroupSet, CounterVec};
+use crate::{label::LabelGroupSet, Counter, CounterVec};
 
 use super::{MetricRef, MetricType};
 
@@ -22,10 +22,10 @@ impl CounterRef<'_> {
     }
 }
 impl<L: LabelGroupSet> CounterVec<L> {
-    pub fn new_counter_vec(label_set: L) -> Self {
+    pub fn new(label_set: L) -> Self {
         Self::new_metric_vec(label_set, ())
     }
-    pub fn new_sparse_counter_vec(label_set: L) -> Self {
+    pub const fn new_sparse(label_set: L) -> Self {
         Self::new_sparse_metric_vec(label_set, ())
     }
 
@@ -43,6 +43,18 @@ impl<L: LabelGroupSet> CounterVec<L> {
                 .expect("label group should be in the set"),
             |x| x.inc_by(y),
         )
+    }
+}
+
+impl Counter {
+    #[allow(clippy::new_without_default)]
+    pub const fn new() -> Self {
+        Self {
+            metadata: (),
+            metric: CounterState {
+                count: AtomicU64::new(0),
+            },
+        }
     }
 }
 

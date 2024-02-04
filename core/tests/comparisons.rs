@@ -10,7 +10,7 @@ fn measured() {
     let error_set = ErrorsSet {
         route: Rodeo::from_iter(routes()).into_reader(),
     };
-    let counter_vec = measured::CounterVec::new_counter_vec(error_set);
+    let counter_vec = measured::CounterVec::new(error_set);
 
     let mut encoder = measured::text::TextEncoder::new();
 

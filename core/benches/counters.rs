@@ -21,7 +21,7 @@ mod fixed_cardinality {
         let error_set = ErrorsSet {
             route: Rodeo::from_iter(routes()).into_reader(),
         };
-        let counter_vec = measured::CounterVec::new_counter_vec(error_set);
+        let counter_vec = measured::CounterVec::new(error_set);
 
         bencher
             .with_inputs(measured::text::TextEncoder::new)
@@ -163,7 +163,7 @@ mod high_cardinality {
             route: Rodeo::from_iter(routes()).into_reader(),
             user_name: ThreadedRodeo::new(),
         };
-        let counter_vec = measured::CounterVec::new_counter_vec(error_set);
+        let counter_vec = measured::CounterVec::new(error_set);
 
         let thread = AtomicU64::new(0);
 
