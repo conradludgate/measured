@@ -21,7 +21,7 @@ The benchmark runs on multiple threads a simple counter increment, with various 
 and then samples+encodes the values into the Prometheus text format. This crate outperforms both metrics and prometheus
 when it comes to both speed and allocations.
 
-### Macbook Pro M2 Max:
+### Macbook Pro M2 Max (12 threads):
 
 ```
 Timer precision: 41 ns
@@ -53,4 +53,38 @@ counters       fastest       │ slowest       │ median        │ mean       
                grow:         │               │               │               │         │
                  0           │ 0             │ 0             │ 0.583         │         │
                  0 B         │ 0 B           │ 0 B           │ 138 B         │         │
+```
+
+### Ryzen 9 7950X (32 threads):
+
+```
+Timer precision: 2.34 µs
+counters       fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ measured    7.54 ms       │ 11.72 ms      │ 10.62 ms      │ 10.51 ms      │ 512     │ 2560
+│              alloc:        │               │               │               │         │
+│                2           │ 2             │ 2             │ 2             │         │
+│                48 B        │ 48 B          │ 48 B          │ 48 B          │         │
+│              grow:         │               │               │               │         │
+│                7           │ 7             │ 7             │ 7             │         │
+│                1.656 KB    │ 1.656 KB      │ 1.656 KB      │ 1.656 KB      │         │
+├─ metrics     20.64 ms      │ 27.96 ms      │ 21.89 ms      │ 22.07 ms      │ 512     │ 2560
+│              alloc:        │               │               │               │         │
+│                72299       │ 72299         │ 72299         │ 72299         │         │
+│                4.624 MB    │ 4.624 MB      │ 4.624 MB      │ 4.624 MB      │         │
+│              dealloc:      │               │               │               │         │
+│                72298       │ 72298         │ 72298         │ 72298         │         │
+│                4.625 MB    │ 4.625 MB      │ 4.625 MB      │ 4.625 MB      │         │
+│              grow:         │               │               │               │         │
+│                61          │ 61            │ 61            │ 61            │         │
+│                2.634 KB    │ 2.634 KB      │ 2.634 KB      │ 2.634 KB      │         │
+╰─ prometheus  75.5 ms       │ 86.02 ms      │ 81.85 ms      │ 81.45 ms      │ 512     │ 2560
+               alloc:        │               │               │               │         │
+                 118         │ 118           │ 118           │ 118.1         │         │
+                 6.589 KB    │ 6.589 KB      │ 6.589 KB      │ 6.598 KB      │         │
+               dealloc:      │               │               │               │         │
+                 117         │ 117           │ 117           │ 117           │         │
+                 6.581 KB    │ 6.581 KB      │ 6.581 KB      │ 6.584 KB      │         │
+               grow:         │               │               │               │         │
+                 7           │ 7             │ 7             │ 7.014         │         │
+                 1.656 KB    │ 1.656 KB      │ 1.656 KB      │ 1.656 KB      │         │
 ```
