@@ -25,7 +25,9 @@ fn measured() {
     let metric = "http_request_errors".with_suffix(Total);
     encoder.write_help(&metric, "help text");
     counter_vec.collect_into(&metric, &mut encoder);
-    assert_eq!(&*encoder.finish(), br#"# HELP http_request_errors_total help text
+    assert_eq!(
+        &*encoder.finish(),
+        br#"# HELP http_request_errors_total help text
 # TYPE http_request_errors_total counter
 http_request_errors_total{kind="user",route="/api/v1/users"} 2000
 http_request_errors_total{kind="internal",route="/api/v1/users"} 2000
@@ -45,7 +47,8 @@ http_request_errors_total{kind="network",route="/api/v1/products/:id/owner"} 200
 http_request_errors_total{kind="user",route="/api/v1/products/:id/purchase"} 2000
 http_request_errors_total{kind="internal",route="/api/v1/products/:id/purchase"} 2000
 http_request_errors_total{kind="network",route="/api/v1/products/:id/purchase"} 2000
-"#);
+"#
+    );
 }
 
 #[test]
@@ -71,7 +74,9 @@ fn prometheus() {
         .encode_to_string(&registry.gather())
         .unwrap();
 
-    assert_eq!(s, r#"# HELP http_request_errors_total help text
+    assert_eq!(
+        s,
+        r#"# HELP http_request_errors_total help text
 # TYPE http_request_errors_total counter
 http_request_errors_total{kind="internal",route="/api/v1/products"} 2000
 http_request_errors_total{kind="internal",route="/api/v1/products/:id"} 2000
@@ -91,7 +96,8 @@ http_request_errors_total{kind="user",route="/api/v1/products/:id/owner"} 2000
 http_request_errors_total{kind="user",route="/api/v1/products/:id/purchase"} 2000
 http_request_errors_total{kind="user",route="/api/v1/users"} 2000
 http_request_errors_total{kind="user",route="/api/v1/users/:id"} 2000
-"#);
+"#
+    );
 }
 
 #[test]
@@ -113,30 +119,36 @@ fn metrics() {
         }
     });
 
-    // output is unstable, but looks something like
+    // output is unstable
+    let output = recorder.handle().render();
+    let mut lines: Vec<&str> = output.lines().collect();
+    lines.sort();
+    let output = lines.join("\n");
 
-//     assert_eq!(recorder.handle().render(), r#"# HELP http_request_errors_total help text
-// # TYPE http_request_errors_total counter
-// http_request_errors_total{kind="internal",route="/api/v1/products/:id"} 2000
-// http_request_errors_total{kind="internal",route="/api/v1/products/:id/owner"} 2000
-// http_request_errors_total{kind="user",route="/api/v1/users"} 2000
-// http_request_errors_total{kind="network",route="/api/v1/products"} 2000
-// http_request_errors_total{kind="internal",route="/api/v1/products/:id/purchase"} 2000
-// http_request_errors_total{kind="network",route="/api/v1/products/:id"} 2000
-// http_request_errors_total{kind="internal",route="/api/v1/users"} 2000
-// http_request_errors_total{kind="user",route="/api/v1/products/:id/owner"} 2000
-// http_request_errors_total{kind="internal",route="/api/v1/users/:id"} 2000
-// http_request_errors_total{kind="network",route="/api/v1/users"} 2000
-// http_request_errors_total{kind="network",route="/api/v1/products/:id/owner"} 2000
-// http_request_errors_total{kind="user",route="/api/v1/products"} 2000
-// http_request_errors_total{kind="user",route="/api/v1/users/:id"} 2000
-// http_request_errors_total{kind="user",route="/api/v1/products/:id"} 2000
-// http_request_errors_total{kind="network",route="/api/v1/products/:id/purchase"} 2000
-// http_request_errors_total{kind="user",route="/api/v1/products/:id/purchase"} 2000
-// http_request_errors_total{kind="internal",route="/api/v1/products"} 2000
-// http_request_errors_total{kind="network",route="/api/v1/users/:id"} 2000
-
-// "#);
+    assert_eq!(
+        output,
+        r#"
+# HELP http_request_errors_total help text
+# TYPE http_request_errors_total counter
+http_request_errors_total{kind="internal",route="/api/v1/products"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/products/:id/owner"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/users"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/users/:id"} 2000
+http_request_errors_total{kind="network",route="/api/v1/products"} 2000
+http_request_errors_total{kind="network",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="network",route="/api/v1/products/:id/owner"} 2000
+http_request_errors_total{kind="network",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="network",route="/api/v1/users"} 2000
+http_request_errors_total{kind="network",route="/api/v1/users/:id"} 2000
+http_request_errors_total{kind="user",route="/api/v1/products"} 2000
+http_request_errors_total{kind="user",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="user",route="/api/v1/products/:id/owner"} 2000
+http_request_errors_total{kind="user",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="user",route="/api/v1/users"} 2000
+http_request_errors_total{kind="user",route="/api/v1/users/:id"} 2000"#
+    );
 }
 
 fn routes() -> &'static [&'static str] {

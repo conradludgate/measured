@@ -1,6 +1,6 @@
 # measured
 
-A better* metrics crate
+A better\* metrics crate
 
 ## Goals
 
@@ -17,9 +17,11 @@ A better* metrics crate
 
 ## Benchmark results
 
-Running on my Macbook Pro M2 Max. The benchmark runs on multiple threads a simple counter increment, with various labels,
+The benchmark runs on multiple threads a simple counter increment, with various labels,
 and then samples+encodes the values into the Prometheus text format. This crate outperforms both metrics and prometheus
 when it comes to both speed and allocations.
+
+### Macbook Pro M2 Max:
 
 ```
 Timer precision: 41 ns
