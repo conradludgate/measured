@@ -1,5 +1,8 @@
-use proc_macro2::{Ident, Span};
-use syn::{parse::ParseStream, spanned::Spanned, Attribute, Path, Token};
+use syn::{
+    parse::{Parse, ParseStream},
+    spanned::Spanned,
+    Attribute, LitStr, Token,
+};
 
 use crate::Krate;
 
@@ -9,7 +12,7 @@ const LABEL_ATTR: &str = "label";
 pub struct ContainerAttrs {
     /// Optional `crate = $:path` arg
     pub krate: Option<Krate>,
-    pub set: Option<Ident>,
+    pub rename_all: Option<RenameAll>,
 }
 
 impl ContainerAttrs {
@@ -44,10 +47,10 @@ impl ContainerAttrs {
                 _ if input.peek(syn::Ident) => {
                     let name: syn::Ident = input.parse()?;
                     match &*name.to_string() {
-                        "set" => {
+                        "rename_all" => {
                             let _: Token![=] = input.parse()?;
-                            if self.set.replace(input.parse()?).is_some() {
-                                return Err(input.error("duplicate `set` arg"));
+                            if self.rename_all.replace(input.parse()?).is_some() {
+                                return Err(input.error("duplicate `rename_all` arg"));
                             }
                         }
                         _ => return Err(input.error("unknown argument found")),
@@ -61,31 +64,13 @@ impl ContainerAttrs {
 }
 
 #[derive(Clone)]
-pub enum LabelGroupFieldAttrs {
-    Fixed,
-    FixedWith(Path),
-    DynamicWith(Path),
+pub struct VariantAttrs {
+    pub rename: Option<LitStr>,
 }
 
-impl LabelGroupFieldAttrs {
-    pub fn get_sort_key(&self) -> LabelGroupFieldAttrsSortKey {
-        match self {
-            LabelGroupFieldAttrs::Fixed => LabelGroupFieldAttrsSortKey::Fixed,
-            LabelGroupFieldAttrs::FixedWith(_) => LabelGroupFieldAttrsSortKey::Fixed,
-            LabelGroupFieldAttrs::DynamicWith(_) => LabelGroupFieldAttrsSortKey::Dynamic,
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub enum LabelGroupFieldAttrsSortKey {
-    Dynamic,
-    Fixed,
-}
-
-impl LabelGroupFieldAttrs {
+impl VariantAttrs {
     pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
-        let mut args = None;
+        let mut args = VariantAttrs { rename: None };
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
                 attr.parse_args_with(|input: ParseStream| {
@@ -96,38 +81,78 @@ impl LabelGroupFieldAttrs {
                         }
                         first = false;
 
-                        let arg = match () {
+                        match () {
                             _ if input.peek(syn::Ident) => {
                                 let name: syn::Ident = input.parse()?;
                                 match &*name.to_string() {
-                                    "fixed" => Self::Fixed,
-                                    "fixed_with" => {
+                                    "rename" => {
                                         let _: Token![=] = input.parse()?;
-                                        Self::FixedWith(input.parse()?)
-                                    }
-                                    "dynamic_with" => {
-                                        let _: Token![=] = input.parse()?;
-                                        Self::DynamicWith(input.parse()?)
+
+                                        if args.rename.replace(input.parse()?).is_some() {
+                                            return Err(syn::Error::new(
+                                                attr.span(),
+                                                "duplicate `rename` attr",
+                                            ));
+                                        }
                                     }
                                     _ => return Err(input.error("unknown argument found")),
                                 }
                             }
                             _ => return Err(input.error("unknown argument found")),
                         };
-
-                        if args.replace(arg).is_some() {
-                            return Err(syn::Error::new(attr.span(), "duplicate `label` attr"));
-                        }
                     }
                     Ok(())
                 })?
             }
         }
-        args.ok_or_else(|| {
-            syn::Error::new(
-                Span::call_site(),
-                "missing cardinality attribute (`fixed`/`fixed_with`/`dynamic_with`)",
-            )
-        })
+        Ok(args)
+    }
+}
+
+pub enum RenameAll {
+    UpperCamel,
+    LowerCamel,
+    Snake,
+    Kebab,
+    ShoutySnake,
+    ShoutyKebab,
+    Title,
+    Train,
+}
+
+impl RenameAll {
+    pub fn apply(&self, s: &str) -> String {
+        use heck::{
+            ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
+            ToTitleCase, ToTrainCase, ToUpperCamelCase,
+        };
+        match self {
+            RenameAll::UpperCamel => s.to_upper_camel_case(),
+            RenameAll::LowerCamel => s.to_lower_camel_case(),
+            RenameAll::Snake => s.to_snake_case(),
+            RenameAll::Kebab => s.to_kebab_case(),
+            RenameAll::ShoutySnake => s.to_shouty_snake_case(),
+            RenameAll::ShoutyKebab => s.to_shouty_kebab_case(),
+            RenameAll::Title => s.to_title_case(),
+            RenameAll::Train => s.to_train_case(),
+        }
+    }
+}
+
+impl Parse for RenameAll {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name: syn::LitStr = input.parse()?;
+        match &*name.value() {
+            "UpperCamelCase" => Ok(RenameAll::UpperCamel),
+            "lowerCamelCase" => Ok(RenameAll::LowerCamel),
+            "snake_case" => Ok(RenameAll::Snake),
+            "kebab-case" => Ok(RenameAll::Kebab),
+            "SHOUTY_SNAKE_CASE" => Ok(RenameAll::ShoutySnake),
+            "SHOUTY-KEBAB-CASE" => Ok(RenameAll::ShoutyKebab),
+            "Title Case" => Ok(RenameAll::Title),
+            "Train-Case" => Ok(RenameAll::Train),
+
+            _ => Err(input.error("unknown rename_all found")),
+        }
     }
 }

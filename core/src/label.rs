@@ -93,7 +93,7 @@ mod tests {
     use fake::{faker::name::raw::Name, locales::EN, Fake};
     use lasso::{Rodeo, RodeoReader, ThreadedRodeo};
 
-    use super::{FixedCardinalityLabel, LabelGroupSet, LabelValue};
+    use super::LabelGroupSet;
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
     #[label(crate = crate, set = ErrorsSet)]
@@ -104,8 +104,8 @@ mod tests {
         route: &'a str,
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug)]
-    // #[derive(FixedCardinalityLabel)] #[label(rename_all = "kebab-case")]
+    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
+    #[label(crate = crate, rename_all = "kebab-case")]
     enum ErrorKind {
         User,
         Internal,
@@ -176,41 +176,6 @@ mod tests {
                     let error2 = set.decode(&index);
                     assert_eq!(error, error2);
                 }
-            }
-        }
-    }
-
-    // TODO: generate with macros
-
-    impl FixedCardinalityLabel for ErrorKind {
-        fn cardinality() -> usize {
-            3
-        }
-
-        fn encode(&self) -> usize {
-            match self {
-                ErrorKind::User => 0,
-                ErrorKind::Internal => 1,
-                ErrorKind::Network => 2,
-            }
-        }
-
-        fn decode(value: usize) -> Self {
-            match value {
-                0 => ErrorKind::User,
-                1 => ErrorKind::Internal,
-                2 => ErrorKind::Network,
-                _ => panic!("invalid value"),
-            }
-        }
-    }
-
-    impl LabelValue for ErrorKind {
-        fn visit(&self, v: &mut impl super::LabelVisitor) {
-            match self {
-                ErrorKind::User => v.write_str("user"),
-                ErrorKind::Internal => v.write_str("internal"),
-                ErrorKind::Network => v.write_str("network"),
             }
         }
     }

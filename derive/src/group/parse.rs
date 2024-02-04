@@ -1,6 +1,8 @@
 use syn::{spanned::Spanned, Data, DeriveInput, Field, Fields};
 
-use super::attr::{ContainerAttrs, Krate, LabelGroupFieldAttrs};
+use crate::Krate;
+
+use super::attr::{ContainerAttrs, LabelGroupFieldAttrs};
 use super::{LabelGroup, LabelGroupField};
 
 impl TryFrom<Field> for LabelGroupField {

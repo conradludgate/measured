@@ -234,10 +234,7 @@ impl Suffix for Bucket {
 mod tests {
     use bytes::BytesMut;
 
-    use crate::{
-        label::{FixedCardinalityLabel, LabelValue},
-        CounterVec, Histogram, Thresholds,
-    };
+    use crate::{CounterVec, Histogram, Thresholds};
 
     use super::{write_str, MetricName, TextEncoder, Total};
 
@@ -262,16 +259,18 @@ This is on a new line"#,
         code: StatusCode,
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug)]
+    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
+    #[label(crate = crate, rename_all = "snake_case")]
     enum Method {
         Post,
         Get,
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug)]
+    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
+    #[label(crate = crate, rename_all = "snake_case")]
     enum StatusCode {
-        Ok,
-        BadRequest,
+        Ok = 200,
+        BadRequest = 400,
     }
 
     #[test]
@@ -339,65 +338,5 @@ http_request_duration_seconds_sum 12.4
 http_request_duration_seconds_count 4
 "#
         );
-    }
-
-    // TODO: macro
-
-    impl FixedCardinalityLabel for Method {
-        fn cardinality() -> usize {
-            2
-        }
-
-        fn encode(&self) -> usize {
-            match self {
-                Method::Post => 0,
-                Method::Get => 1,
-            }
-        }
-
-        fn decode(value: usize) -> Self {
-            match value {
-                0 => Method::Post,
-                1 => Method::Get,
-                _ => unreachable!(),
-            }
-        }
-    }
-    impl LabelValue for Method {
-        fn visit(&self, v: &mut impl crate::label::LabelVisitor) {
-            match self {
-                Method::Post => v.write_str("post"),
-                Method::Get => v.write_str("get"),
-            }
-        }
-    }
-
-    impl FixedCardinalityLabel for StatusCode {
-        fn cardinality() -> usize {
-            2
-        }
-
-        fn encode(&self) -> usize {
-            match self {
-                StatusCode::Ok => 0,
-                StatusCode::BadRequest => 1,
-            }
-        }
-
-        fn decode(value: usize) -> Self {
-            match value {
-                0 => StatusCode::Ok,
-                1 => StatusCode::BadRequest,
-                _ => unreachable!(),
-            }
-        }
-    }
-    impl LabelValue for StatusCode {
-        fn visit(&self, v: &mut impl crate::label::LabelVisitor) {
-            match self {
-                StatusCode::Ok => v.write_int(200),
-                StatusCode::BadRequest => v.write_int(400),
-            }
-        }
     }
 }

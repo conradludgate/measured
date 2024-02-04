@@ -1,10 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 
-use crate::group::LabelGroupField;
-
 use super::attr::{LabelGroupFieldAttrs, LabelGroupFieldAttrsSortKey};
-use super::LabelGroup;
+use super::{LabelGroup, LabelGroupField};
 
 impl ToTokens for LabelGroup {
     fn to_tokens(&self, tokens: &mut TokenStream) {
