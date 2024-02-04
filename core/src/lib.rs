@@ -273,14 +273,14 @@ impl<M: MetricType, L: label::LabelGroupSet> MetricVec<M, L> {
             }
             VecInner::Sparse(metrics) => {
                 if let Some(m) = metrics.read().unwrap().get(&index) {
-                    f(MetricRef(m, &self.metadata))
-                } else {
-                    let _ = metrics.write().unwrap().entry(index).or_default();
-
-                    let read = metrics.read().unwrap();
-                    let m = read.get(&index).unwrap();
-                    f(MetricRef(m, &self.metadata))
+                    return f(MetricRef(m, &self.metadata));
                 }
+
+                let _ = metrics.write().unwrap().entry(index).or_default();
+
+                let read = metrics.read().unwrap();
+                let m = read.get(&index).unwrap();
+                f(MetricRef(m, &self.metadata))
             }
         }
     }
