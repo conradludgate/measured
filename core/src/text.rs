@@ -1,12 +1,19 @@
+//! Prometheus Text based exporter
+
 use bytes::{Bytes, BytesMut};
 use memchr::memchr3_iter;
 
-use crate::label::{LabelGroup, LabelVisitor};
+use crate::{
+    label::{LabelGroup, LabelVisitor},
+    CounterState, HistogramState, MetricEncoder, Thresholds,
+};
 
+/// The prometheus text encoder helper
 pub struct TextEncoder {
     b: BytesMut,
 }
 
+/// Prometheus only supports these 5 types of metrics
 pub enum MetricType {
     Counter,
     Histogram,
@@ -21,10 +28,12 @@ pub enum MetricValue {
 }
 
 impl TextEncoder {
+    /// Finish the text encoding and extract the bytes to send in a HTTP response.
     pub fn finish(&mut self) -> Bytes {
         self.b.split().freeze()
     }
 
+    /// Write the help line for a metric
     pub fn write_help(&mut self, name: &impl MetricName, help: &str) {
         self.b.extend_from_slice(b"# HELP ");
         name.encode_text(&mut self.b);
@@ -33,6 +42,7 @@ impl TextEncoder {
         self.b.extend_from_slice(b"\n");
     }
 
+    /// Write the type line for a metric
     pub fn write_type(&mut self, name: &impl MetricName, typ: MetricType) {
         self.b.extend_from_slice(b"# TYPE ");
         name.encode_text(&mut self.b);
@@ -45,6 +55,7 @@ impl TextEncoder {
         }
     }
 
+    /// Write the metric data
     pub fn write_metric<L: LabelGroup>(
         &mut self,
         name: &impl MetricName,
@@ -110,6 +121,74 @@ impl TextEncoder {
                 .extend_from_slice(ryu::Buffer::new().format(x).as_bytes()),
         }
         self.b.extend_from_slice(b"\n");
+    }
+}
+
+impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
+    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
+        enc.write_type(&name, MetricType::Histogram);
+    }
+    fn collect_into(
+        &self,
+        metadata: &Thresholds<N>,
+        labels: impl LabelGroup,
+        name: impl MetricName,
+        enc: &mut TextEncoder,
+    ) {
+        struct HistogramLabelLe {
+            le: f64,
+        }
+
+        impl LabelGroup for HistogramLabelLe {
+            fn label_names() -> impl IntoIterator<Item = &'static str> {
+                std::iter::once("le")
+            }
+
+            fn label_values(&self, v: &mut impl LabelVisitor) {
+                v.write_float(self.le)
+            }
+        }
+
+        for i in 0..N {
+            let le = metadata.le[i];
+            let val = &self.buckets[i];
+            enc.write_metric(
+                &name.by_ref().with_suffix(Bucket),
+                labels.by_ref().compose_with(HistogramLabelLe { le }),
+                MetricValue::Int(val.load(std::sync::atomic::Ordering::Relaxed) as i64),
+            );
+        }
+        enc.write_metric(
+            &name.by_ref().with_suffix(Sum),
+            labels.by_ref(),
+            MetricValue::Float(f64::from_bits(
+                self.sum.load(std::sync::atomic::Ordering::Relaxed),
+            )),
+        );
+        enc.write_metric(
+            &name.by_ref().with_suffix(Count),
+            labels,
+            MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
+        );
+    }
+}
+
+impl MetricEncoder<TextEncoder> for CounterState {
+    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
+        enc.write_type(&name, MetricType::Counter);
+    }
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        name: impl MetricName,
+        enc: &mut TextEncoder,
+    ) {
+        enc.write_metric(
+            &name,
+            labels,
+            MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
+        );
     }
 }
 

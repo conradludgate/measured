@@ -73,18 +73,20 @@ use std::{
     sync::{atomic::AtomicU64, RwLock},
 };
 
-use label::{LabelGroup, LabelGroupSet, LabelVisitor, NoLabels};
+use label::{LabelGroup, LabelGroupSet, NoLabels};
 use rustc_hash::FxHasher;
-use text::{Bucket, Count, MetricName, Sum, TextEncoder};
+use text::MetricName;
 
 type FxHashMap<K, V> = hashbrown::HashMap<K, V, BuildFxHasher>;
 
 pub mod label;
 pub mod text;
 
+pub use measured_derive::{FixedCardinalityLabel, LabelGroup};
+
 #[derive(Default)]
 pub struct CounterState {
-    count: AtomicU64,
+    pub count: AtomicU64,
 }
 
 pub type CounterRef<'a> = MetricRef<'a, CounterState>;
@@ -118,9 +120,9 @@ pub trait MetricEncoder<T>: MetricType {
 }
 
 pub struct HistogramState<const N: usize> {
-    buckets: [AtomicU64; N],
-    count: AtomicU64,
-    sum: AtomicU64,
+    pub buckets: [AtomicU64; N],
+    pub count: AtomicU64,
+    pub sum: AtomicU64,
 }
 
 pub type HistogramRef<'a, const N: usize> = MetricRef<'a, HistogramState<N>>;
@@ -168,6 +170,10 @@ impl<const N: usize> Thresholds<N> {
         buckets[N - 1] = f64::INFINITY;
 
         Thresholds { le: buckets }
+    }
+
+    pub fn get(&self) -> &[f64; N] {
+        &self.le
     }
 }
 
@@ -290,7 +296,8 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 pub type Counter = Metric<CounterState>;
 pub type CounterVec<L> = MetricVec<CounterState, L>;
-impl<L: label::LabelGroupSet> MetricVec<CounterState, L> {
+
+impl<L: label::LabelGroupSet> CounterVec<L> {
     pub fn new_counter_vec(label_set: L) -> Self {
         Self::new_metric_vec(label_set, ())
     }
@@ -318,78 +325,6 @@ impl<L: label::LabelGroupSet> MetricVec<CounterState, L> {
 pub struct MetricRef<'a, M: MetricType>(&'a M, &'a M::Metadata);
 
 pub struct LabelId<L: LabelGroupSet>(L::Unique);
-
-// pub trait Collect<Encoder> {
-
-// }
-
-struct HistogramLabelLe {
-    le: f64,
-}
-
-impl LabelGroup for HistogramLabelLe {
-    fn label_names() -> impl IntoIterator<Item = &'static str> {
-        std::iter::once("le")
-    }
-
-    fn label_values(&self, v: &mut impl LabelVisitor) {
-        v.write_float(self.le)
-    }
-}
-
-impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
-    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
-        enc.write_type(&name, text::MetricType::Histogram);
-    }
-    fn collect_into(
-        &self,
-        metadata: &Thresholds<N>,
-        labels: impl LabelGroup,
-        name: impl MetricName,
-        enc: &mut TextEncoder,
-    ) {
-        for i in 0..N {
-            let le = metadata.le[i];
-            let val = &self.buckets[i];
-            enc.write_metric(
-                &name.by_ref().with_suffix(Bucket),
-                labels.by_ref().compose_with(HistogramLabelLe { le }),
-                text::MetricValue::Int(val.load(std::sync::atomic::Ordering::Relaxed) as i64),
-            );
-        }
-        enc.write_metric(
-            &name.by_ref().with_suffix(Sum),
-            labels.by_ref(),
-            text::MetricValue::Float(f64::from_bits(
-                self.sum.load(std::sync::atomic::Ordering::Relaxed),
-            )),
-        );
-        enc.write_metric(
-            &name.by_ref().with_suffix(Count),
-            labels,
-            text::MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
-        );
-    }
-}
-
-impl MetricEncoder<TextEncoder> for CounterState {
-    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
-        enc.write_type(&name, text::MetricType::Counter);
-    }
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        name: impl MetricName,
-        enc: &mut TextEncoder,
-    ) {
-        enc.write_metric(
-            &name,
-            labels,
-            text::MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
-        );
-    }
-}
 
 impl<M: MetricType> Metric<M> {
     pub fn collect_into<T>(&self, name: impl MetricName, enc: &mut T)

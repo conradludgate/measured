@@ -1,23 +1,31 @@
+//! Traits and types used for representing groups of label-pairs
+
 use std::hash::Hash;
 
 mod impls;
 pub use impls::ComposedGroup;
 
+/// A trait for visiting the value of a label
 pub trait LabelVisitor {
     fn write_int(&mut self, x: u64);
     fn write_float(&mut self, x: f64);
     fn write_str(&mut self, x: &str);
 }
 
+/// `LabelGroup` represents a group of label-pairs
 pub trait LabelGroup {
     /// Get all the label names in order
     fn label_names() -> impl IntoIterator<Item = &'static str>;
 
+    /// Writes all the label values into the visitor in the same order as the names
     fn label_values(&self, v: &mut impl LabelVisitor);
 
+    /// Borrow this label group
     fn by_ref(&self) -> &Self {
         self
     }
+
+    /// Combine this group with another
     fn compose_with<T: LabelGroup>(self, other: T) -> ComposedGroup<Self, T>
     where
         Self: Sized,
@@ -26,6 +34,7 @@ pub trait LabelGroup {
     }
 }
 
+/// A [`LabelGroup`] with no label pairs
 pub struct NoLabels;
 
 impl LabelGroup for NoLabels {
@@ -36,30 +45,40 @@ impl LabelGroup for NoLabels {
     fn label_values(&self, _v: &mut impl LabelVisitor) {}
 }
 
+/// `LabelGroupSet` is a helper for [`LabelGroup`]s.
+///
+/// The `LabelGroup` pairs might need some extra data in order to encode/decode the values into their
+/// compressed integer form.
 pub trait LabelGroupSet {
     type Group<'a>: LabelGroup
     where
         Self: 'a;
 
-    /// The number of possible labels
+    /// The number of possible label-pairs the associated group can represent
     fn cardinality(&self) -> Option<usize>;
 
-    /// If the label set is fixed in cardinality, it must return a value here in the range of
-    /// 0..cardinality
+    /// If the label set is fixed in cardinality, it must return a value here in the range of `0..cardinality`
     fn encode_dense(&self, _value: Self::Unique) -> Option<usize>;
+    /// If the label set is fixed in cardinality, a value in the range of `0..cardinality` should decode without panicking.
     fn decode_dense(&self, value: usize) -> Self::Group<'_>;
 
     /// A type that can uniquely represent all possible labels
     type Unique: Copy + Hash + Eq;
 
+    /// Encode the label groups into the unique compressed representation
     fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique>;
+    /// Decodes the compressed representation into the label values
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_>;
 }
 
+/// A type that contains a label value
 pub trait LabelValue {
     fn visit(&self, v: &mut impl LabelVisitor);
 }
 
+/// `FixedCardinalityLabel` represents a label value with a value<-> integer encoding known at compile time.
+///
+/// This is usually implemented by enums with the [`FixedCardinalityLabel`](crate::FixedCardinalityLabel) derive macro
 pub trait FixedCardinalityLabel: LabelValue {
     /// The number of possible label values
     fn cardinality() -> usize;
@@ -68,6 +87,20 @@ pub trait FixedCardinalityLabel: LabelValue {
     fn decode(value: usize) -> Self;
 }
 
+/// `FixedCardinalityDynamicLabel` is a helper trait to represent a dynamic label with a fixed size.
+///
+/// An example of a dynamic label that has a fixed capacity is an API path with parameters removed
+/// * `/api/v1/users`
+/// * `/api/v1/users/:id`
+/// * `/api/v1/products`
+/// * `/api/v1/products/:id`
+/// * `/api/v1/products/:id/owner`
+/// * `/api/v1/products/:id/purchase`
+///
+/// These values can be awkward to set up as an enum for a compile time metric, but might be easier to build
+/// as a runtime quantity.
+///
+/// Additionally, sometimes the set of label values can only be known based on some startup configuration, but never changes.
 pub trait FixedCardinalityDynamicLabel {
     type Value<'a>: LabelValue
     where
@@ -75,10 +108,23 @@ pub trait FixedCardinalityDynamicLabel {
 
     /// The number of possible label values
     fn cardinality(&self) -> usize;
+
+    /// Find the integer that represents this value, if any
     fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize>;
+
+    /// Extract the value uniquely represented by this integer
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 
+/// `DynamicLabel` is a helper trait to represent a dynamic label with an unknown collection of values.
+///
+/// This is not recommended to be used, but provided for completeness sake.
+/// [Prometheus recommends against high-cardinality metrics](https://grafana.com/blog/2022/02/15/what-are-cardinality-spikes-and-why-do-they-matter/)
+/// but there might be cases where you still want to use this
+///
+/// 1. Compatibility with your existing setup
+/// 2. Not exporting to prometheus
+/// 3. You know there wont be many labels but you just don't know what they are
 pub trait DynamicLabel {
     type Value<'a>: LabelValue
     where

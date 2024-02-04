@@ -68,6 +68,7 @@ impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::Threa
     }
 }
 
+/// `ComposedGroup` represents either a combine [`LabelGroup`] or a [`LabelGroupSet`]. See [`LabelGroup::compose_with`]
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct ComposedGroup<A, B>(pub A, pub B);
 
@@ -94,6 +95,7 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
 
         Some(index)
     }
+
     fn decode_dense(&self, value: usize) -> Self::Group<'_> {
         let index = value;
         let (index, index1) = (
