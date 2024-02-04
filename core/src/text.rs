@@ -5,7 +5,12 @@ use memchr::memchr3_iter;
 
 use crate::{
     label::{LabelGroup, LabelVisitor},
-    CounterState, HistogramState, MetricEncoder, Thresholds,
+    metric::{
+        histogram::Thresholds,
+        name::{Bucket, Count, MetricName, Sum},
+        MetricEncoder,
+    },
+    CounterState, HistogramState,
 };
 
 /// The prometheus text encoder helper
@@ -150,7 +155,7 @@ impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
         }
 
         for i in 0..N {
-            let le = metadata.le[i];
+            let le = metadata.get()[i];
             let val = &self.buckets[i];
             enc.write_metric(
                 &name.by_ref().with_suffix(Bucket),
@@ -192,35 +197,7 @@ impl MetricEncoder<TextEncoder> for CounterState {
     }
 }
 
-pub trait MetricName {
-    fn encode_text(&self, b: &mut BytesMut);
-
-    fn in_namespace(self, ns: &'static str) -> WithNamespace<Self>
-    where
-        Self: Sized,
-    {
-        WithNamespace {
-            namespace: ns,
-            metric_name: self,
-        }
-    }
-
-    fn with_suffix<S: Suffix>(self, suffix: S) -> WithSuffix<S, Self>
-    where
-        Self: Sized,
-    {
-        WithSuffix {
-            suffix,
-            metric_name: self,
-        }
-    }
-
-    fn by_ref(&self) -> &Self {
-        self
-    }
-}
-
-fn write_str(s: &str, b: &mut BytesMut) {
+pub(crate) fn write_str(s: &str, b: &mut BytesMut) {
     let mut i = 0;
     for j in memchr3_iter(b'\\', b'"', b'\n', s.as_bytes()) {
         b.extend_from_slice(&s.as_bytes()[i..j]);
@@ -235,87 +212,16 @@ fn write_str(s: &str, b: &mut BytesMut) {
     b.extend_from_slice(&s.as_bytes()[i..]);
 }
 
-pub trait Suffix {
-    fn encode_text(&self, b: &mut BytesMut);
-}
-
-impl MetricName for str {
-    fn encode_text(&self, b: &mut BytesMut) {
-        write_str(self, b);
-    }
-}
-
-impl<T: MetricName + ?Sized> MetricName for &T {
-    fn encode_text(&self, b: &mut BytesMut) {
-        T::encode_text(self, b)
-    }
-}
-
-pub struct WithNamespace<T: ?Sized> {
-    namespace: &'static str,
-    metric_name: T,
-}
-
-impl<T: MetricName + ?Sized> MetricName for WithNamespace<T> {
-    fn encode_text(&self, b: &mut BytesMut) {
-        write_str(self.namespace, b);
-        b.extend_from_slice(b"_");
-        self.metric_name.encode_text(b)
-    }
-}
-
-pub struct WithSuffix<S, T: ?Sized> {
-    suffix: S,
-    metric_name: T,
-}
-
-impl<S: Suffix, T: MetricName + ?Sized> MetricName for WithSuffix<S, T> {
-    fn encode_text(&self, b: &mut BytesMut) {
-        self.metric_name.encode_text(b);
-        self.suffix.encode_text(b);
-    }
-}
-
-pub struct Total;
-pub struct Created;
-pub struct Count;
-pub struct Sum;
-pub struct Bucket;
-
-impl Suffix for Total {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_total");
-    }
-}
-
-impl Suffix for Created {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_created");
-    }
-}
-impl Suffix for Count {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_count");
-    }
-}
-impl Suffix for Sum {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_sum");
-    }
-}
-impl Suffix for Bucket {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_bucket");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bytes::BytesMut;
 
-    use crate::{CounterVec, Histogram, Thresholds};
+    use crate::{
+        metric::{histogram::Thresholds, name::Total},
+        CounterVec, Histogram,
+    };
 
-    use super::{write_str, MetricName, TextEncoder, Total};
+    use super::{write_str, MetricName, TextEncoder};
 
     #[test]
     fn write_encoded_str() {
