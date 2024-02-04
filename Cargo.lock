@@ -334,6 +334,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "prometheus",
+ "rand",
  "rustc-hash",
  "ryu",
 ]
