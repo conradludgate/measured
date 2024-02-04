@@ -13,12 +13,12 @@ repository = "https://github.com/conradludgate/measured"
 # TODO: add features for the dependencies
 indexmap = "2"
 lasso = { version = "0.7", features = ["multi-threaded"] }
-dashmap = "5"
 bytes = "1"
 memchr = "2"
 ryu = "1"
 itoa = "1"
 rustc-hash = "1"
+hashbrown = "0.14"
 
 measured-derive = { path = "../derive", version = "0.0.5" }
 

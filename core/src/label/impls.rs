@@ -68,7 +68,7 @@ impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::Threa
     }
 }
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct ComposedGroup<A, B>(pub A, pub B);
 
 impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {

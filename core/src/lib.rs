@@ -1,12 +1,83 @@
+//! # Measured. A metrics crate.
+//!
+//! This crate was born out of a desire for better ergonomics dealing with prometheus,
+//! with the added extra goal of minimizing small allocations to reduce memory fragmentation.
+//!
+//! ## Prometheus vs Memory Fragmentation
+//!
+//! The [`prometheus`](https://docs.rs/prometheus/0.13.3/prometheus/index.html) crate allows you to very quickly
+//! start recording metrics for your application and expose a text-based scrape endpoint. However, the implementation
+//! can quickly lead to memory fragmentation issues.
+//!
+//! For example, let's look at `IntCounterVec`. It's an alias for `MetricVec<CounterVecBuilder<AtomicU64>>`. `MetricVec` has the following definition:
+//!
+//! ```no_compile
+//! pub struct MetricVec<T: MetricVecBuilder> {
+//!     pub(crate) v: Arc<MetricVecCore<T>>,
+//! }
+//! pub(crate) struct MetricVecCore<T: MetricVecBuilder> {
+//!     pub children: RwLock<HashMap<u64, T::M>>,
+//!     // ...
+//! }
+//! ```
+//!
+//! And for our int counter, `T::M` here is
+//!
+//! ```no_compile
+//! pub struct GenericCounter<P: Atomic> {
+//!     v: Arc<Value<P>>,
+//! }
+//!
+//! pub struct Value<P: Atomic> {
+//!     pub val: P,
+//!     pub label_pairs: Vec<LabelPair>,
+//!     // ...
+//! }
+//!
+//! pub struct LabelPair {
+//!     name: ::protobuf::SingularField<::std::string::String>,
+//!     value: ::protobuf::SingularField<::std::string::String>,
+//!     // ...
+//! }
+//! ```
+//!
+//! So, if we have a counter vec with 3 different labels, and a totel of 24 unique label groups, then we will have
+//!
+//! * 1 allocation for the `MetricVec` `Arc`
+//! * 1 allocation for the `MetricVecCore` `HashMap`
+//! * 24 allocations for the counter value `Arc`
+//! * 24 allocations for the label pairs `Vec`
+//! * 144 allocations for the `String`s in the `LabelPair`
+//!
+//! Totalling **194 small allocations**.
+//!
+//! There's nothing wrong with small allocations necessarily, but since these are long-lived allocations that are not allocated inside of
+//! an arena, it can lead to fragmentation issues where each small alloc can occupy many different allocator pages and prevent them from being freed.
+//!
+//! Compared to this crate, `measured` **only needs 1 allocation** for the `HashMap`.
+//! If you have semi-dynamic string labels (such as REST API path slugs) then that would add 4 allocations for
+//! a [`RodeoReader`](lasso::RodeoReader) or 2 allocations for an [`IndexSet`](indexmap::IndexSet) to track them.
+//!
+//! And while it's bad form to have extremely high-cardinality metrics, this crate can easily handle
+//! 100,000 unique label groups with just a few large allocations.
+//!
+//! ## Comparisons to the `metrics` family of crates
+//!
+//! The [`metrics`](https://docs.rs/metrics/latest/metrics/) facade crate and
+//! [`metrics_exporter_prometheus`](https://docs.rs/metrics-exporter-prometheus/latest/metrics_exporter_prometheus/index.html)
+//! implementation add a lot of complexity to exposing metrics. They also still alloc an `Arc<AtomicU64>` per individual counter
+//! which does not solve the problem of memory fragmentation.
+
 use std::{
-    hash::{BuildHasherDefault, Hash},
-    sync::atomic::AtomicU64,
+    hash::Hash,
+    sync::{atomic::AtomicU64, RwLock},
 };
 
-use dashmap::DashMap;
 use label::{LabelGroup, LabelGroupSet, LabelVisitor, NoLabels};
 use rustc_hash::FxHasher;
 use text::{Bucket, Count, MetricName, Sum, TextEncoder};
+
+type FxHashMap<K, V> = hashbrown::HashMap<K, V, BuildFxHasher>;
 
 pub mod label;
 pub mod text;
@@ -151,7 +222,7 @@ pub struct MetricVec<M: MetricType, L: label::LabelGroupSet> {
 
 enum VecInner<U: Hash + Eq, M: MetricType> {
     Dense(Box<[M]>),
-    Sparse(DashMap<U, M, BuildHasherDefault<FxHasher>>),
+    Sparse(RwLock<FxHashMap<U, M>>),
 }
 
 impl<M: MetricType, L: label::LabelGroupSet> MetricVec<M, L> {
@@ -162,7 +233,7 @@ impl<M: MetricType, L: label::LabelGroupSet> MetricVec<M, L> {
                 vec.resize_with(c, M::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
-            None => VecInner::Sparse(DashMap::with_hasher(BuildHasherDefault::default())),
+            None => VecInner::Sparse(RwLock::new(FxHashMap::with_hasher(BuildFxHasher))),
         };
 
         Self {
@@ -173,9 +244,9 @@ impl<M: MetricType, L: label::LabelGroupSet> MetricVec<M, L> {
     }
 
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
-    pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+    pub const fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(DashMap::with_hasher(BuildHasherDefault::default())),
+            metrics: VecInner::Sparse(RwLock::new(FxHashMap::with_hasher(BuildFxHasher))),
             metadata,
             label_set,
         }
@@ -201,11 +272,15 @@ impl<M: MetricType, L: label::LabelGroupSet> MetricVec<M, L> {
                 f(MetricRef(m, &self.metadata))
             }
             VecInner::Sparse(metrics) => {
-                let m = metrics
-                    .get(&index)
-                    .unwrap_or_else(|| metrics.entry(index).or_default().downgrade());
+                if let Some(m) = metrics.read().unwrap().get(&index) {
+                    f(MetricRef(m, &self.metadata))
+                } else {
+                    let _ = metrics.write().unwrap().entry(index).or_default();
 
-                f(MetricRef(&m, &self.metadata))
+                    let read = metrics.read().unwrap();
+                    let m = read.get(&index).unwrap();
+                    f(MetricRef(m, &self.metadata))
+                }
             }
         }
     }
@@ -344,15 +419,21 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 }
             }
             VecInner::Sparse(m) => {
-                for values in m {
-                    values.value().collect_into(
-                        &self.metadata,
-                        self.label_set.decode(values.key()),
-                        &name,
-                        enc,
-                    )
+                for (key, value) in &*m.read().unwrap() {
+                    value.collect_into(&self.metadata, self.label_set.decode(key), &name, enc)
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BuildFxHasher;
+
+impl std::hash::BuildHasher for BuildFxHasher {
+    type Hasher = FxHasher;
+
+    fn build_hasher(&self) -> FxHasher {
+        FxHasher::default()
     }
 }
