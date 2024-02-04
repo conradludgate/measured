@@ -185,7 +185,7 @@ impl<M: MetricType, L: label::LabelGroupSet> MetricVec<M, L> {
         &self.metadata
     }
 
-    pub fn with_labels<'a>(&'a self, label: L::Group<'a>) -> Option<LabelId<L>> {
+    pub fn with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
         Some(LabelId(self.label_set.encode(label)?))
     }
 
@@ -221,6 +221,22 @@ impl<L: label::LabelGroupSet> MetricVec<CounterState, L> {
     }
     pub fn new_sparse_counter_vec(label_set: L) -> Self {
         Self::new_sparse_metric_vec(label_set, ())
+    }
+
+    pub fn inc(&self, label: L::Group<'_>) {
+        self.get_metric(
+            self.with_labels(label)
+                .expect("label group should be in the set"),
+            |x| x.inc(),
+        )
+    }
+
+    pub fn inc_by(&self, label: L::Group<'_>, y: u64) {
+        self.get_metric(
+            self.with_labels(label)
+                .expect("label group should be in the set"),
+            |x| x.inc_by(y),
+        )
     }
 }
 

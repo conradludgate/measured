@@ -267,7 +267,7 @@ This is on a new line"#,
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
-    #[label(crate = crate, rename_all = "snake_case")]
+    #[label(crate = crate)]
     enum StatusCode {
         Ok = 200,
         BadRequest = 400,
@@ -275,24 +275,25 @@ This is on a new line"#,
 
     #[test]
     fn text_encoding() {
-        let counters = CounterVec::new_sparse_counter_vec(RequestLabelSet {});
+        let requests = CounterVec::new_sparse_counter_vec(RequestLabelSet {});
 
-        let post_ok = RequestLabels {
+        let labels = RequestLabels {
             method: Method::Post,
             code: StatusCode::Ok,
         };
-        counters.get_metric(counters.with_labels(post_ok).unwrap(), |c| c.inc_by(1027));
-        let get_bad = RequestLabels {
+        requests.inc_by(labels, 1027);
+
+        let labels = RequestLabels {
             method: Method::Get,
             code: StatusCode::BadRequest,
         };
-        counters.get_metric(counters.with_labels(get_bad).unwrap(), |c| c.inc_by(3));
+        requests.inc_by(labels, 3);
 
         let mut encoder = TextEncoder { b: BytesMut::new() };
 
         let name = "http_request".with_suffix(Total);
         encoder.write_help(&name, "The total number of HTTP requests.");
-        counters.collect_into(name, &mut encoder);
+        requests.collect_into(name, &mut encoder);
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
