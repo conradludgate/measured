@@ -112,7 +112,7 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
 
     type Unique = ComposedGroup<A::Unique, B::Unique>;
 
-    fn encode<'a>(&'a self, value: Self::Group<'a>) -> Option<Self::Unique> {
+    fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
         Some(ComposedGroup(
             self.0.encode(value.0)?,
             self.1.encode(value.1)?,

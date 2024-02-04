@@ -235,7 +235,7 @@ mod tests {
     use bytes::BytesMut;
 
     use crate::{
-        label::{FixedCardinalityLabel, LabelGroup, LabelGroupSet, LabelValue},
+        label::{FixedCardinalityLabel, LabelValue},
         CounterVec, Histogram, Thresholds,
     };
 
@@ -253,10 +253,12 @@ This is on a new line"#,
         assert_eq!(&b, &br#"Hello \\ \"World\"\nThis is on a new line"#[..]);
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug)]
-    // #[derive(LabelGroup)] #[label_set(RequestLabelSet)]
+    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
+    #[label(crate = crate, set = RequestLabelSet)]
     struct RequestLabels {
+        #[label(fixed)]
         method: Method,
+        #[label(fixed)]
         code: StatusCode,
     }
 
@@ -274,7 +276,7 @@ This is on a new line"#,
 
     #[test]
     fn text_encoding() {
-        let counters = CounterVec::new_sparse_counter_vec(RequestLabelSet);
+        let counters = CounterVec::new_sparse_counter_vec(RequestLabelSet {});
 
         let post_ok = RequestLabels {
             method: Method::Post,
@@ -340,63 +342,6 @@ http_request_duration_seconds_count 4
     }
 
     // TODO: macro
-    struct RequestLabelSet;
-    impl LabelGroupSet for RequestLabelSet {
-        type Group<'a> = RequestLabels;
-
-        fn cardinality(&self) -> Option<usize> {
-            Some(1usize)
-                .and_then(|x| x.checked_mul(Method::cardinality()))
-                .and_then(|x| x.checked_mul(StatusCode::cardinality()))
-        }
-
-        type Unique = usize;
-
-        #[allow(unused_assignments)]
-        fn encode<'a>(&'a self, value: Self::Group<'a>) -> Option<Self::Unique> {
-            let mut mul = 1;
-            let mut index = 0;
-
-            index += value.method.encode() * mul;
-            mul *= Method::cardinality();
-
-            index += value.code.encode() * mul;
-            mul *= StatusCode::cardinality();
-
-            Some(index)
-        }
-
-        fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
-            let index = value;
-            let (index, index1) = (index / Method::cardinality(), index % Method::cardinality());
-            let method = Method::decode(index1);
-            let (index, index1) = (
-                index / StatusCode::cardinality(),
-                index % StatusCode::cardinality(),
-            );
-            let code = StatusCode::decode(index1);
-            debug_assert_eq!(index, 0);
-            Self::Group { method, code }
-        }
-
-        fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
-            Some(value)
-        }
-        fn decode_dense(&self, value: usize) -> Self::Group<'_> {
-            self.decode(&value)
-        }
-    }
-
-    impl LabelGroup for RequestLabels {
-        fn label_names() -> impl IntoIterator<Item = &'static str> {
-            ["method", "code"]
-        }
-
-        fn label_values(&self, v: &mut impl super::LabelVisitor) {
-            self.method.visit(v);
-            self.code.visit(v);
-        }
-    }
 
     impl FixedCardinalityLabel for Method {
         fn cardinality() -> usize {

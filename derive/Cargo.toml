@@ -1,6 +1,6 @@
 [package]
 name = "measured-derive"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -12,5 +12,5 @@ proc-macro = true
 
 [dependencies]
 quote = "1.0"
-syn = "2.0"
+syn = { version = "2.0", features = ["full", "extra-traits"] }
 proc-macro2 = "1.0"

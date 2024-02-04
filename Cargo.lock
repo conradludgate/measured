@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "measured"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "bytes",
  "dashmap",
@@ -151,6 +151,7 @@ dependencies = [
  "indexmap",
  "itoa",
  "lasso",
+ "measured-derive",
  "memchr",
  "rustc-hash",
  "ryu",
@@ -158,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "measured-derive"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "proc-macro2",
  "quote",
