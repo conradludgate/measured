@@ -12,17 +12,22 @@ pub mod name;
 type BuildFxHasher = std::hash::BuildHasherDefault<FxHasher>;
 type FxDashMap<K, V> = dashmap::DashMap<K, V, BuildFxHasher>;
 
+/// Defines a metric
 pub trait MetricType: Default {
+    /// Some metrics require additional metadata
     type Metadata: Sized;
 }
 
+/// A shared ref to an individual metric value
 pub struct MetricRef<'a, M: MetricType>(&'a M, &'a M::Metadata);
 
+/// A single metric value.
 pub struct Metric<M: MetricType> {
     metric: M,
     metadata: M::Metadata,
 }
 
+/// Multiple metric values, keyed by [`LabelGroup`]
 pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
     metrics: VecInner<L::Unique, M>,
     metadata: M::Metadata,
@@ -35,6 +40,7 @@ enum VecInner<U: Hash + Eq, M: MetricType> {
 }
 
 impl<M: MetricType> Metric<M> {
+    /// Create a new metric with the given metadata
     pub fn new_metric(metadata: M::Metadata) -> Self {
         Self {
             metric: M::default(),
@@ -42,12 +48,14 @@ impl<M: MetricType> Metric<M> {
         }
     }
 
+    /// Get a ref to the metric
     pub fn get_metric(&self) -> MetricRef<'_, M> {
         MetricRef(&self.metric, &self.metadata)
     }
 }
 
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
+    /// Create a new metric vec with the given label set and metric metadata
     pub fn new_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         let metrics = match label_set.cardinality() {
             Some(c) => {
@@ -76,10 +84,12 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         }
     }
 
+    /// View the metric metadata
     pub fn metadata(&self) -> &M::Metadata {
         &self.metadata
     }
 
+    /// Get an identifier for the specific metric identified by this label group
     pub fn with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
         Some(LabelId(self.label_set.encode(label)?))
     }
@@ -125,8 +135,11 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 }
 
-pub trait MetricEncoder<T>: MetricType {
+/// Defines the encoding of a metric
+pub trait MetricEncoding<T>: MetricType {
+    /// Write the type information for this metric into the encoder
     fn write_type(name: impl MetricName, enc: &mut T);
+    /// Sample this metric into the encoder
     fn collect_into(
         &self,
         metadata: &Self::Metadata,
@@ -137,9 +150,10 @@ pub trait MetricEncoder<T>: MetricType {
 }
 
 impl<M: MetricType> Metric<M> {
+    /// Collect this metric value into the given encoder with the given metric name
     pub fn collect_into<T>(&self, name: impl MetricName, enc: &mut T)
     where
-        M: MetricEncoder<T>,
+        M: MetricEncoding<T>,
     {
         M::write_type(&name, enc);
         self.metric
@@ -148,9 +162,10 @@ impl<M: MetricType> Metric<M> {
 }
 
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
+    /// Collect these metric values into the given encoder with the given metric name
     pub fn collect_into<T>(&self, name: impl MetricName, enc: &mut T)
     where
-        M: MetricEncoder<T>,
+        M: MetricEncoding<T>,
     {
         M::write_type(&name, enc);
         match &self.metrics {

@@ -4,9 +4,11 @@ use std::{
 };
 
 use super::{
-    DynamicLabel, FixedCardinalityDynamicLabel, LabelGroup, LabelGroupSet, LabelValue, LabelVisitor,
+    DynamicLabel, FixedCardinalityDynamicLabel, LabelGroup, LabelGroupSet, LabelName, LabelValue,
+    LabelVisitor,
 };
 
+#[cfg(feature = "indexmap")]
 impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalityDynamicLabel
     for indexmap::IndexSet<T, S>
 {
@@ -43,6 +45,7 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
     }
 }
 
+#[cfg(feature = "lasso")]
 impl<K: lasso::Key, S: BuildHasher> FixedCardinalityDynamicLabel for lasso::RodeoReader<K, S> {
     type Value<'a> = &'a str where Self: 'a;
 
@@ -59,6 +62,7 @@ impl<K: lasso::Key, S: BuildHasher> FixedCardinalityDynamicLabel for lasso::Rode
     }
 }
 
+#[cfg(feature = "lasso")]
 impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::ThreadedRodeo<K, S> {
     type Value<'a> = &'a str where Self: 'a;
 
@@ -130,7 +134,7 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
 }
 
 impl<A: LabelGroup, B: LabelGroup> LabelGroup for ComposedGroup<A, B> {
-    fn label_names() -> impl IntoIterator<Item = &'static str> {
+    fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
         A::label_names().into_iter().chain(B::label_names())
     }
 
@@ -141,7 +145,7 @@ impl<A: LabelGroup, B: LabelGroup> LabelGroup for ComposedGroup<A, B> {
 }
 
 impl<T: LabelGroup> LabelGroup for &T {
-    fn label_names() -> impl IntoIterator<Item = &'static str> {
+    fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
         T::label_names()
     }
 

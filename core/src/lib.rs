@@ -9,16 +9,18 @@
 //!
 //! ```
 //! use measured::Counter;
+//! use measured::metric::name::CheckedMetricName;
 //! use measured::text::TextEncoder;
 //!
 //! // create a counter
 //! let counter = Counter::new();
-//! // incremenet the counter value
+//! // increment the counter value
 //! counter.get_metric().inc();
 //!
 //! // sample the counter and encode the value to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! counter.collect_into("my_first_counter", &mut text_encoder);
+//! let name = CheckedMetricName::from_static("my_first_counter");
+//! counter.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
 //!
@@ -30,9 +32,9 @@
 //! Multiple label pairs are collected into a [`LabelGroup`](label::LabelGroup).
 //!
 //! ```
-//! use measured::CounterVec;
+//! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+//! use measured::metric::name::CheckedMetricName;
 //! use measured::text::TextEncoder;
-//! use measured::{LabelGroup, FixedCardinalityLabel};
 //!
 //! // Define a fixed cardinality label
 //!
@@ -54,14 +56,15 @@
 //! }
 //!
 //! // create a counter vec
-//! let counter = CounterVec::new(MyLabelGroupSet {});
+//! let counters = CounterVec::new(MyLabelGroupSet {});
 //! // increment the counter at a given label
-//! counter.inc(MyLabelGroup { operation: Operation::Create });
-//! counter.inc(MyLabelGroup { operation: Operation::Delete });
+//! counters.inc(MyLabelGroup { operation: Operation::Create });
+//! counters.inc(MyLabelGroup { operation: Operation::Delete });
 //!
 //! // sample the counters and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! counter.collect_into("my_first_counter", &mut text_encoder);
+//! let name = CheckedMetricName::from_static("my_first_counter");
+//! counters.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
 //!
@@ -76,9 +79,9 @@
 //! I recommend the latter for string-based labels that are not `&'static` as it will offer the most efficient use of memory.
 //!
 //! ```
-//! use measured::CounterVec;
+//! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+//! use measured::metric::name::CheckedMetricName;
 //! use measured::text::TextEncoder;
-//! use measured::{LabelGroup, FixedCardinalityLabel};
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!
@@ -99,14 +102,15 @@
 //! };
 //!
 //! // create a counter vec
-//! let counter = CounterVec::new(set);
+//! let counters = CounterVec::new(set);
 //! // increment the counter at a given label
-//! counter.inc(MyLabelGroup { path: "/api/v1/products" });
-//! counter.inc(MyLabelGroup { path: "/api/v1/users" });
+//! counters.inc(MyLabelGroup { path: "/api/v1/products" });
+//! counters.inc(MyLabelGroup { path: "/api/v1/users" });
 //!
 //! // sample the counters and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! counter.collect_into("my_first_counter", &mut text_encoder);
+//! let name = CheckedMetricName::from_static("my_first_counter");
+//! counters.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
 //!
@@ -116,9 +120,9 @@
 //! It's not advised to use this for high cardinality labels, but if you must, this still offers good performance.
 //!
 //! ```
-//! use measured::CounterVec;
+//! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+//! use measured::metric::name::CheckedMetricName;
 //! use measured::text::TextEncoder;
-//! use measured::{LabelGroup, FixedCardinalityLabel};
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!
@@ -135,14 +139,15 @@
 //! };
 //!
 //! // create a counter vec
-//! let counter = CounterVec::new(set);
+//! let counters = CounterVec::new(set);
 //! // increment the counter at a given label
-//! counter.inc(MyLabelGroup { path: "/api/v1/products" });
-//! counter.inc(MyLabelGroup { path: "/api/v1/users" });
+//! counters.inc(MyLabelGroup { path: "/api/v1/products" });
+//! counters.inc(MyLabelGroup { path: "/api/v1/users" });
 //!
 //! // sample the counters and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! counter.collect_into("my_first_counter", &mut text_encoder);
+//! let name = CheckedMetricName::from_static("my_first_counter");
+//! counters.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
 //!
@@ -219,7 +224,128 @@ pub mod text;
 
 pub use measured_derive::{FixedCardinalityLabel, LabelGroup};
 
+/// A [`Metric`] that counts individual observations from an event or sample stream in configurable buckets.
+/// Similar to a Summary, it also provides a sum of observations and an observation count.
+///
+/// ```
+/// use measured::Histogram;
+/// use measured::metric::histogram::Thresholds;
+/// use measured::metric::name::CheckedMetricName;
+/// use measured::text::TextEncoder;
+///
+/// // create a histogram with 8 buckets starting at 0.01, increasing by 2x each time up to 2.56
+/// let histogram = Histogram::new_metric(Thresholds::<8>::exponential_buckets(0.01, 2.0));
+/// // observe a value
+/// histogram.get_metric().observe(1.0);
+///
+/// // sample the histogram and encode the value to a textual format.
+/// let mut text_encoder = TextEncoder::new();
+/// let name = CheckedMetricName::from_static("my_first_histogram");
+/// histogram.collect_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
 pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
+
+/// A collection of multiple [`Histogram`]s, keyed by [`LabelGroup`](label::LabelGroup)s
+///
+/// ```
+/// use measured::{HistogramVec, LabelGroup, FixedCardinalityLabel};
+/// use measured::metric::histogram::Thresholds;
+/// use measured::metric::name::CheckedMetricName;
+/// use measured::text::TextEncoder;
+///
+/// // Define a fixed cardinality label
+///
+/// #[derive(FixedCardinalityLabel)]
+/// #[label(rename_all = "snake_case")]
+/// enum Operation {
+///     Create,
+///     Update,
+///     Delete,
+/// }
+///
+/// // Define a label group, consisting of 1 or more label values
+///
+/// #[derive(LabelGroup)]
+/// #[label(set = MyLabelGroupSet)]
+/// struct MyLabelGroup {
+///     #[label(fixed)]
+///     operation: Operation,
+/// }
+///
+/// // create a histogram vec
+/// let histograms = HistogramVec::new_metric_vec(
+///     MyLabelGroupSet {},
+///     Thresholds::<8>::exponential_buckets(0.01, 2.0),
+/// );
+/// // observe a value
+/// histograms.observe(MyLabelGroup { operation: Operation::Create }, 0.5);
+/// histograms.observe(MyLabelGroup { operation: Operation::Delete }, 2.0);
+///
+/// // sample the histograms and encode the values to a textual format.
+/// let mut text_encoder = TextEncoder::new();
+/// let name = CheckedMetricName::from_static("my_first_histogram");
+/// histograms.collect_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
 pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
+
+/// A [`Metric]` that represents a single numerical value that only ever goes up.
+///
+/// ```
+/// use measured::Counter;
+/// use measured::metric::name::CheckedMetricName;
+/// use measured::text::TextEncoder;
+///
+/// // create a counter
+/// let counter = Counter::new();
+/// // increment the counter value
+/// counter.get_metric().inc();
+///
+/// // sample the counter and encode the value to a textual format.
+/// let mut text_encoder = TextEncoder::new();
+/// let name = CheckedMetricName::from_static("my_first_counter");
+/// counter.collect_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
 pub type Counter = Metric<CounterState>;
+
+/// A collection of multiple [`Counter`]s, keyed by [`LabelGroup`](label::LabelGroup)s
+///
+/// ```
+/// use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+/// use measured::metric::name::CheckedMetricName;
+/// use measured::text::TextEncoder;
+///
+/// // Define a fixed cardinality label
+///
+/// #[derive(FixedCardinalityLabel)]
+/// #[label(rename_all = "snake_case")]
+/// enum Operation {
+///     Create,
+///     Update,
+///     Delete,
+/// }
+///
+/// // Define a label group, consisting of 1 or more label values
+///
+/// #[derive(LabelGroup)]
+/// #[label(set = MyLabelGroupSet)]
+/// struct MyLabelGroup {
+///     #[label(fixed)]
+///     operation: Operation,
+/// }
+///
+/// // create a counter vec
+/// let counters = CounterVec::new(MyLabelGroupSet {});
+/// // increment the counter at a given label
+/// counters.inc(MyLabelGroup { operation: Operation::Create });
+/// counters.inc(MyLabelGroup { operation: Operation::Delete });
+///
+/// // sample the counters and encode the values to a textual format.
+/// let mut text_encoder = TextEncoder::new();
+/// let name = CheckedMetricName::from_static("my_first_counter");
+/// counters.collect_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
 pub type CounterVec<L> = MetricVec<CounterState, L>;

@@ -5,7 +5,7 @@ const LOOPS: usize = 2000;
 
 #[test]
 fn measured() {
-    use measured::metric::name::{MetricName, Total};
+    use measured::metric::name::{CheckedMetricName, Total};
 
     let error_set = ErrorsSet {
         route: Rodeo::from_iter(routes()).into_reader(),
@@ -22,7 +22,7 @@ fn measured() {
         }
     }
 
-    let metric = "http_request_errors".with_suffix(Total);
+    let metric = CheckedMetricName::from_static("http_request_errors").with_suffix(Total);
     encoder.write_help(&metric, "help text");
     counter_vec.collect_into(&metric, &mut encoder);
     assert_eq!(

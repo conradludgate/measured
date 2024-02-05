@@ -29,8 +29,8 @@ impl ToTokens for LabelGroup {
         tokens.extend(quote! {
             #[automatically_derived]
             impl #impl_generics #krate::label::LabelGroup for #ident #ty_generics #where_clause {
-                fn label_names() -> impl ::std::iter::IntoIterator<Item = &'static ::std::primitive::str> {
-                    [#(#names),*]
+                fn label_names() -> impl ::std::iter::IntoIterator<Item = &'static #krate::label::LabelName> {
+                    [#(#krate::label::LabelName::from_static(#names)),*]
                 }
 
                 fn label_values(&self, v: &mut impl #krate::label::LabelVisitor) {

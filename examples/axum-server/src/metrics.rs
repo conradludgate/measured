@@ -10,7 +10,7 @@ use measured::{
     label::{self, FixedCardinalityLabel, LabelValue},
     metric::{
         histogram::Thresholds,
-        name::{MetricName, Total},
+        name::{CheckedMetricName, Total},
     },
     text::TextEncoder,
     CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup,
@@ -86,9 +86,18 @@ pub async fn handler(s: State<AppState>) -> Response {
 
     let mut encoder = encoder.lock().await;
 
-    http_requests.collect_into("http_requests".with_suffix(Total), &mut encoder);
-    http_responses.collect_into("http_responses".with_suffix(Total), &mut encoder);
-    http_request_duration.collect_into("http_request_duration_seconds", &mut encoder);
+    http_requests.collect_into(
+        CheckedMetricName::from_static("http_requests").with_suffix(Total),
+        &mut encoder,
+    );
+    http_responses.collect_into(
+        CheckedMetricName::from_static("http_response").with_suffix(Total),
+        &mut encoder,
+    );
+    http_request_duration.collect_into(
+        CheckedMetricName::from_static("http_request_duration_seconds"),
+        &mut encoder,
+    );
 
     Response::new(encoder.finish().into())
 }

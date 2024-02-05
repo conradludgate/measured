@@ -4,11 +4,11 @@ use bytes::{BufMut, Bytes, BytesMut};
 use memchr::memchr3_iter;
 
 use crate::{
-    label::{LabelGroup, LabelVisitor},
+    label::{LabelGroup, LabelName, LabelVisitor},
     metric::{
         histogram::Thresholds,
         name::{Bucket, Count, MetricName, Sum},
-        MetricEncoder,
+        MetricEncoding,
     },
     CounterState, HistogramState,
 };
@@ -34,6 +34,7 @@ pub enum MetricType {
     Untyped,
 }
 
+/// Values that prometheus supports in the text format
 pub enum MetricValue {
     Int(i64),
     Float(f64),
@@ -46,6 +47,9 @@ impl Default for TextEncoder {
 }
 
 impl TextEncoder {
+    /// Create a new text encoder.
+    ///
+    /// This should ideally be cached and re-used between collections to reduce re-allocating
     pub fn new() -> Self {
         Self {
             state: State::Info,
@@ -109,7 +113,7 @@ impl TextEncoder {
             iter: I,
             b: &'a mut BytesMut,
         }
-        impl<I: Iterator<Item = &'static str>> LabelVisitor for Visitor<'_, I> {
+        impl<I: Iterator<Item = &'static LabelName>> LabelVisitor for Visitor<'_, I> {
             fn write_int(&mut self, x: u64) {
                 self.write_str(itoa::Buffer::new().format(x))
             }
@@ -136,9 +140,9 @@ impl TextEncoder {
                     self.b.extend_from_slice(b",");
                 }
                 let label_name = self.iter.next().expect("missing label name");
-                write_str(label_name, &mut *self.b);
+                self.b.extend_from_slice(label_name.as_str().as_bytes());
                 self.b.extend_from_slice(b"=\"");
-                write_str(x, &mut *self.b);
+                write_label_str_value(x, &mut *self.b);
                 self.b.extend_from_slice(b"\"");
             }
         }
@@ -165,7 +169,7 @@ impl TextEncoder {
     }
 }
 
-impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
+impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
     fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
         enc.write_type(&name, MetricType::Histogram);
     }
@@ -181,8 +185,8 @@ impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
         }
 
         impl LabelGroup for HistogramLabelLe {
-            fn label_names() -> impl IntoIterator<Item = &'static str> {
-                std::iter::once("le")
+            fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
+                std::iter::once(LabelName::from_static("le"))
             }
 
             fn label_values(&self, v: &mut impl LabelVisitor) {
@@ -222,7 +226,7 @@ impl<const N: usize> MetricEncoder<TextEncoder> for HistogramState<N> {
     }
 }
 
-impl MetricEncoder<TextEncoder> for CounterState {
+impl MetricEncoding<TextEncoder> for CounterState {
     fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
         enc.write_type(&name, MetricType::Counter);
     }
@@ -241,7 +245,7 @@ impl MetricEncoder<TextEncoder> for CounterState {
     }
 }
 
-pub(crate) fn write_str(s: &str, b: &mut BytesMut) {
+pub(crate) fn write_label_str_value(s: &str, b: &mut BytesMut) {
     let mut i = 0;
     for j in memchr3_iter(b'\\', b'"', b'\n', s.as_bytes()) {
         b.extend_from_slice(&s.as_bytes()[i..j]);
@@ -261,16 +265,19 @@ mod tests {
     use bytes::BytesMut;
 
     use crate::{
-        metric::{histogram::Thresholds, name::Total},
+        metric::{
+            histogram::Thresholds,
+            name::{CheckedMetricName, Total},
+        },
         CounterVec, Histogram,
     };
 
-    use super::{write_str, MetricName, TextEncoder};
+    use super::{write_label_str_value, TextEncoder};
 
     #[test]
     fn write_encoded_str() {
         let mut b = BytesMut::new();
-        write_str(
+        write_label_str_value(
             r#"Hello \ "World"
 This is on a new line"#,
             &mut b,
@@ -320,7 +327,7 @@ This is on a new line"#,
 
         let mut encoder = TextEncoder::default();
 
-        let name = "http_request".with_suffix(Total);
+        let name = CheckedMetricName::from_static("http_request").with_suffix(Total);
         encoder.write_help(&name, "The total number of HTTP requests.");
         requests.collect_into(name, &mut encoder);
 
@@ -347,7 +354,7 @@ http_request_total{method="get",code="400"} 3
 
         let mut encoder = TextEncoder::default();
 
-        let name = "http_request_duration_seconds";
+        let name = CheckedMetricName::from_static("http_request_duration_seconds");
         encoder.write_help(&name, "A histogram of the request duration.");
         histogram.collect_into(name, &mut encoder);
 

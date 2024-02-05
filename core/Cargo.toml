@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.6"
+version = "0.0.7"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -9,10 +9,12 @@ repository = "https://github.com/conradludgate/measured"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["lasso"]
+lasso = ["dep:lasso"]
+indexmap = ["dep:indexmap"]
+
 [dependencies]
-# TODO: add features for the dependencies
-indexmap = "2"
-lasso = { version = "0.7", features = ["multi-threaded"] }
 bytes = "1"
 memchr = "2"
 ryu = "1"
@@ -20,7 +22,11 @@ itoa = "1"
 rustc-hash = "1"
 dashmap = "5"
 
-measured-derive = { path = "../derive", version = "0.0.6" }
+measured-derive = { path = "../derive", version = "0.0.7" }
+
+# TODO: add features for the dependencies
+indexmap = { version = "2", optional = true }
+lasso = { version = "0.7", optional = true, features = ["multi-threaded"] }
 
 [dev-dependencies]
 fake = "2.9.2"

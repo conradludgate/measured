@@ -5,6 +5,69 @@ use std::hash::Hash;
 mod impls;
 pub use impls::ComposedGroup;
 
+pub enum InvalidMetricName {
+    InvalidChars,
+    Empty,
+    StartsWithNumber,
+}
+
+#[repr(transparent)]
+pub struct LabelName(str);
+
+impl LabelName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub const fn from_static(value: &'static str) -> &'static Self {
+        // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
+        if value.is_empty() {
+            panic!("string should not be empty")
+        }
+
+        let mut i = 0;
+        while i < value.len() {
+            match value.as_bytes()[i] {
+                b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => {}
+                _ => panic!("string should only contain [a-zA-Z0-9_:]"),
+            }
+            i += 1;
+        }
+
+        if value.as_bytes()[0].is_ascii_digit() {
+            panic!("string should not start with a digit")
+        }
+
+        // SAFETY: `LabelName` is transparent over `str`. There's no way to do this safely.
+        // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
+        unsafe { &*(value as *const str as *const LabelName) }
+    }
+}
+
+// impl<'a> TryFrom<&'a str> for &'a LabelName {
+//     type Error = InvalidMetricName;
+
+//     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+//         // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
+//         if value.is_empty() {
+//             return Err(InvalidMetricName::Empty);
+//         }
+
+//         value.bytes().try_fold((), |(), b| match b {
+//             b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => Ok(()),
+//             _ => Err(InvalidMetricName::InvalidChars),
+//         })?;
+
+//         if value.as_bytes()[0].is_ascii_digit() {
+//             return Err(InvalidMetricName::StartsWithNumber);
+//         }
+
+//         // SAFETY: `LabelName` is transparent over `str`. There's no way to do this safely.
+//         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
+//         Ok(unsafe { &*(value as *const str as *const LabelName) })
+//     }
+// }
+
 /// A trait for visiting the value of a label
 pub trait LabelVisitor {
     fn write_int(&mut self, x: u64);
@@ -15,7 +78,7 @@ pub trait LabelVisitor {
 /// `LabelGroup` represents a group of label-pairs
 pub trait LabelGroup {
     /// Get all the label names in order
-    fn label_names() -> impl IntoIterator<Item = &'static str>;
+    fn label_names() -> impl IntoIterator<Item = &'static LabelName>;
 
     /// Writes all the label values into the visitor in the same order as the names
     fn label_values(&self, v: &mut impl LabelVisitor);
@@ -38,7 +101,7 @@ pub trait LabelGroup {
 pub struct NoLabels;
 
 impl LabelGroup for NoLabels {
-    fn label_names() -> impl IntoIterator<Item = &'static str> {
+    fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
         std::iter::empty()
     }
 

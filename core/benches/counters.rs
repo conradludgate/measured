@@ -17,7 +17,7 @@ mod fixed_cardinality {
 
     #[divan::bench(sample_size = 5, sample_count = 500)]
     fn measured(bencher: Bencher) {
-        use measured::metric::name::{MetricName, Total};
+        use measured::metric::name::{CheckedMetricName, Total};
 
         let error_set = ErrorsSet {
             route: Rodeo::from_iter(routes()).into_reader(),
@@ -35,7 +35,8 @@ mod fixed_cardinality {
                     }
                 }
 
-                let metric = "http_request_errors".with_suffix(Total);
+                let metric =
+                    CheckedMetricName::from_static("http_request_errors").with_suffix(Total);
                 encoder.write_help(&metric, "help text");
                 counter_vec.collect_into(&metric, encoder);
                 encoder.finish();
@@ -44,7 +45,7 @@ mod fixed_cardinality {
 
     #[divan::bench(sample_size = 5, sample_count = 500)]
     fn measured_sparse(bencher: Bencher) {
-        use measured::metric::name::{MetricName, Total};
+        use measured::metric::name::{CheckedMetricName, Total};
 
         let error_set = ErrorsSet {
             route: Rodeo::from_iter(routes()).into_reader(),
@@ -62,7 +63,8 @@ mod fixed_cardinality {
                     }
                 }
 
-                let metric = "http_request_errors".with_suffix(Total);
+                let metric =
+                    CheckedMetricName::from_static("http_request_errors").with_suffix(Total);
                 encoder.write_help(&metric, "help text");
                 counter_vec.collect_into(&metric, encoder);
                 encoder.finish();
@@ -189,7 +191,7 @@ mod high_cardinality {
 
     #[divan::bench(sample_size = 2, sample_count = 100)]
     fn measured(bencher: Bencher) {
-        use measured::metric::name::{MetricName, Total};
+        use measured::metric::name::{CheckedMetricName, Total};
 
         let error_set = ErrorsSet {
             route: Rodeo::from_iter(routes()).into_reader(),
@@ -215,7 +217,8 @@ mod high_cardinality {
                     }
                 }
 
-                let metric = "http_request_errors".with_suffix(Total);
+                let metric =
+                    CheckedMetricName::from_static("http_request_errors").with_suffix(Total);
                 encoder.write_help(&metric, "help text");
                 counter_vec.collect_into(&metric, encoder);
                 encoder.finish();
