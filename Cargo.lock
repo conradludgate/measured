@@ -785,6 +785,7 @@ dependencies = [
  "memchr",
  "metrics",
  "metrics-exporter-prometheus",
+ "parking_lot",
  "prometheus",
  "rand",
  "rustc-hash",

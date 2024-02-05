@@ -21,6 +21,7 @@ impl CounterRef<'_> {
             .fetch_add(x, std::sync::atomic::Ordering::Relaxed);
     }
 }
+
 impl<L: LabelGroupSet> CounterVec<L> {
     pub fn new(label_set: L) -> Self {
         Self::new_metric_vec(label_set, ())

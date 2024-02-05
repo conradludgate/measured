@@ -1,6 +1,7 @@
-use std::{hash::Hash, sync::RwLock};
+use std::hash::Hash;
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
+use parking_lot::{RwLock, RwLockWriteGuard};
 use rustc_hash::FxHasher;
 
 use self::name::MetricName;
@@ -93,17 +94,30 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 f(MetricRef(m, &self.metadata))
             }
             VecInner::Sparse(metrics) => {
-                if let Some(m) = metrics.read().unwrap().get(&index) {
+                if let Some(m) = metrics.read().get(&index) {
                     return f(MetricRef(m, &self.metadata));
                 }
 
-                let _ = metrics.write().unwrap().entry(index).or_default();
-
-                let read = metrics.read().unwrap();
+                let mut lock = metrics.write();
+                let _ = lock.entry(index).or_default();
+                let read = RwLockWriteGuard::downgrade(lock);
                 let m = read.get(&index).unwrap();
                 f(MetricRef(m, &self.metadata))
             }
         }
+    }
+
+    /// Inspect the current cardinality of this metric-vec, returning the lower bound and the upper bound if known
+    pub fn get_cardinality(&self) -> (usize, Option<usize>) {
+        match &self.metrics {
+            VecInner::Dense(x) => (x.len(), Some(x.len())),
+            VecInner::Sparse(x) => (x.read().len(), self.label_set.cardinality()),
+        }
+    }
+
+    /// Borrow the label set values
+    pub fn get_label_set(&self) -> &L {
+        &self.label_set
     }
 }
 
@@ -147,7 +161,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 }
             }
             VecInner::Sparse(m) => {
-                for (key, value) in &*m.read().unwrap() {
+                for (key, value) in &*m.read() {
                     value.collect_into(&self.metadata, self.label_set.decode(key), &name, enc)
                 }
             }

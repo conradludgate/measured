@@ -42,6 +42,33 @@ mod fixed_cardinality {
     }
 
     #[divan::bench(sample_size = 5, sample_count = 500)]
+    fn measured_sparse(bencher: Bencher) {
+        use measured::metric::name::{MetricName, Total};
+
+        let error_set = ErrorsSet {
+            route: Rodeo::from_iter(routes()).into_reader(),
+        };
+        let counter_vec = measured::CounterVec::new_sparse(error_set);
+
+        bencher
+            .with_inputs(measured::text::TextEncoder::new)
+            .bench_refs(|encoder| {
+                for _ in 0..black_box(LOOPS) {
+                    for &kind in errors() {
+                        for route in routes() {
+                            counter_vec.inc(Error { kind, route })
+                        }
+                    }
+                }
+
+                let metric = "http_request_errors".with_suffix(Total);
+                encoder.write_help(&metric, "help text");
+                counter_vec.collect_into(&metric, encoder);
+                encoder.finish();
+            });
+    }
+
+    #[divan::bench(sample_size = 5, sample_count = 500)]
     fn prometheus(bencher: Bencher) {
         let registry = prometheus::Registry::new();
         let counter_vec = prometheus::register_int_counter_vec_with_registry!(
