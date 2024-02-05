@@ -1,7 +1,6 @@
 use std::hash::Hash;
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
-use parking_lot::{RwLock, RwLockWriteGuard};
 use rustc_hash::FxHasher;
 
 use self::name::MetricName;
@@ -10,7 +9,7 @@ pub mod counter;
 pub mod histogram;
 pub mod name;
 
-type FxHashMap<K, V> = hashbrown::HashMap<K, V, BuildFxHasher>;
+type FxDashMap<K, V> = dashmap::DashMap<K, V, BuildFxHasher>;
 
 pub trait MetricType: Default {
     type Metadata: Sized;
@@ -31,7 +30,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 
 enum VecInner<U: Hash + Eq, M: MetricType> {
     Dense(Box<[M]>),
-    Sparse(RwLock<FxHashMap<U, M>>),
+    Sparse(FxDashMap<U, M>),
 }
 
 impl<M: MetricType> Metric<M> {
@@ -55,7 +54,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 vec.resize_with(c, M::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
-            None => VecInner::Sparse(RwLock::new(FxHashMap::with_hasher(BuildFxHasher))),
+            None => VecInner::Sparse(FxDashMap::with_hasher(BuildFxHasher)),
         };
 
         Self {
@@ -66,9 +65,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
-    pub const fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+    pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(RwLock::new(FxHashMap::with_hasher(BuildFxHasher))),
+            metrics: VecInner::Sparse(FxDashMap::with_hasher(BuildFxHasher)),
             metadata,
             label_set,
         }
@@ -94,15 +93,12 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 f(MetricRef(m, &self.metadata))
             }
             VecInner::Sparse(metrics) => {
-                if let Some(m) = metrics.read().get(&index) {
-                    return f(MetricRef(m, &self.metadata));
+                if let Some(m) = metrics.get(&index) {
+                    return f(MetricRef(m.value(), &self.metadata));
                 }
 
-                let mut lock = metrics.write();
-                let _ = lock.entry(index).or_default();
-                let read = RwLockWriteGuard::downgrade(lock);
-                let m = read.get(&index).unwrap();
-                f(MetricRef(m, &self.metadata))
+                let m = metrics.entry(index).or_default().downgrade();
+                f(MetricRef(m.value(), &self.metadata))
             }
         }
     }
@@ -111,7 +107,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     pub fn get_cardinality(&self) -> (usize, Option<usize>) {
         match &self.metrics {
             VecInner::Dense(x) => (x.len(), Some(x.len())),
-            VecInner::Sparse(x) => (x.read().len(), self.label_set.cardinality()),
+            VecInner::Sparse(x) => (x.len(), self.label_set.cardinality()),
         }
     }
 
@@ -161,8 +157,13 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 }
             }
             VecInner::Sparse(m) => {
-                for (key, value) in &*m.read() {
-                    value.collect_into(&self.metadata, self.label_set.decode(key), &name, enc)
+                for values in m {
+                    values.value().collect_into(
+                        &self.metadata,
+                        self.label_set.decode(values.key()),
+                        &name,
+                        enc,
+                    )
                 }
             }
         }

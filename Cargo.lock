@@ -775,6 +775,7 @@ name = "measured"
 version = "0.0.6"
 dependencies = [
  "bytes",
+ "dashmap",
  "divan",
  "fake",
  "hashbrown 0.14.3",

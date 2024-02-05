@@ -26,7 +26,7 @@ impl<L: LabelGroupSet> CounterVec<L> {
     pub fn new(label_set: L) -> Self {
         Self::new_metric_vec(label_set, ())
     }
-    pub const fn new_sparse(label_set: L) -> Self {
+    pub fn new_sparse(label_set: L) -> Self {
         Self::new_sparse_metric_vec(label_set, ())
     }
 
