@@ -1,16 +1,17 @@
-use divan::{AllocProfiler, Divan};
-
 #[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
+static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
 fn main() {
-    Divan::from_args().threads([0]).run_benches();
+    divan::Divan::from_args().threads([0]).run_benches();
 }
 
 mod fixed_cardinality {
+    use std::hash::BuildHasherDefault;
+
     use divan::{black_box, Bencher};
-    use lasso::{Rodeo, RodeoReader};
+    use lasso::{Rodeo, RodeoReader, Spur};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
+    use rustc_hash::FxHasher;
 
     const LOOPS: usize = 2000;
 
@@ -139,7 +140,7 @@ mod fixed_cardinality {
     struct Error<'a> {
         #[label(fixed)]
         kind: ErrorKind,
-        #[label(fixed_with = RodeoReader)]
+        #[label(fixed_with = RodeoReader<Spur, BuildHasherDefault<FxHasher>>)]
         route: &'a str,
     }
 
@@ -163,16 +164,20 @@ mod fixed_cardinality {
 }
 
 mod high_cardinality {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::{
+        hash::BuildHasherDefault,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     use divan::{black_box, Bencher};
     use fake::{faker::name::raw::Name, locales::EN, Fake};
-    use lasso::{Rodeo, RodeoReader, ThreadedRodeo};
+    use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use metrics::SharedString;
     use rand::{rngs::StdRng, SeedableRng};
+    use rustc_hash::FxHasher;
 
-    const LOOPS: usize = 1000;
+    const LOOPS: usize = 100;
 
     fn get_names(thread: &AtomicU64) -> Vec<String> {
         let extra = errors().len() * routes().len();
@@ -182,13 +187,13 @@ mod high_cardinality {
             .collect()
     }
 
-    #[divan::bench(sample_size = 2, sample_count = 20)]
+    #[divan::bench(sample_size = 2, sample_count = 100)]
     fn measured(bencher: Bencher) {
         use measured::metric::name::{MetricName, Total};
 
         let error_set = ErrorsSet {
             route: Rodeo::from_iter(routes()).into_reader(),
-            user_name: ThreadedRodeo::new(),
+            user_name: ThreadedRodeo::with_hasher(Default::default()),
         };
         let counter_vec = measured::CounterVec::new(error_set);
 
@@ -217,7 +222,7 @@ mod high_cardinality {
             });
     }
 
-    #[divan::bench(sample_size = 2, sample_count = 20)]
+    #[divan::bench(sample_size = 2, sample_count = 100)]
     fn prometheus(bencher: Bencher) {
         let registry = prometheus::Registry::new();
         let counter_vec = prometheus::register_int_counter_vec_with_registry!(
@@ -251,7 +256,7 @@ mod high_cardinality {
             });
     }
 
-    #[divan::bench(sample_size = 2, sample_count = 20)]
+    #[divan::bench(sample_size = 2, sample_count = 100)]
     fn metrics(bencher: Bencher) {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
 
@@ -307,9 +312,9 @@ mod high_cardinality {
     struct Error<'a> {
         #[label(fixed)]
         kind: ErrorKind,
-        #[label(fixed_with = RodeoReader)]
+        #[label(fixed_with = RodeoReader<Spur, BuildHasherDefault<FxHasher>>)]
         route: &'a str,
-        #[label(dynamic_with = ThreadedRodeo)]
+        #[label(dynamic_with = ThreadedRodeo<Spur, BuildHasherDefault<FxHasher>>)]
         user_name: &'a str,
     }
 
