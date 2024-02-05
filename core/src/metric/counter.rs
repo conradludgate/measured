@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use core::sync::atomic::AtomicU64;
 
 use crate::{label::LabelGroupSet, Counter, CounterVec};
 
@@ -18,14 +18,14 @@ impl CounterRef<'_> {
     pub fn inc(self) {
         self.0
             .count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     }
 
     /// Increment the counter value by `x`
     pub fn inc_by(self, x: u64) {
         self.0
             .count
-            .fetch_add(x, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(x, core::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -39,7 +39,7 @@ impl<L: LabelGroupSet> CounterVec<L> {
     ///
     /// Sparse vecs are recommended if your max cardinality is quite high but the expected cardinality is low.
     /// The trade-off is that sparse vecs are not lock-free, although effort has been made to keep lock contention to a minimum.
-    pub const fn new_sparse(label_set: L) -> Self {
+    pub fn new_sparse(label_set: L) -> Self {
         Self::new_sparse_metric_vec(label_set, ())
     }
 

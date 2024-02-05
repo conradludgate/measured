@@ -32,8 +32,8 @@ pub enum InvalidMetricName {
     StartsWithNumber,
 }
 
-impl std::fmt::Display for InvalidMetricName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for InvalidMetricName {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             InvalidMetricName::InvalidChars => {
                 f.write_str("metric name contained invalid characters")

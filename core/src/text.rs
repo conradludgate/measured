@@ -186,7 +186,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
 
         impl LabelGroup for HistogramLabelLe {
             fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
-                std::iter::once(LabelName::from_static("le"))
+                core::iter::once(LabelName::from_static("le"))
             }
 
             fn label_values(&self, v: &mut impl LabelVisitor) {
@@ -200,10 +200,10 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
             enc.write_metric(
                 &name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
-                MetricValue::Int(val.load(std::sync::atomic::Ordering::Relaxed) as i64),
+                MetricValue::Int(val.load(core::sync::atomic::Ordering::Relaxed) as i64),
             );
         }
-        let count = self.count.load(std::sync::atomic::Ordering::Relaxed) as i64;
+        let count = self.count.load(core::sync::atomic::Ordering::Relaxed) as i64;
         enc.write_metric(
             &name.by_ref().with_suffix(Bucket),
             labels
@@ -215,7 +215,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
             MetricValue::Float(f64::from_bits(
-                self.sum.load(std::sync::atomic::Ordering::Relaxed),
+                self.sum.load(core::sync::atomic::Ordering::Relaxed),
             )),
         );
         enc.write_metric(
@@ -240,7 +240,7 @@ impl MetricEncoding<TextEncoder> for CounterState {
         enc.write_metric(
             &name,
             labels,
-            MetricValue::Int(self.count.load(std::sync::atomic::Ordering::Relaxed) as i64),
+            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
         );
     }
 }

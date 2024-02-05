@@ -1,4 +1,6 @@
-use std::{hash::Hash, sync::OnceLock};
+//! All about metrics
+
+use core::hash::Hash;
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use rustc_hash::FxHasher;
@@ -9,7 +11,7 @@ pub mod counter;
 pub mod histogram;
 pub mod name;
 
-type BuildFxHasher = std::hash::BuildHasherDefault<FxHasher>;
+type BuildFxHasher = core::hash::BuildHasherDefault<FxHasher>;
 type FxDashMap<K, V> = dashmap::DashMap<K, V, BuildFxHasher>;
 
 /// Defines a metric
@@ -36,7 +38,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 
 enum VecInner<U: Hash + Eq, M: MetricType> {
     Dense(Box<[M]>),
-    Sparse(OnceLock<FxDashMap<U, M>>),
+    Sparse(FxDashMap<U, M>),
 }
 
 impl<M: MetricType> Metric<M> {
@@ -63,9 +65,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 vec.resize_with(c, M::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
-            None => VecInner::Sparse(OnceLock::from(FxDashMap::with_hasher(
-                BuildFxHasher::default(),
-            ))),
+            None => VecInner::Sparse(FxDashMap::with_hasher(BuildFxHasher::default())),
         };
 
         Self {
@@ -76,9 +76,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
-    pub const fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+    pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(OnceLock::new()),
+            metrics: VecInner::Sparse(FxDashMap::with_hasher(BuildFxHasher::default())),
             metadata,
             label_set,
         }
@@ -106,8 +106,6 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 f(MetricRef(m, &self.metadata))
             }
             VecInner::Sparse(metrics) => {
-                let metrics =
-                    metrics.get_or_init(|| FxDashMap::with_hasher(BuildFxHasher::default()));
                 if let Some(m) = metrics.get(&index) {
                     return f(MetricRef(m.value(), &self.metadata));
                 }
@@ -122,10 +120,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     pub fn get_cardinality(&self) -> (usize, Option<usize>) {
         match &self.metrics {
             VecInner::Dense(x) => (x.len(), Some(x.len())),
-            VecInner::Sparse(x) => {
-                let x = x.get_or_init(|| FxDashMap::with_hasher(BuildFxHasher::default()));
-                (x.len(), self.label_set.cardinality())
-            }
+            VecInner::Sparse(x) => (x.len(), self.label_set.cardinality()),
         }
     }
 
@@ -180,7 +175,6 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 }
             }
             VecInner::Sparse(m) => {
-                let m = m.get_or_init(|| FxDashMap::with_hasher(BuildFxHasher::default()));
                 for values in m {
                     values.value().collect_into(
                         &self.metadata,
@@ -203,7 +197,7 @@ impl<L: LabelGroupSet> Clone for LabelId<L> {
 }
 impl<L: LabelGroupSet> Copy for LabelId<L> {}
 impl<L: LabelGroupSet> Hash for LabelId<L> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }

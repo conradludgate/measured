@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use core::sync::atomic::AtomicU64;
 
 use super::{MetricRef, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
@@ -49,7 +49,7 @@ impl<const N: usize> Thresholds<N> {
             "exponential_buckets needs a factor greater than 1, factor: {factor}",
         );
 
-        let buckets = std::array::from_fn(|i| start * factor.powi(i as i32));
+        let buckets = core::array::from_fn(|i| start * factor.powi(i as i32));
 
         Thresholds { le: buckets }
     }
@@ -65,7 +65,7 @@ impl<const N: usize> Thresholds<N> {
             "linear_buckets needs a width greate than 0, width: {width}",
         );
 
-        let buckets = std::array::from_fn(|i| start + width * i as f64);
+        let buckets = core::array::from_fn(|i| start + width * i as f64);
 
         Thresholds { le: buckets }
     }
@@ -81,17 +81,17 @@ impl<const N: usize> HistogramRef<'_, N> {
     pub fn observe(self, x: f64) {
         for i in 0..N {
             if x <= self.1.le[i] {
-                self.0.buckets[i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.0.buckets[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
         }
         self.0
             .count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         self.0
             .sum
             .fetch_update(
-                std::sync::atomic::Ordering::Release,
-                std::sync::atomic::Ordering::Acquire,
+                core::sync::atomic::Ordering::Release,
+                core::sync::atomic::Ordering::Acquire,
                 |y| Some(f64::to_bits(f64::from_bits(y) + x)),
             )
             .expect("we always return Some in fetch_update");

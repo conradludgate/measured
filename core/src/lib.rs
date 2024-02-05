@@ -183,8 +183,8 @@
 //! }
 //!
 //! pub struct LabelPair {
-//!     name: ::protobuf::SingularField<::std::string::String>,
-//!     value: ::protobuf::SingularField<::std::string::String>,
+//!     name: SingularField<String>,
+//!     value: SingularField<String>,
 //!     // ...
 //! }
 //! ```
@@ -215,6 +215,8 @@
 //! [`metrics_exporter_prometheus`](https://docs.rs/metrics-exporter-prometheus/latest/metrics_exporter_prometheus/index.html)
 //! implementation add a lot of complexity to exposing metrics. They also still alloc an `Arc<AtomicU64>` per individual counter
 //! which does not solve the problem of memory fragmentation.
+
+extern crate alloc;
 
 use metric::{counter::CounterState, histogram::HistogramState, Metric, MetricVec};
 

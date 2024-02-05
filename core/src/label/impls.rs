@@ -1,7 +1,5 @@
-use std::{
-    hash::{BuildHasher, Hash},
-    sync::Arc,
-};
+use alloc::sync::Arc;
+use core::hash::{BuildHasher, Hash};
 
 use super::{
     DynamicLabel, FixedCardinalityDynamicLabel, LabelGroup, LabelGroupSet, LabelName, LabelValue,

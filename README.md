@@ -19,7 +19,7 @@ A better\* metrics crate
 
 The benchmark runs on multiple threads a simple counter increment, with various labels,
 and then samples/encodes the values into the Prometheus text format. This crate outperforms both `metrics` and `prometheus`
-when it comes to both speed and allocations.
+when it comes to both speed and allocations. The `prometheus_client` crate shares some goals to this library and performs well, but still not as fast.
 
 The `fixed_cardinality` group has only 2 label pairs and 18 distinct label groups.
 The `high_cardinality` group has 3 label pairs and 18,000 distinct label groups.
@@ -28,76 +28,96 @@ The `high_cardinality` group has 3 label pairs and 18,000 distinct label groups.
 
 ```
 Timer precision: 41 ns
-counters               fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ fixed_cardinality                 │               │               │               │         │
-│  ├─ measured         13.77 ms      │ 29.69 ms      │ 29.41 ms      │ 28.98 ms      │ 504     │ 2520
-│  │                   alloc:        │               │               │               │         │
-│  │                     0           │ 0             │ 1             │ 0.162         │         │
-│  │                     0 B         │ 0 B           │ 24 B          │ 3.904 B       │         │
-│  │                   grow:         │               │               │               │         │
-│  │                     0           │ 0             │ 3.4           │ 0.569         │         │
-│  │                     0 B         │ 0 B           │ 828 B         │ 134.7 B       │         │
-│  ├─ measured_sparse  14.51 ms      │ 16.58 ms      │ 14.9 ms       │ 14.95 ms      │ 504     │ 2520
-│  │                   alloc:        │               │               │               │         │
-│  │                     0           │ 0             │ 0             │ 5.5           │         │
-│  │                     0 B         │ 0 B           │ 0 B           │ 132 B         │         │
-│  │                   dealloc:      │               │               │               │         │
-│  │                     0           │ 0             │ 0             │ 5.333         │         │
-│  │                     0 B         │ 0 B           │ 0 B           │ 128 B         │         │
-│  │                   grow:         │               │               │               │         │
-│  │                     0           │ 0             │ 0             │ 0.583         │         │
-│  │                     0 B         │ 0 B           │ 0 B           │ 138 B         │         │
-│  ├─ metrics          37.49 ms      │ 41.98 ms      │ 39.16 ms      │ 39.22 ms      │ 504     │ 2520
-│  │                   alloc:        │               │               │               │         │
-│  │                     0           │ 0             │ 36149         │ 6024          │         │
-│  │                     0 B         │ 0 B           │ 2.312 MB      │ 385.3 KB      │         │
-│  │                   dealloc:      │               │               │               │         │
-│  │                     0           │ 0             │ 36149         │ 6024          │         │
-│  │                     0 B         │ 0 B           │ 2.312 MB      │ 385.4 KB      │         │
-│  │                   grow:         │               │               │               │         │
-│  │                     0           │ 0             │ 30.4          │ 5.083         │         │
-│  │                     0 B         │ 0 B           │ 1.317 KB      │ 219.5 B       │         │
-│  ╰─ prometheus       133.8 ms      │ 148.1 ms      │ 147 ms        │ 146.1 ms      │ 504     │ 2520
-│                      alloc:        │               │               │               │         │
-│                        0           │ 0             │ 0             │ 9.95          │         │
-│                        0 B         │ 0 B           │ 0 B           │ 555 B         │         │
-│                      dealloc:      │               │               │               │         │
-│                        0           │ 0             │ 0             │ 9.786         │         │
-│                        0 B         │ 0 B           │ 0 B           │ 551 B         │         │
-│                      grow:         │               │               │               │         │
-│                        0           │ 0             │ 0             │ 0.597         │         │
-│                        0 B         │ 0 B           │ 0 B           │ 138 B         │         │
-╰─ high_cardinality                  │               │               │               │         │
-   ├─ measured         12.99 ms      │ 161.3 ms      │ 71.66 ms      │ 75.06 ms      │ 108     │ 216
-   │                   alloc:        │               │               │               │         │
-   │                     152         │ 0             │ 0             │ 6.5           │         │
-   │                     732.7 KB    │ 0 B           │ 0 B           │ 30.84 KB      │         │
-   │                   dealloc:      │               │               │               │         │
-   │                     144         │ 0             │ 0             │ 6.277         │         │
-   │                     328.2 KB    │ 0 B           │ 0 B           │ 15.12 KB      │         │
-   │                   grow:         │               │               │               │         │
-   │                     18.5        │ 0             │ 0             │ 1.731         │         │
-   │                     5.111 MB    │ 0 B           │ 0 B           │ 2.54 MB       │         │
-   ├─ metrics          94.32 ms      │ 2.048 s       │ 923.2 ms      │ 959.9 ms      │ 108     │ 216
-   │                   alloc:        │               │               │               │         │
-   │                     0           │ 0             │ 0             │ 370742        │         │
-   │                     0 B         │ 0 B           │ 0 B           │ 17.05 MB      │         │
-   │                   dealloc:      │               │               │               │         │
-   │                     0           │ 0             │ 0             │ 370147        │         │
-   │                     0 B         │ 0 B           │ 0 B           │ 18.38 MB      │         │
-   │                   grow:         │               │               │               │         │
-   │                     0           │ 0             │ 0             │ 83988         │         │
-   │                     0 B         │ 0 B           │ 0 B           │ 3.78 MB       │         │
-   ╰─ prometheus       66.31 ms      │ 2.694 s       │ 1.048 s       │ 1.094 s       │ 108     │ 216
-                       alloc:        │               │               │               │         │
-                         0           │ 0             │ 0             │ 137127        │         │
-                         0 B         │ 0 B           │ 0 B           │ 7.066 MB      │         │
-                       dealloc:      │               │               │               │         │
-                         0           │ 0             │ 0             │ 135044        │         │
-                         0 B         │ 0 B           │ 0 B           │ 6.995 MB      │         │
-                       grow:         │               │               │               │         │
-                         0           │ 0             │ 0             │ 448           │         │
-                         0 B         │ 0 B           │ 0 B           │ 2.284 MB      │         │
+counters                 fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ fixed_cardinality                   │               │               │               │         │
+│  ├─ measured           27.21 ms      │ 29.65 ms      │ 29.44 ms      │ 29.37 ms      │ 504     │ 2520
+│  │                     alloc:        │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 0.162         │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 3.904 B       │         │
+│  │                     grow:         │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 0.569         │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 134.7 B       │         │
+│  ├─ measured_sparse    13.4 ms       │ 16.42 ms      │ 14.99 ms      │ 15.09 ms      │ 504     │ 2520
+│  │                     alloc:        │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 5.5           │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 132 B         │         │
+│  │                     dealloc:      │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 5.333         │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 128 B         │         │
+│  │                     grow:         │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 0.583         │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 138 B         │         │
+│  ├─ metrics            32.79 ms      │ 38.76 ms      │ 36.82 ms      │ 36.74 ms      │ 504     │ 2520
+│  │                     alloc:        │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 6024          │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 385.3 KB      │         │
+│  │                     dealloc:      │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 6024          │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 385.4 KB      │         │
+│  │                     grow:         │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 5.083         │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 219.5 B       │         │
+│  ├─ prometheus         143.3 ms      │ 148 ms        │ 147.1 ms      │ 146.9 ms      │ 504     │ 2520
+│  │                     alloc:        │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 9.833         │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 549 B         │         │
+│  │                     dealloc:      │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 9.75          │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 548.4 B       │         │
+│  │                     grow:         │               │               │               │         │
+│  │                       0           │ 0             │ 0             │ 0.583         │         │
+│  │                       0 B         │ 0 B           │ 0 B           │ 138 B         │         │
+│  ╰─ prometheus_client  134.7 ms      │ 140 ms        │ 138.9 ms      │ 138.7 ms      │ 504     │ 2520
+│                        alloc:        │               │               │               │         │
+│                          0           │ 0             │ 0             │ 0.092         │         │
+│                          0 B         │ 0 B           │ 0 B           │ 1.636 B       │         │
+│                        dealloc:      │               │               │               │         │
+│                          0           │ 0             │ 0             │ 0.001         │         │
+│                          0 B         │ 0 B           │ 0 B           │ 0.376 B       │         │
+│                        grow:         │               │               │               │         │
+│                          0           │ 0             │ 0             │ 0.583         │         │
+│                          0 B         │ 0 B           │ 0 B           │ 138 B         │         │
+╰─ high_cardinality                    │               │               │               │         │
+   ├─ measured           11.66 ms      │ 152.2 ms      │ 68.63 ms      │ 74 ms         │ 108     │ 216
+   │                     alloc:        │               │               │               │         │
+   │                       0           │ 0             │ 0             │ 6.361         │         │
+   │                       0 B         │ 0 B           │ 0 B           │ 32.96 KB      │         │
+   │                     dealloc:      │               │               │               │         │
+   │                       0           │ 0             │ 0             │ 6.185         │         │
+   │                       0 B         │ 0 B           │ 0 B           │ 15.93 KB      │         │
+   │                     grow:         │               │               │               │         │
+   │                       0           │ 0             │ 0             │ 1.731         │         │
+   │                       0 B         │ 0 B           │ 0 B           │ 2.54 MB       │         │
+   ├─ metrics            96.21 ms      │ 2.093 s       │ 940 ms        │ 963.8 ms      │ 108     │ 216
+   │                     alloc:        │               │               │               │         │
+   │                       0           │ 0             │ 2217252       │ 371087        │         │
+   │                       0 B         │ 0 B           │ 93.89 MB      │ 17.08 MB      │         │
+   │                     dealloc:      │               │               │               │         │
+   │                       0           │ 0             │ 2213683       │ 370492        │         │
+   │                       0 B         │ 0 B           │ 101.8 MB      │ 18.4 MB       │         │
+   │                     grow:         │               │               │               │         │
+   │                       0           │ 0             │ 502296        │ 84067         │         │
+   │                       0 B         │ 0 B           │ 21.8 MB       │ 3.781 MB      │         │
+   ├─ prometheus         70.52 ms      │ 2.698 s       │ 1.078 s       │ 1.108 s       │ 108     │ 216
+   │                     alloc:        │               │               │               │         │
+   │                       0           │ 0             │ 0             │ 137749        │         │
+   │                       0 B         │ 0 B           │ 0 B           │ 7.098 MB      │         │
+   │                     dealloc:      │               │               │               │         │
+   │                       0           │ 0             │ 0             │ 135665        │         │
+   │                       0 B         │ 0 B           │ 0 B           │ 7.028 MB      │         │
+   │                     grow:         │               │               │               │         │
+   │                       0           │ 0             │ 0             │ 448.2         │         │
+   │                       0 B         │ 0 B           │ 0 B           │ 2.469 MB      │         │
+   ╰─ prometheus_client  116.9 ms      │ 740.4 ms      │ 376.2 ms      │ 378.2 ms      │ 108     │ 216
+                         alloc:        │               │               │               │         │
+                           0           │ 0             │ 0             │ 458.1         │         │
+                           0 B         │ 0 B           │ 0 B           │ 11.59 KB      │         │
+                         dealloc:      │               │               │               │         │
+                           0           │ 0             │ 0             │ 160.3         │         │
+                           0 B         │ 0 B           │ 0 B           │ 6.011 KB      │         │
+                         grow:         │               │               │               │         │
+                           0           │ 0             │ 0             │ 1.731         │         │
+                           0 B         │ 0 B           │ 0 B           │ 2.54 MB       │         │
 ```
 
 ### Ryzen 9 7950X (32 threads):

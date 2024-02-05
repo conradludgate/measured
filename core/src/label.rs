@@ -1,6 +1,6 @@
 //! Traits and types used for representing groups of label-pairs
 
-use std::hash::Hash;
+use core::hash::Hash;
 
 mod impls;
 pub use impls::ComposedGroup;
@@ -102,7 +102,7 @@ pub struct NoLabels;
 
 impl LabelGroup for NoLabels {
     fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
-        std::iter::empty()
+        core::iter::empty()
     }
 
     fn label_values(&self, _v: &mut impl LabelVisitor) {}

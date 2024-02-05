@@ -29,7 +29,7 @@ impl ToTokens for LabelGroup {
         tokens.extend(quote! {
             #[automatically_derived]
             impl #impl_generics #krate::label::LabelGroup for #ident #ty_generics #where_clause {
-                fn label_names() -> impl ::std::iter::IntoIterator<Item = &'static #krate::label::LabelName> {
+                fn label_names() -> impl ::core::iter::IntoIterator<Item = &'static #krate::label::LabelName> {
                     [#(#krate::label::LabelName::from_static(#names)),*]
                 }
 

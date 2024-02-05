@@ -34,6 +34,7 @@ divan = "0.1.11"
 prometheus = { version = "0.13", default-features = false }
 metrics = "0.22"
 metrics-exporter-prometheus = { version = "0.13", default-features = false }
+prometheus-client = "0.22.1"
 rand = "0.8"
 
 [[bench]]

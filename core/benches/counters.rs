@@ -5,17 +5,19 @@ fn main() {
     divan::Divan::from_args().threads([0]).run_benches();
 }
 
+#[divan::bench_group(sample_size = 5, sample_count = 500)]
 mod fixed_cardinality {
     use std::hash::BuildHasherDefault;
 
     use divan::{black_box, Bencher};
     use lasso::{Rodeo, RodeoReader, Spur};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
+    use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
     use rustc_hash::FxHasher;
 
     const LOOPS: usize = 2000;
 
-    #[divan::bench(sample_size = 5, sample_count = 500)]
+    #[divan::bench]
     fn measured(bencher: Bencher) {
         use measured::metric::name::{CheckedMetricName, Total};
 
@@ -43,7 +45,7 @@ mod fixed_cardinality {
             });
     }
 
-    #[divan::bench(sample_size = 5, sample_count = 500)]
+    #[divan::bench]
     fn measured_sparse(bencher: Bencher) {
         use measured::metric::name::{CheckedMetricName, Total};
 
@@ -71,7 +73,7 @@ mod fixed_cardinality {
             });
     }
 
-    #[divan::bench(sample_size = 5, sample_count = 500)]
+    #[divan::bench]
     fn prometheus(bencher: Bencher) {
         let registry = prometheus::Registry::new();
         let counter_vec = prometheus::register_int_counter_vec_with_registry!(
@@ -98,7 +100,7 @@ mod fixed_cardinality {
         });
     }
 
-    #[divan::bench(sample_size = 5, sample_count = 500)]
+    #[divan::bench]
     fn metrics(bencher: Bencher) {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
 
@@ -119,6 +121,42 @@ mod fixed_cardinality {
             });
 
             recorder.handle().render()
+        });
+    }
+
+    #[divan::bench]
+    fn prometheus_client(bencher: Bencher) {
+        use prometheus_client::encoding::text::encode;
+        use prometheus_client::metrics::counter::Counter;
+        use prometheus_client::metrics::family::Family;
+        use prometheus_client::registry::Registry;
+
+        let mut registry = <Registry>::default();
+
+        let counter_vec = Family::<ErrorStatic, Counter>::default();
+
+        // Register the metric family with the registry.
+        registry.register(
+            // With the metric name.
+            "http_request_errors",
+            // And the metric help text.
+            "Number of HTTP requests received",
+            counter_vec.clone(),
+        );
+
+        bencher.with_inputs(String::new).bench_refs(|string| {
+            for _ in 0..black_box(LOOPS) {
+                for &kind in errors() {
+                    for route in routes() {
+                        counter_vec
+                            .get_or_create(&ErrorStatic { kind, route })
+                            .inc();
+                    }
+                }
+            }
+
+            string.clear();
+            encode(string, &registry).unwrap();
         });
     }
 
@@ -146,7 +184,13 @@ mod fixed_cardinality {
         route: &'a str,
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug, FixedCardinalityLabel)]
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct ErrorStatic {
+        kind: ErrorKind,
+        route: &'static str,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
     #[label(rename_all = "kebab-case")]
     enum ErrorKind {
         User,
@@ -165,6 +209,7 @@ mod fixed_cardinality {
     }
 }
 
+#[divan::bench_group(sample_size = 2, sample_count = 100)]
 mod high_cardinality {
     use std::{
         hash::BuildHasherDefault,
@@ -176,6 +221,7 @@ mod high_cardinality {
     use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use metrics::SharedString;
+    use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
     use rand::{rngs::StdRng, SeedableRng};
     use rustc_hash::FxHasher;
 
@@ -189,7 +235,7 @@ mod high_cardinality {
             .collect()
     }
 
-    #[divan::bench(sample_size = 2, sample_count = 100)]
+    #[divan::bench]
     fn measured(bencher: Bencher) {
         use measured::metric::name::{CheckedMetricName, Total};
 
@@ -225,7 +271,7 @@ mod high_cardinality {
             });
     }
 
-    #[divan::bench(sample_size = 2, sample_count = 100)]
+    #[divan::bench]
     fn prometheus(bencher: Bencher) {
         let registry = prometheus::Registry::new();
         let counter_vec = prometheus::register_int_counter_vec_with_registry!(
@@ -259,7 +305,7 @@ mod high_cardinality {
             });
     }
 
-    #[divan::bench(sample_size = 2, sample_count = 100)]
+    #[divan::bench]
     fn metrics(bencher: Bencher) {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
 
@@ -295,6 +341,51 @@ mod high_cardinality {
             });
     }
 
+    #[divan::bench]
+    fn prometheus_client(bencher: Bencher) {
+        use prometheus_client::encoding::text::encode;
+        use prometheus_client::metrics::counter::Counter;
+        use prometheus_client::metrics::family::Family;
+        use prometheus_client::registry::Registry;
+
+        let mut registry = <Registry>::default();
+
+        let counter_vec = Family::<ErrorStatic, Counter>::default();
+
+        // Register the metric family with the registry.
+        registry.register(
+            // With the metric name.
+            "http_request_errors",
+            // And the metric help text.
+            "Number of HTTP requests received",
+            counter_vec.clone(),
+        );
+
+        let thread = AtomicU64::new(0);
+
+        bencher
+            .with_inputs(|| (String::new(), get_names(&thread)))
+            .bench_refs(|(string, names)| {
+                let mut names = names.iter();
+                for _ in 0..black_box(LOOPS) {
+                    for &kind in errors() {
+                        for route in routes() {
+                            counter_vec
+                                .get_or_create(&ErrorStatic {
+                                    kind,
+                                    route,
+                                    user_name: names.next().unwrap().to_owned(),
+                                })
+                                .inc();
+                        }
+                    }
+                }
+
+                string.clear();
+                encode(string, &registry).unwrap();
+            });
+    }
+
     fn routes() -> &'static [&'static str] {
         black_box(&[
             "/api/v1/users",
@@ -321,7 +412,14 @@ mod high_cardinality {
         user_name: &'a str,
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug, FixedCardinalityLabel)]
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct ErrorStatic {
+        kind: ErrorKind,
+        route: &'static str,
+        user_name: String,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
     #[label(rename_all = "kebab-case")]
     enum ErrorKind {
         User,
