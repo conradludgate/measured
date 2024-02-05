@@ -18,8 +18,6 @@ memchr = "2"
 ryu = "1"
 itoa = "1"
 rustc-hash = "1"
-hashbrown = "0.14"
-parking_lot = "0.12"
 dashmap = "5"
 
 measured-derive = { path = "../derive", version = "0.0.6" }
