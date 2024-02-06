@@ -2,8 +2,8 @@ use alloc::sync::Arc;
 use core::hash::{BuildHasher, Hash};
 
 use super::{
-    DynamicLabelSet, FixedCardinalitySet, LabelGroup, LabelGroupSet, LabelName, LabelValue,
-    LabelVisitor,
+    DynamicLabelSet, FixedCardinalitySet, LabelGroup, LabelGroupSet, LabelName, LabelSet,
+    LabelValue, LabelVisitor,
 };
 
 #[cfg(feature = "indexmap")]
@@ -45,11 +45,17 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
 
 #[cfg(feature = "lasso")]
 impl<K: lasso::Key, S: BuildHasher> FixedCardinalitySet for lasso::RodeoReader<K, S> {
-    type Value<'a> = &'a str;
-
     fn cardinality(&self) -> usize {
         self.len()
     }
+}
+
+#[cfg(feature = "lasso")]
+impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabelSet for lasso::ThreadedRodeo<K, S> {}
+
+#[cfg(feature = "lasso")]
+impl<K: lasso::Key, S: BuildHasher> LabelSet for lasso::RodeoReader<K, S> {
+    type Value<'a> = &'a str;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.get(value)?.into_usize())
@@ -61,7 +67,7 @@ impl<K: lasso::Key, S: BuildHasher> FixedCardinalitySet for lasso::RodeoReader<K
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabelSet for lasso::ThreadedRodeo<K, S> {
+impl<K: lasso::Key + Hash, S: BuildHasher + Clone> LabelSet for lasso::ThreadedRodeo<K, S> {
     type Value<'a> = &'a str;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
@@ -203,11 +209,15 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
 }
 
 impl<T: FixedCardinalitySet + ?Sized> FixedCardinalitySet for Arc<T> {
-    type Value<'a> = T::Value<'a>;
-
     fn cardinality(&self) -> usize {
         T::cardinality(self)
     }
+}
+
+impl<T: DynamicLabelSet + ?Sized> DynamicLabelSet for Arc<T> {}
+
+impl<T: LabelSet + ?Sized> LabelSet for Arc<T> {
+    type Value<'a> = T::Value<'a>;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         T::encode(self, value)

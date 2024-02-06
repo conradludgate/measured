@@ -182,7 +182,7 @@ impl ToTokens for SetEncode<'_> {
 
                 match attrs {
                     LabelGroupFieldAttrs::Fixed => quote!(<#ty as #krate::label::FixedCardinalityLabel>::encode(&value.#name)),
-                    LabelGroupFieldAttrs::FixedWith(ty) => quote!(<#ty as #krate::label::FixedCardinalitySet>::encode(&self.#name, &value.#name)?),
+                    LabelGroupFieldAttrs::FixedWith(ty) => quote!(<#ty as #krate::label::LabelSet>::encode(&self.#name, &value.#name)?),
                     LabelGroupFieldAttrs::DynamicWith(_) =>unreachable!(),
                 }
             })
@@ -196,7 +196,7 @@ impl ToTokens for SetEncode<'_> {
                 } = x;
 
                 match attrs {
-                    LabelGroupFieldAttrs::DynamicWith(ty) => quote!(<#ty as #krate::label::DynamicLabelSet>::encode(&self.#name, &value.#name)?),
+                    LabelGroupFieldAttrs::DynamicWith(ty) => quote!(<#ty as #krate::label::LabelSet>::encode(&self.#name, &value.#name)?),
                     _ => unreachable!(),
                 }
             })
@@ -246,7 +246,7 @@ impl ToTokens for SetDecode<'_> {
 
                 match attrs {
                     LabelGroupFieldAttrs::Fixed => quote!(let #name = <#ty as #krate::label::FixedCardinalityLabel>::decode(index1);),
-                    LabelGroupFieldAttrs::FixedWith(ty) => quote!(let #name = <#ty as #krate::label::FixedCardinalitySet>::decode(&self.#name, index1);),
+                    LabelGroupFieldAttrs::FixedWith(ty) => quote!(let #name = <#ty as #krate::label::LabelSet>::decode(&self.#name, index1);),
                     LabelGroupFieldAttrs::DynamicWith(_) =>unreachable!(),
                 }
             })
@@ -268,7 +268,7 @@ impl ToTokens for SetDecode<'_> {
 
                 let index = &dynamic_indices[i];
                 match attrs {
-                    LabelGroupFieldAttrs::DynamicWith(ty) => quote!(let #name = <#ty as #krate::label::DynamicLabelSet>::decode(&self.#name, #index);),
+                    LabelGroupFieldAttrs::DynamicWith(ty) => quote!(let #name = <#ty as #krate::label::LabelSet>::decode(&self.#name, #index);),
                     _ => unreachable!(),
                 }
             })

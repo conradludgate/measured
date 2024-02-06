@@ -148,7 +148,7 @@ pub trait FixedCardinalityLabel: LabelValue {
     fn decode(value: usize) -> Self;
 }
 
-/// `FixedCardinalityDynamicLabel` is a helper trait to represent a dynamic label with a fixed size.
+/// `FixedCardinalitySet` is a helper trait to represent a dynamic label with a fixed size.
 ///
 /// An example of a dynamic label that has a fixed capacity is an API path with parameters removed
 /// * `/api/v1/users`
@@ -162,17 +162,9 @@ pub trait FixedCardinalityLabel: LabelValue {
 /// as a runtime quantity.
 ///
 /// Additionally, sometimes the set of label values can only be known based on some startup configuration, but never changes.
-pub trait FixedCardinalitySet {
-    type Value<'a>: LabelValue;
-
+pub trait FixedCardinalitySet: LabelSet {
     /// The number of possible label values
     fn cardinality(&self) -> usize;
-
-    /// Find the integer that represents this value, if any
-    fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
-
-    /// Extract the value uniquely represented by this integer
-    fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 
 /// `DynamicLabel` is a helper trait to represent a dynamic label with an unknown collection of values.
@@ -184,7 +176,18 @@ pub trait FixedCardinalitySet {
 /// 1. Compatibility with your existing setup
 /// 2. Not exporting to prometheus
 /// 3. You know there wont be many labels but you just don't know what they are
-pub trait DynamicLabelSet {
+pub trait DynamicLabelSet: LabelSet {}
+
+/// `DynamicLabel` is a helper trait to represent a dynamic label with an unknown collection of values.
+///
+/// This is not recommended to be used, but provided for completeness sake.
+/// [Prometheus recommends against high-cardinality metrics](https://grafana.com/blog/2022/02/15/what-are-cardinality-spikes-and-why-do-they-matter/)
+/// but there might be cases where you still want to use this
+///
+/// 1. Compatibility with your existing setup
+/// 2. Not exporting to prometheus
+/// 3. You know there wont be many labels but you just don't know what they are
+pub trait LabelSet {
     type Value<'a>: LabelValue;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
