@@ -24,7 +24,7 @@ pub trait MetricNameEncoder {
     }
 }
 
-/// Error returned by [`CheckedMetricName::try_from`]
+/// Error returned by [`MetricName::try_from`]
 #[derive(Debug)]
 pub enum InvalidMetricName {
     InvalidChars,
@@ -120,7 +120,7 @@ impl<'a> TryFrom<&'a str> for &'a MetricName {
             return Err(InvalidMetricName::StartsWithNumber);
         }
 
-        // SAFETY: `CheckedMetricName` is transparent over `str`. There's no way to do this safely.
+        // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
         Ok(unsafe { &*(value as *const str as *const MetricName) })
     }

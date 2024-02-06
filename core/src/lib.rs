@@ -217,6 +217,7 @@
 //! [`metrics_exporter_prometheus`](https://docs.rs/metrics-exporter-prometheus/latest/metrics_exporter_prometheus/index.html)
 //! implementation add a lot of complexity to exposing metrics. They also still alloc an `Arc<AtomicU64>` per individual counter
 //! which does not solve the problem of memory fragmentation.
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 extern crate alloc;
 

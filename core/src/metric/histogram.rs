@@ -109,7 +109,7 @@ impl<const N: usize> Histogram<N> {
         self.get_metric().observe(x);
     }
 
-    /// Create a [`HistogramVecTiemr`] object that automatically observes a duration when the timer is dropped.
+    /// Create a [`HistogramVecTimer`] object that automatically observes a duration when the timer is dropped.
     pub fn start_timer(&self) -> HistogramTimer<'_, N> {
         HistogramTimer {
             vec: Some(self),
@@ -128,7 +128,7 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
         );
     }
 
-    /// Create a [`HistogramVecTiemr`] object that automatically observes a duration when the timer is dropped.
+    /// Create a [`HistogramVecTimer`] object that automatically observes a duration when the timer is dropped.
     pub fn start_timer(&self, label: L::Group<'_>) -> Option<HistogramVecTimer<'_, L, N>> {
         Some(HistogramVecTimer {
             vec: Some(self),
