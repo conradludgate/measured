@@ -162,7 +162,7 @@ pub trait FixedCardinalityLabel: LabelValue {
 /// as a runtime quantity.
 ///
 /// Additionally, sometimes the set of label values can only be known based on some startup configuration, but never changes.
-pub trait FixedCardinalityDynamicLabel {
+pub trait FixedCardinalitySet {
     type Value<'a>: LabelValue;
 
     /// The number of possible label values
@@ -184,7 +184,7 @@ pub trait FixedCardinalityDynamicLabel {
 /// 1. Compatibility with your existing setup
 /// 2. Not exporting to prometheus
 /// 3. You know there wont be many labels but you just don't know what they are
-pub trait DynamicLabel {
+pub trait DynamicLabelSet {
     type Value<'a>: LabelValue;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize>;

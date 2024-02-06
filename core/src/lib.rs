@@ -68,13 +68,13 @@
 //! let bytes = text_encoder.finish();
 //! ```
 //!
-//! ## With dynamic labels
+//! ## With dynamic labels and label sets
 //!
 //! Sometimes, the labels cannot be determined at compile time, but they can be determine at the start of the program.
 //! This might be the paths of a RESTful API. For efficiency,
-//! `measured` offers a trait called [`FixedCardinalityDynamicLabel`](label::FixedCardinalityDynamicLabel) that allows for compact encoding.
+//! `measured` offers a trait called [`FixedCardinalitySet`](label::FixedCardinalitySet) that allows for compact encoding.
 //!
-//! Implementations of [`FixedCardinalityDynamicLabel`](label::FixedCardinalityDynamicLabel) are provided for you,
+//! Implementations of [`FixedCardinalitySet`](label::FixedCardinalitySet) are provided for you,
 //! notably [`indexmap::IndexSet`] and [`lasso::RodeoReader`].
 //! I recommend the latter for string-based labels that are not `&'static` as it will offer the most efficient use of memory.
 //!
@@ -115,7 +115,7 @@
 //! ```
 //!
 //! In the rare case that the label cannot be determined even at startup, you can still use them. You will have to make use of the
-//! [`DynamicLabel`](label::DynamicLabel) trait. One implementation for string data is provided in the form of [`lasso::ThreadedRodeo`].
+//! [`DynamicLabelSet`](label::DynamicLabelSet) trait. One implementation for string data is provided in the form of [`lasso::ThreadedRodeo`].
 //!
 //! It's not advised to use this for high cardinality labels, but if you must, this still offers good performance.
 //!
