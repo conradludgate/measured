@@ -93,7 +93,7 @@ impl ToTokens for Set<'_> {
                 match attrs {
                     LabelGroupFieldAttrs::Fixed => quote_spanned!( x.span => <#ty as #krate::label::FixedCardinalityLabel>::cardinality()),
                     LabelGroupFieldAttrs::FixedWith(ty) => quote_spanned!( x.span => <#ty as #krate::label::FixedCardinalitySet>::cardinality(&self.#name)),
-                    LabelGroupFieldAttrs::DynamicWith(_) =>unreachable!(),
+                    LabelGroupFieldAttrs::DynamicWith(_) => unreachable!(),
                 }
             })
             .collect();
@@ -205,7 +205,10 @@ impl ToTokens for SetEncode<'_> {
 
                 match attrs {
                     LabelGroupFieldAttrs::DynamicWith(ty) => {
-                        quote_spanned!(x.span => <#ty as #krate::label::LabelSet>::encode(&self.#name, value.#name)?)
+                        quote_spanned!(x.span => {
+                            <#ty as #krate::label::DynamicLabelSet>::__private_check_dynamic();
+                            <#ty as #krate::label::LabelSet>::encode(&self.#name, value.#name)?
+                        })
                     }
                     _ => unreachable!(),
                 }

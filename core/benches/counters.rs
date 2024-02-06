@@ -176,7 +176,6 @@ mod fixed_cardinality {
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
     #[label(set = ErrorsSet)]
     struct Error<'a> {
-        #[label(fixed)]
         kind: ErrorKind,
         #[label(fixed_with = RodeoReader<Spur, BuildHasherDefault<FxHasher>>)]
         route: &'a str,
@@ -401,7 +400,6 @@ mod high_cardinality {
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
     #[label(set = ErrorsSet)]
     struct Error<'a> {
-        #[label(fixed)]
         kind: ErrorKind,
         #[label(fixed_with = RodeoReader<Spur, BuildHasherDefault<FxHasher>>)]
         route: &'a str,

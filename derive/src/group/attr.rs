@@ -1,4 +1,4 @@
-use proc_macro2::{Ident, Span};
+use proc_macro2::Ident;
 use syn::{parse::ParseStream, spanned::Spanned, Attribute, Path, Token};
 
 use crate::Krate;
@@ -123,11 +123,6 @@ impl LabelGroupFieldAttrs {
                 })?;
             }
         }
-        args.ok_or_else(|| {
-            syn::Error::new(
-                Span::call_site(),
-                "missing cardinality attribute (`fixed`/`fixed_with`/`dynamic_with`)",
-            )
-        })
+        Ok(args.unwrap_or(Self::Fixed))
     }
 }

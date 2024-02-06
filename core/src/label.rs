@@ -147,7 +147,10 @@ pub trait FixedCardinalitySet: LabelSet {
 /// 1. Compatibility with your existing setup
 /// 2. Not exporting to prometheus
 /// 3. You know there wont be many labels but you just don't know what they are
-pub trait DynamicLabelSet: LabelSet {}
+pub trait DynamicLabelSet: LabelSet {
+    #[doc(hidden)]
+    fn __private_check_dynamic() {}
+}
 
 /// `LabelSet` defines a way to take a label value, eg a `&str`, and encode it into a compressed integer for more efficient encoding.
 ///
@@ -179,7 +182,6 @@ mod tests {
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
     #[label(crate = crate, set = ErrorsSet)]
     struct Error<'a> {
-        #[label(fixed)]
         kind: ErrorKind,
         #[label(fixed_with = RodeoReader)]
         route: &'a str,
@@ -221,7 +223,6 @@ mod tests {
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
     #[label(crate = crate, set = ErrorsSet2)]
     struct Error2<'a> {
-        #[label(fixed)]
         kind: ErrorKind,
         #[label(fixed_with = RodeoReader)]
         route: &'a str,

@@ -107,7 +107,6 @@ pub async fn handler(s: State<AppState>) -> Response {
 pub struct HttpRequests<'a> {
     #[label(fixed_with = Arc<lasso::RodeoReader>)]
     path: &'a str,
-    #[label(fixed)]
     method: Method,
 }
 
@@ -116,16 +115,13 @@ pub struct HttpRequests<'a> {
 pub struct HttpResponses<'a> {
     #[label(fixed_with = Arc<lasso::RodeoReader>)]
     path: &'a str,
-    #[label(fixed)]
     method: Method,
-    #[label(fixed)]
     status: StatusCode,
 }
 
 // Some wrappers for http types to turn into metric label values
 
 #[derive(Clone, Copy, FixedCardinalityLabel)]
-#[label(rename_all = "snake_case")]
 enum Method {
     Get,
     Post,

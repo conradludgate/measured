@@ -39,7 +39,7 @@
 //! // Define a fixed cardinality label
 //!
 //! #[derive(FixedCardinalityLabel)]
-//! #[label(rename_all = "snake_case")]
+//!
 //! enum Operation {
 //!     Create,
 //!     Update,
@@ -51,7 +51,6 @@
 //! #[derive(LabelGroup)]
 //! #[label(set = MyLabelGroupSet)]
 //! struct MyLabelGroup {
-//!     #[label(fixed)]
 //!     operation: Operation,
 //! }
 //!
@@ -259,7 +258,6 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// // Define a fixed cardinality label
 ///
 /// #[derive(FixedCardinalityLabel)]
-/// #[label(rename_all = "snake_case")]
 /// enum Operation {
 ///     Create,
 ///     Update,
@@ -271,7 +269,6 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// #[derive(LabelGroup)]
 /// #[label(set = MyLabelGroupSet)]
 /// struct MyLabelGroup {
-///     #[label(fixed)]
 ///     operation: Operation,
 /// }
 ///
@@ -322,7 +319,6 @@ pub type Counter = Metric<CounterState>;
 /// // Define a fixed cardinality label
 ///
 /// #[derive(FixedCardinalityLabel)]
-/// #[label(rename_all = "snake_case")]
 /// enum Operation {
 ///     Create,
 ///     Update,
@@ -334,7 +330,6 @@ pub type Counter = Metric<CounterState>;
 /// #[derive(LabelGroup)]
 /// #[label(set = MyLabelGroupSet)]
 /// struct MyLabelGroup {
-///     #[label(fixed)]
 ///     operation: Operation,
 /// }
 ///

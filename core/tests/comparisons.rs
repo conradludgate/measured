@@ -234,7 +234,6 @@ fn errors() -> &'static [ErrorKind] {
 #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
 #[label(set = ErrorsSet)]
 struct Error<'a> {
-    #[label(fixed)]
     kind: ErrorKind,
     #[label(fixed_with = RodeoReader)]
     route: &'a str,

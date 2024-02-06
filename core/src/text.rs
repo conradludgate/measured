@@ -293,9 +293,7 @@ This is on a new line"#,
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
     #[label(crate = crate, set = RequestLabelSet)]
     struct RequestLabels {
-        #[label(fixed)]
         method: Method,
-        #[label(fixed)]
         code: StatusCode,
     }
 
