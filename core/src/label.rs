@@ -30,6 +30,34 @@ impl LabelName {
     }
 }
 
+/// A [`LabelVisitor`] that is useful for testing purposes
+#[derive(Default, Debug)]
+pub struct LabelTestVisitor(pub Vec<String>);
+
+impl LabelVisitor for LabelTestVisitor {
+    fn write_int(&mut self, x: u64) {
+        self.write_str(itoa::Buffer::new().format(x));
+    }
+
+    fn write_float(&mut self, x: f64) {
+        if x.is_infinite() {
+            if x.is_sign_positive() {
+                self.write_str("+Inf");
+            } else {
+                self.write_str("-Inf");
+            }
+        } else if x.is_nan() {
+            self.write_str("NaN");
+        } else {
+            self.write_str(ryu::Buffer::new().format(x));
+        }
+    }
+
+    fn write_str(&mut self, x: &str) {
+        self.0.push(x.to_owned())
+    }
+}
+
 /// A trait for visiting the value of a label
 pub trait LabelVisitor {
     fn write_int(&mut self, x: u64);

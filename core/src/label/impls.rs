@@ -10,13 +10,16 @@ use super::{
 impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalitySet
     for indexmap::IndexSet<T, S>
 {
-    type Value<'a> = T where Self: 'a;
-
     fn cardinality(&self) -> usize {
         self.len()
     }
+}
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+#[cfg(feature = "indexmap")]
+impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> LabelSet for indexmap::IndexSet<T, S> {
+    type Value<'a> = T;
+
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         self.get_index_of(&value)
     }
 

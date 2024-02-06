@@ -223,7 +223,183 @@ pub mod label;
 pub mod metric;
 pub mod text;
 
-pub use measured_derive::{FixedCardinalityLabel, LabelGroup};
+/// Implement [`FixedCardinalityLabel`](label::FixedCardinalityLabel) on an `enum`
+///
+/// # Examples
+///
+/// ## Basic
+///
+/// ```
+/// #[derive(measured::FixedCardinalityLabel)]
+/// #[derive(Debug, Copy, Clone, PartialEq)]
+/// enum Operation {
+///     Create,
+///     Update,
+///     Delete,
+///     DeleteAll,
+/// }
+///
+/// use measured::label::FixedCardinalityLabel as _;
+///
+/// assert_eq!(Operation::cardinality(), 4, "Operation has 4 variants");
+///
+/// assert_eq!(Operation::Create.encode(), 0);
+/// assert_eq!(Operation::Update.encode(), 1);
+/// assert_eq!(Operation::Delete.encode(), 2);
+/// assert_eq!(Operation::DeleteAll.encode(), 3);
+///
+/// assert_eq!(Operation::decode(0), Operation::Create);
+/// assert_eq!(Operation::decode(1), Operation::Update);
+/// assert_eq!(Operation::decode(2), Operation::Delete);
+/// assert_eq!(Operation::decode(3), Operation::DeleteAll);
+///
+/// use measured::label::LabelValue as _;
+///
+/// let mut visitor = measured::label::LabelTestVisitor::default();
+/// Operation::Create.visit(&mut visitor);
+/// Operation::Update.visit(&mut visitor);
+/// Operation::Delete.visit(&mut visitor);
+/// Operation::DeleteAll.visit(&mut visitor);
+///
+/// assert_eq!(
+///     visitor.0,
+///     [
+///         "create".to_string(),
+///         "update".to_string(),
+///         "delete".to_string(),
+///         "delete_all".to_string(),
+///     ],
+///     "values are snake_cased by default",
+/// );
+/// ```
+///
+/// ## Integer values
+///
+/// ```
+/// #[derive(measured::FixedCardinalityLabel)]
+/// #[derive(Debug, Copy, Clone, PartialEq)]
+/// enum StatusCode {
+///     Ok = 200,
+///     ImATeapot = 418,
+///     InternalServerError = 500,
+/// }
+///
+/// use measured::label::FixedCardinalityLabel as _;
+///
+/// assert_eq!(StatusCode::cardinality(), 3, "StatusCode has 3 variants");
+///
+/// assert_eq!(StatusCode::Ok.encode(), 0);
+/// assert_eq!(StatusCode::ImATeapot.encode(), 1);
+/// assert_eq!(StatusCode::InternalServerError.encode(), 2);
+///
+/// assert_eq!(StatusCode::decode(0), StatusCode::Ok);
+/// assert_eq!(StatusCode::decode(1), StatusCode::ImATeapot);
+/// assert_eq!(StatusCode::decode(2), StatusCode::InternalServerError);
+///
+/// use measured::label::LabelValue as _;
+///
+/// let mut visitor = measured::label::LabelTestVisitor::default();
+/// StatusCode::Ok.visit(&mut visitor);
+/// StatusCode::ImATeapot.visit(&mut visitor);
+/// StatusCode::InternalServerError.visit(&mut visitor);
+///
+/// assert_eq!(
+///     visitor.0,
+///     [
+///         "200".to_string(),
+///         "418".to_string(),
+///         "500".to_string(),
+///     ],
+///     "variants with integer values will use those values",
+/// );
+/// ```
+///
+/// ## Custom values
+///
+/// ```
+/// #[derive(measured::FixedCardinalityLabel)]
+/// #[derive(Debug, Copy, Clone, PartialEq)]
+/// #[label(rename_all = "SHOUTY-KEBAB-CASE")]
+/// enum StatusCode {
+///     #[label(rename = "a-okay")]
+///     Ok,
+///     ImATeapot,
+///     InternalServerError,
+/// }
+///
+/// use measured::label::LabelValue as _;
+///
+/// let mut visitor = measured::label::LabelTestVisitor::default();
+/// StatusCode::Ok.visit(&mut visitor);
+/// StatusCode::ImATeapot.visit(&mut visitor);
+/// StatusCode::InternalServerError.visit(&mut visitor);
+///
+/// assert_eq!(
+///     visitor.0,
+///     [
+///         "a-okay".to_string(),
+///         "IM-A-TEAPOT".to_string(),
+///         "INTERNAL-SERVER-ERROR".to_string(),
+///     ],
+/// );
+/// ```
+pub use measured_derive::FixedCardinalityLabel;
+
+/// Implement [`LabelGroup`](label::LabelGroup) on a `struct`
+///
+/// A [`LabelGroup`](label::LabelGroup) is a collection of named [`LabelValue`](label::LabelValue)s. Additonally to the label group,
+/// there is also a [`LabelGroupSet`](label::LabelGroupSet) that is created by this macro.
+/// The set provides additional information needed to encode the values in the group.
+///
+/// ```
+/// use lasso::{RodeoReader, ThreadedRodeo};
+///
+/// #[derive(measured::LabelGroup)]
+/// #[label(set = ResponseSet)]
+/// struct Response<'a> {
+///     kind: StatusCode,
+///
+///     /// route paths are known up front, and stored in a `RodeoReader`
+///     #[label(fixed_with = RodeoReader)]
+///     route: &'a str,
+///
+///     /// user names are not known up-front and are allocated on-demand in a ThreadedRodeo
+///     #[label(dynamic_with = ThreadedRodeo)]
+///     user_name: &'a str,
+/// }
+///
+/// #[derive(measured::FixedCardinalityLabel)]
+/// enum StatusCode {
+///     Ok = 200,
+///     BadRequest = 400,
+///     InternalServerError = 500,
+/// }
+///
+/// let set = ResponseSet {
+///     route: ["/foo/bar", "/home"].into_iter().collect::<lasso::Rodeo>().into_reader(),
+///     user_name: ThreadedRodeo::new(),
+/// };
+///
+/// use measured::label::LabelGroupSet as _;
+///
+/// let response = Response {
+///     kind: StatusCode::InternalServerError,
+///     route: "/home",
+///     user_name: "conradludgate",
+/// };
+/// assert_eq!(set.encode(response), Some((5, 0)));
+///
+/// let response = Response {
+///     kind: StatusCode::Ok,
+///     route: "/foo/bar",
+///     user_name: "conradludgate",
+/// };
+/// assert_eq!(set.encode(response), Some((0, 0)));
+///
+/// // the dynamic value `"conradludgate"` was inserted into the set
+/// assert_eq!(set.user_name.len(), 1);
+/// ```
+pub use measured_derive::LabelGroup;
 
 /// A [`Metric`] that counts individual observations from an event or sample stream in configurable buckets.
 /// Similar to a Summary, it also provides a sum of observations and an observation count.
@@ -289,7 +465,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// ```
 pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 
-/// A [`Metric]` that represents a single numerical value that only ever goes up.
+/// A [`Metric`] that represents a single numerical value that only ever goes up.
 ///
 /// ```
 /// use measured::Counter;
