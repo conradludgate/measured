@@ -7,7 +7,7 @@ use crate::{
     label::{LabelGroup, LabelName, LabelVisitor},
     metric::{
         histogram::Thresholds,
-        name::{Bucket, Count, MetricName, Sum},
+        name::{Bucket, Count, MetricNameEncoder, Sum},
         MetricEncoding,
     },
     CounterState, HistogramState,
@@ -68,7 +68,7 @@ impl TextEncoder {
     }
 
     /// Write the help line for a metric
-    pub fn write_help(&mut self, name: &impl MetricName, help: &str) {
+    pub fn write_help(&mut self, name: &impl MetricNameEncoder, help: &str) {
         if self.state == State::Metrics {
             self.write_line();
         }
@@ -82,7 +82,7 @@ impl TextEncoder {
     }
 
     /// Write the type line for a metric
-    pub fn write_type(&mut self, name: &impl MetricName, typ: MetricType) {
+    pub fn write_type(&mut self, name: &impl MetricNameEncoder, typ: MetricType) {
         if self.state == State::Metrics {
             self.write_line();
         }
@@ -102,7 +102,7 @@ impl TextEncoder {
     /// Write the metric data
     pub fn write_metric<L: LabelGroup>(
         &mut self,
-        name: &impl MetricName,
+        name: impl MetricNameEncoder,
         labels: L,
         value: MetricValue,
     ) {
@@ -170,14 +170,14 @@ impl TextEncoder {
 }
 
 impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
-    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
         enc.write_type(&name, MetricType::Histogram);
     }
     fn collect_into(
         &self,
         metadata: &Thresholds<N>,
         labels: impl LabelGroup,
-        name: impl MetricName,
+        name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
     ) {
         struct HistogramLabelLe {
@@ -227,14 +227,14 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
 }
 
 impl MetricEncoding<TextEncoder> for CounterState {
-    fn write_type(name: impl MetricName, enc: &mut TextEncoder) {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
         enc.write_type(&name, MetricType::Counter);
     }
     fn collect_into(
         &self,
         _m: &(),
         labels: impl LabelGroup,
-        name: impl MetricName,
+        name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
     ) {
         enc.write_metric(
@@ -267,7 +267,7 @@ mod tests {
     use crate::{
         metric::{
             histogram::Thresholds,
-            name::{CheckedMetricName, Total},
+            name::{MetricName, Total},
         },
         CounterVec, Histogram,
     };
@@ -327,7 +327,7 @@ This is on a new line"#,
 
         let mut encoder = TextEncoder::default();
 
-        let name = CheckedMetricName::from_static("http_request").with_suffix(Total);
+        let name = MetricName::from_static("http_request").with_suffix(Total);
         encoder.write_help(&name, "The total number of HTTP requests.");
         requests.collect_into(name, &mut encoder);
 
@@ -354,7 +354,7 @@ http_request_total{method="get",code="400"} 3
 
         let mut encoder = TextEncoder::default();
 
-        let name = CheckedMetricName::from_static("http_request_duration_seconds");
+        let name = MetricName::from_static("http_request_duration_seconds");
         encoder.write_help(&name, "A histogram of the request duration.");
         histogram.collect_into(name, &mut encoder);
 

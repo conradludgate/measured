@@ -9,7 +9,7 @@
 //!
 //! ```
 //! use measured::Counter;
-//! use measured::metric::name::CheckedMetricName;
+//! use measured::metric::name::MetricName;
 //! use measured::text::TextEncoder;
 //!
 //! // create a counter
@@ -19,7 +19,7 @@
 //!
 //! // sample the counter and encode the value to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = CheckedMetricName::from_static("my_first_counter");
+//! let name = MetricName::from_static("my_first_counter");
 //! counter.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
@@ -33,7 +33,7 @@
 //!
 //! ```
 //! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
-//! use measured::metric::name::CheckedMetricName;
+//! use measured::metric::name::MetricName;
 //! use measured::text::TextEncoder;
 //!
 //! // Define a fixed cardinality label
@@ -63,7 +63,7 @@
 //!
 //! // sample the counters and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = CheckedMetricName::from_static("my_first_counter");
+//! let name = MetricName::from_static("my_first_counter");
 //! counters.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
@@ -80,7 +80,7 @@
 //!
 //! ```
 //! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
-//! use measured::metric::name::CheckedMetricName;
+//! use measured::metric::name::MetricName;
 //! use measured::text::TextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
@@ -109,7 +109,7 @@
 //!
 //! // sample the counters and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = CheckedMetricName::from_static("my_first_counter");
+//! let name = MetricName::from_static("my_first_counter");
 //! counters.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
@@ -121,7 +121,7 @@
 //!
 //! ```
 //! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
-//! use measured::metric::name::CheckedMetricName;
+//! use measured::metric::name::MetricName;
 //! use measured::text::TextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
@@ -146,7 +146,7 @@
 //!
 //! // sample the counters and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = CheckedMetricName::from_static("my_first_counter");
+//! let name = MetricName::from_static("my_first_counter");
 //! counters.collect_into(name, &mut text_encoder);
 //! let bytes = text_encoder.finish();
 //! ```
@@ -232,7 +232,7 @@ pub use measured_derive::{FixedCardinalityLabel, LabelGroup};
 /// ```
 /// use measured::Histogram;
 /// use measured::metric::histogram::Thresholds;
-/// use measured::metric::name::CheckedMetricName;
+/// use measured::metric::name::MetricName;
 /// use measured::text::TextEncoder;
 ///
 /// // create a histogram with 8 buckets starting at 0.01, increasing by 2x each time up to 2.56
@@ -242,7 +242,7 @@ pub use measured_derive::{FixedCardinalityLabel, LabelGroup};
 ///
 /// // sample the histogram and encode the value to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = CheckedMetricName::from_static("my_first_histogram");
+/// let name = MetricName::from_static("my_first_histogram");
 /// histogram.collect_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
@@ -253,7 +253,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// ```
 /// use measured::{HistogramVec, LabelGroup, FixedCardinalityLabel};
 /// use measured::metric::histogram::Thresholds;
-/// use measured::metric::name::CheckedMetricName;
+/// use measured::metric::name::MetricName;
 /// use measured::text::TextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -286,7 +286,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 ///
 /// // sample the histograms and encode the values to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = CheckedMetricName::from_static("my_first_histogram");
+/// let name = MetricName::from_static("my_first_histogram");
 /// histograms.collect_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
@@ -296,7 +296,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 ///
 /// ```
 /// use measured::Counter;
-/// use measured::metric::name::CheckedMetricName;
+/// use measured::metric::name::MetricName;
 /// use measured::text::TextEncoder;
 ///
 /// // create a counter
@@ -306,7 +306,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 ///
 /// // sample the counter and encode the value to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = CheckedMetricName::from_static("my_first_counter");
+/// let name = MetricName::from_static("my_first_counter");
 /// counter.collect_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
@@ -316,7 +316,7 @@ pub type Counter = Metric<CounterState>;
 ///
 /// ```
 /// use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
-/// use measured::metric::name::CheckedMetricName;
+/// use measured::metric::name::MetricName;
 /// use measured::text::TextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -346,7 +346,7 @@ pub type Counter = Metric<CounterState>;
 ///
 /// // sample the counters and encode the values to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = CheckedMetricName::from_static("my_first_counter");
+/// let name = MetricName::from_static("my_first_counter");
 /// counters.collect_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```

@@ -73,6 +73,11 @@ impl ToTokens for Set<'_> {
             .partition_point(|x| x.attrs.get_sort_key() == LabelGroupFieldAttrsSortKey::Dynamic);
         let (dynamics, fixed) = sorted_fields.split_at(part);
 
+        // this is to reverse the order of the encoded fields
+        let mut fixed = fixed.to_vec();
+        fixed.reverse();
+        let fixed = &fixed;
+
         let cardinalities: Vec<TokenStream> = fixed
             .iter()
             .map(|x| {

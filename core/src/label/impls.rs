@@ -92,10 +92,10 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
         let mut mul = 1;
         let mut index = 0;
 
-        index += self.0.encode_dense(values.0)? * mul;
-        mul *= self.0.cardinality()?;
-
         index += self.1.encode_dense(values.1)? * mul;
+        mul *= self.1.cardinality()?;
+
+        index += self.0.encode_dense(values.0)? * mul;
         // mul *= self.1.cardinality()?;
 
         Some(index)
@@ -104,15 +104,15 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
     fn decode_dense(&self, value: usize) -> Self::Group<'_> {
         let index = value;
         let (index, index1) = (
-            index / self.0.cardinality().unwrap(),
-            index % self.0.cardinality().unwrap(),
-        );
-        let a = self.0.decode_dense(index1);
-        let (index, index1) = (
             index / self.1.cardinality().unwrap(),
             index % self.1.cardinality().unwrap(),
         );
         let b = self.1.decode_dense(index1);
+        let (index, index1) = (
+            index / self.0.cardinality().unwrap(),
+            index % self.0.cardinality().unwrap(),
+        );
+        let a = self.0.decode_dense(index1);
         debug_assert_eq!(index, 0);
         ComposedGroup(a, b)
     }

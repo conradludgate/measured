@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 
 /// `MetricName` represents a type that can be encoded into the name of a metric when collected.
-pub trait MetricName {
+pub trait MetricNameEncoder {
     /// Encoded this name into the given bytes buffer according to the Prometheus metric name encoding specification.
     ///
     /// See <https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels>
@@ -47,42 +47,45 @@ impl core::fmt::Display for InvalidMetricName {
 impl std::error::Error for InvalidMetricName {}
 
 /// Represents a string-based [`MetricName`]
-#[repr(transparent)]
-pub struct CheckedMetricName(str);
+pub struct MetricName(str);
 
-impl CheckedMetricName {
-    /// Construct a [`MetricName`] from a static string, can be used in const expressions.
+pub(crate) const fn assert_metric_name(name: &'static str) {
+    // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
+    if name.is_empty() {
+        panic!("string should not be empty")
+    }
+
+    let mut i = 0;
+    while i < name.len() {
+        match name.as_bytes()[i] {
+            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => {}
+            _ => panic!("string should only contain [a-zA-Z0-9_:]"),
+        }
+        i += 1;
+    }
+
+    if name.as_bytes()[0].is_ascii_digit() {
+        panic!("string should not start with a digit")
+    }
+}
+
+impl MetricName {
+    /// Construct a [`MetricNameEncoder`] from a static string, can be used in const expressions.
     ///
     /// # Panics
     /// Will panic if the string contains invalid characters
     pub const fn from_static(value: &'static str) -> &'static Self {
-        // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
-        if value.is_empty() {
-            panic!("string should not be empty")
-        }
+        assert_metric_name(value);
 
-        let mut i = 0;
-        while i < value.len() {
-            match value.as_bytes()[i] {
-                b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => {}
-                _ => panic!("string should only contain [a-zA-Z0-9_:]"),
-            }
-            i += 1;
-        }
-
-        if value.as_bytes()[0].is_ascii_digit() {
-            panic!("string should not start with a digit")
-        }
-
-        // SAFETY: `CheckedMetricName` is transparent over `str`. There's no way to do this safely.
+        // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
-        unsafe { &*(value as *const str as *const CheckedMetricName) }
+        unsafe { &*(value as *const str as *const MetricName) }
     }
 
     /// Add a namespace prefix to this metric name.
     pub const fn in_namespace(&self, ns: &'static str) -> WithNamespace<&'_ Self> {
         WithNamespace {
-            namespace: CheckedMetricName::from_static(ns),
+            namespace: MetricName::from_static(ns),
             metric_name: self,
         }
     }
@@ -96,7 +99,7 @@ impl CheckedMetricName {
     }
 }
 
-impl<'a> TryFrom<&'a str> for &'a CheckedMetricName {
+impl<'a> TryFrom<&'a str> for &'a MetricName {
     type Error = InvalidMetricName;
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
@@ -116,11 +119,11 @@ impl<'a> TryFrom<&'a str> for &'a CheckedMetricName {
 
         // SAFETY: `CheckedMetricName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
-        Ok(unsafe { &*(value as *const str as *const CheckedMetricName) })
+        Ok(unsafe { &*(value as *const str as *const MetricName) })
     }
 }
 
-impl MetricName for CheckedMetricName {
+impl MetricNameEncoder for MetricName {
     fn encode_text(&self, b: &mut BytesMut) {
         b.extend_from_slice(self.0.as_bytes());
     }
@@ -137,7 +140,7 @@ pub trait Suffix {
     fn encode_text(&self, b: &mut BytesMut);
 }
 
-impl<T: MetricName + ?Sized> MetricName for &T {
+impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for &T {
     fn encode_text(&self, b: &mut BytesMut) {
         T::encode_text(self, b)
     }
@@ -145,7 +148,7 @@ impl<T: MetricName + ?Sized> MetricName for &T {
 
 /// See [`MetricName::in_namespace`]
 pub struct WithNamespace<T: ?Sized> {
-    namespace: &'static CheckedMetricName,
+    namespace: &'static MetricName,
     metric_name: T,
 }
 
@@ -159,7 +162,7 @@ impl<T> WithNamespace<T> {
     }
 }
 
-impl<T: MetricName + ?Sized> MetricName for WithNamespace<T> {
+impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithNamespace<T> {
     fn encode_text(&self, b: &mut BytesMut) {
         b.extend_from_slice(self.namespace.0.as_bytes());
         b.extend_from_slice(b"_");
@@ -172,7 +175,7 @@ pub struct WithSuffix<S, T: ?Sized> {
     metric_name: T,
 }
 
-impl<S: Suffix, T: MetricName + ?Sized> MetricName for WithSuffix<S, T> {
+impl<S: Suffix, T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithSuffix<S, T> {
     fn encode_text(&self, b: &mut BytesMut) {
         self.metric_name.encode_text(b);
         self.suffix.encode_text(b);

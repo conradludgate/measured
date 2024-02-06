@@ -1,11 +1,12 @@
 use lasso::{Rodeo, RodeoReader};
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
+use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 
 const LOOPS: usize = 2000;
 
 #[test]
 fn measured() {
-    use measured::metric::name::{CheckedMetricName, Total};
+    use measured::metric::name::{MetricName, Total};
 
     let error_set = ErrorsSet {
         route: Rodeo::from_iter(routes()).into_reader(),
@@ -22,7 +23,7 @@ fn measured() {
         }
     }
 
-    let metric = CheckedMetricName::from_static("http_request_errors").with_suffix(Total);
+    let metric = MetricName::from_static("http_request_errors").with_suffix(Total);
     encoder.write_help(&metric, "help text");
     counter_vec.collect_into(&metric, &mut encoder);
     assert_eq!(
@@ -30,22 +31,22 @@ fn measured() {
         br#"# HELP http_request_errors_total help text
 # TYPE http_request_errors_total counter
 http_request_errors_total{kind="user",route="/api/v1/users"} 2000
-http_request_errors_total{kind="internal",route="/api/v1/users"} 2000
-http_request_errors_total{kind="network",route="/api/v1/users"} 2000
 http_request_errors_total{kind="user",route="/api/v1/users/:id"} 2000
-http_request_errors_total{kind="internal",route="/api/v1/users/:id"} 2000
-http_request_errors_total{kind="network",route="/api/v1/users/:id"} 2000
 http_request_errors_total{kind="user",route="/api/v1/products"} 2000
-http_request_errors_total{kind="internal",route="/api/v1/products"} 2000
-http_request_errors_total{kind="network",route="/api/v1/products"} 2000
 http_request_errors_total{kind="user",route="/api/v1/products/:id"} 2000
-http_request_errors_total{kind="internal",route="/api/v1/products/:id"} 2000
-http_request_errors_total{kind="network",route="/api/v1/products/:id"} 2000
 http_request_errors_total{kind="user",route="/api/v1/products/:id/owner"} 2000
-http_request_errors_total{kind="internal",route="/api/v1/products/:id/owner"} 2000
-http_request_errors_total{kind="network",route="/api/v1/products/:id/owner"} 2000
 http_request_errors_total{kind="user",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/users"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/users/:id"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/products"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="internal",route="/api/v1/products/:id/owner"} 2000
 http_request_errors_total{kind="internal",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="network",route="/api/v1/users"} 2000
+http_request_errors_total{kind="network",route="/api/v1/users/:id"} 2000
+http_request_errors_total{kind="network",route="/api/v1/products"} 2000
+http_request_errors_total{kind="network",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="network",route="/api/v1/products/:id/owner"} 2000
 http_request_errors_total{kind="network",route="/api/v1/products/:id/purchase"} 2000
 "#
     );
@@ -151,6 +152,70 @@ http_request_errors_total{kind="user",route="/api/v1/users/:id"} 2000"#
     );
 }
 
+#[test]
+fn prometheus_client() {
+    use prometheus_client::encoding::text::encode;
+    use prometheus_client::metrics::counter::Counter;
+    use prometheus_client::metrics::family::Family;
+    use prometheus_client::registry::Registry;
+
+    let mut registry = Registry::default();
+
+    let counter_vec = Family::<ErrorStatic, Counter>::default();
+
+    // Register the metric family with the registry.
+    registry.register(
+        // With the metric name.
+        "http_request_errors",
+        // And the metric help text.
+        "help text",
+        counter_vec.clone(),
+    );
+
+    for _ in 0..LOOPS {
+        for &kind in errors() {
+            for route in routes() {
+                counter_vec
+                    .get_or_create(&ErrorStatic { kind, route })
+                    .inc();
+            }
+        }
+    }
+
+    let mut output = String::new();
+    encode(&mut output, &registry).unwrap();
+
+    // output is unstable
+    let mut lines: Vec<&str> = output.lines().collect();
+    lines.sort();
+    let output = lines.join("\n");
+
+    assert_eq!(
+        output,
+        r#"# EOF
+# HELP http_request_errors help text.
+# TYPE http_request_errors counter
+http_request_errors_total{kind="Internal",route="/api/v1/products"} 2000
+http_request_errors_total{kind="Internal",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="Internal",route="/api/v1/products/:id/owner"} 2000
+http_request_errors_total{kind="Internal",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="Internal",route="/api/v1/users"} 2000
+http_request_errors_total{kind="Internal",route="/api/v1/users/:id"} 2000
+http_request_errors_total{kind="Network",route="/api/v1/products"} 2000
+http_request_errors_total{kind="Network",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="Network",route="/api/v1/products/:id/owner"} 2000
+http_request_errors_total{kind="Network",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="Network",route="/api/v1/users"} 2000
+http_request_errors_total{kind="Network",route="/api/v1/users/:id"} 2000
+http_request_errors_total{kind="User",route="/api/v1/products"} 2000
+http_request_errors_total{kind="User",route="/api/v1/products/:id"} 2000
+http_request_errors_total{kind="User",route="/api/v1/products/:id/owner"} 2000
+http_request_errors_total{kind="User",route="/api/v1/products/:id/purchase"} 2000
+http_request_errors_total{kind="User",route="/api/v1/users"} 2000
+http_request_errors_total{kind="User",route="/api/v1/users/:id"} 2000"#
+    );
+}
+
 fn routes() -> &'static [&'static str] {
     &[
         "/api/v1/users",
@@ -175,7 +240,13 @@ struct Error<'a> {
     route: &'a str,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, FixedCardinalityLabel)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct ErrorStatic {
+    kind: ErrorKind,
+    route: &'static str,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
 #[label(rename_all = "kebab-case")]
 enum ErrorKind {
     User,

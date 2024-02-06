@@ -5,7 +5,7 @@ use core::hash::Hash;
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use rustc_hash::FxHasher;
 
-use self::name::MetricName;
+use self::name::MetricNameEncoder;
 
 pub mod counter;
 pub mod histogram;
@@ -133,20 +133,20 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
 /// Defines the encoding of a metric
 pub trait MetricEncoding<T>: MetricType {
     /// Write the type information for this metric into the encoder
-    fn write_type(name: impl MetricName, enc: &mut T);
+    fn write_type(name: impl MetricNameEncoder, enc: &mut T);
     /// Sample this metric into the encoder
     fn collect_into(
         &self,
         metadata: &Self::Metadata,
         labels: impl LabelGroup,
-        name: impl MetricName,
+        name: impl MetricNameEncoder,
         enc: &mut T,
     );
 }
 
 impl<M: MetricType> Metric<M> {
     /// Collect this metric value into the given encoder with the given metric name
-    pub fn collect_into<T>(&self, name: impl MetricName, enc: &mut T)
+    pub fn collect_into<T>(&self, name: impl MetricNameEncoder, enc: &mut T)
     where
         M: MetricEncoding<T>,
     {
@@ -158,7 +158,7 @@ impl<M: MetricType> Metric<M> {
 
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Collect these metric values into the given encoder with the given metric name
-    pub fn collect_into<T>(&self, name: impl MetricName, enc: &mut T)
+    pub fn collect_into<T>(&self, name: impl MetricNameEncoder, enc: &mut T)
     where
         M: MetricEncoding<T>,
     {
