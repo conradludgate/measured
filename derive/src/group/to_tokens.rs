@@ -41,7 +41,7 @@ impl ToTokens for LabelGroup {
             }
 
             #label_group_set
-        })
+        });
     }
 }
 
@@ -159,7 +159,7 @@ impl ToTokens for Set<'_> {
 
                 #decode_fn
             }
-        })
+        });
     }
 }
 
@@ -227,7 +227,7 @@ impl ToTokens for SetEncode<'_> {
                     #(, #dynamic_encodes)*
                 ))
             }
-        })
+        });
     }
 }
 
@@ -306,6 +306,6 @@ impl ToTokens for SetDecode<'_> {
                     #(#field_names,)*
                 }
             }
-        })
+        });
     }
 }

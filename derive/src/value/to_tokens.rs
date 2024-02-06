@@ -23,11 +23,10 @@ impl ToTokens for FixedCardinalityLabel {
             let write = if let Some(int) = &var.value {
                 quote_spanned!(int.span() => v.write_int(#int))
             } else {
-                let name = var
-                    .attrs
-                    .rename
-                    .as_ref()
-                    .map_or_else(|| rename_all.apply(&var.ident.to_string()), |l| l.value());
+                let name = var.attrs.rename.as_ref().map_or_else(
+                    || rename_all.apply(&var.ident.to_string()),
+                    syn::LitStr::value,
+                );
                 quote_spanned!(var.span => v.write_str(#name))
             };
             quote_spanned!(var.span => #ident :: #var_ident => #write,)
@@ -62,6 +61,6 @@ impl ToTokens for FixedCardinalityLabel {
                     }
                 }
             }
-        })
+        });
     }
 }

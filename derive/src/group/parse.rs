@@ -59,10 +59,10 @@ impl TryFrom<DeriveInput> for LabelGroup {
         Ok(Self {
             vis,
             krate,
-            ident,
-            generics,
-            sorted_fields,
             set_ident,
+            ident,
+            sorted_fields,
+            generics,
         })
     }
 }

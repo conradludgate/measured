@@ -32,7 +32,7 @@ mod fixed_cardinality {
                 for _ in 0..black_box(LOOPS) {
                     for &kind in errors() {
                         for route in routes() {
-                            counter_vec.inc(Error { kind, route })
+                            counter_vec.inc(Error { kind, route });
                         }
                     }
                 }
@@ -59,7 +59,7 @@ mod fixed_cardinality {
                 for _ in 0..black_box(LOOPS) {
                     for &kind in errors() {
                         for route in routes() {
-                            counter_vec.inc(Error { kind, route })
+                            counter_vec.inc(Error { kind, route });
                         }
                     }
                 }
@@ -86,7 +86,7 @@ mod fixed_cardinality {
             for _ in 0..black_box(LOOPS) {
                 for &kind in errors() {
                     for route in routes() {
-                        counter_vec.with_label_values(&[kind.to_str(), route]).inc()
+                        counter_vec.with_label_values(&[kind.to_str(), route]).inc();
                     }
                 }
             }
@@ -103,7 +103,7 @@ mod fixed_cardinality {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
 
         metrics::with_local_recorder(&recorder, || {
-            metrics::describe_counter!("http_request_errors", "help text")
+            metrics::describe_counter!("http_request_errors", "help text");
         });
 
         bencher.bench(|| {
@@ -256,7 +256,7 @@ mod high_cardinality {
                                 kind,
                                 route,
                                 user_name: names.next().unwrap(),
-                            })
+                            });
                         }
                     }
                 }
@@ -290,7 +290,7 @@ mod high_cardinality {
                         for route in routes() {
                             counter_vec
                                 .with_label_values(&[kind.to_str(), route, &names.next().unwrap()])
-                                .inc()
+                                .inc();
                         }
                     }
                 }
@@ -307,7 +307,7 @@ mod high_cardinality {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
 
         metrics::with_local_recorder(&recorder, || {
-            metrics::describe_counter!("http_request_errors", "help text")
+            metrics::describe_counter!("http_request_errors", "help text");
         });
 
         let thread = AtomicU64::new(0);

@@ -37,14 +37,14 @@ impl ContainerAttrs {
             first = false;
 
             match () {
-                _ if input.peek(Token![crate]) => {
+                () if input.peek(Token![crate]) => {
                     let _: Token![crate] = input.parse()?;
                     let _: Token![=] = input.parse()?;
                     if self.krate.replace(Krate(input.parse()?)).is_some() {
                         return Err(input.error("duplicate `crate` arg"));
                     }
                 }
-                _ if input.peek(syn::Ident) => {
+                () if input.peek(syn::Ident) => {
                     let name: syn::Ident = input.parse()?;
                     match &*name.to_string() {
                         "rename_all" => {
@@ -56,7 +56,7 @@ impl ContainerAttrs {
                         _ => return Err(input.error("unknown argument found")),
                     }
                 }
-                _ => return Err(input.error("unknown argument found")),
+                () => return Err(input.error("unknown argument found")),
             }
         }
         Ok(self)
@@ -82,7 +82,7 @@ impl VariantAttrs {
                         first = false;
 
                         match () {
-                            _ if input.peek(syn::Ident) => {
+                            () if input.peek(syn::Ident) => {
                                 let name: syn::Ident = input.parse()?;
                                 match &*name.to_string() {
                                     "rename" => {
@@ -98,11 +98,11 @@ impl VariantAttrs {
                                     _ => return Err(input.error("unknown argument found")),
                                 }
                             }
-                            _ => return Err(input.error("unknown argument found")),
+                            () => return Err(input.error("unknown argument found")),
                         };
                     }
                     Ok(())
-                })?
+                })?;
             }
         }
         Ok(args)

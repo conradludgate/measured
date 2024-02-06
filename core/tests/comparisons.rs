@@ -18,7 +18,7 @@ fn measured() {
     for _ in 0..LOOPS {
         for &kind in errors() {
             for route in routes() {
-                counter_vec.inc(Error { kind, route })
+                counter_vec.inc(Error { kind, route });
             }
         }
     }
@@ -66,7 +66,7 @@ fn prometheus() {
     for _ in 0..LOOPS {
         for &kind in errors() {
             for route in routes() {
-                counter_vec.with_label_values(&[kind.to_str(), route]).inc()
+                counter_vec.with_label_values(&[kind.to_str(), route]).inc();
             }
         }
     }
@@ -106,7 +106,7 @@ fn metrics() {
     let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
 
     metrics::with_local_recorder(&recorder, || {
-        metrics::describe_counter!("http_request_errors_total", "help text")
+        metrics::describe_counter!("http_request_errors_total", "help text");
     });
 
     metrics::with_local_recorder(&recorder, || {
@@ -123,7 +123,7 @@ fn metrics() {
     // output is unstable
     let output = recorder.handle().render();
     let mut lines: Vec<&str> = output.lines().collect();
-    lines.sort();
+    lines.sort_unstable();
     let output = lines.join("\n");
 
     assert_eq!(
@@ -187,7 +187,7 @@ fn prometheus_client() {
 
     // output is unstable
     let mut lines: Vec<&str> = output.lines().collect();
-    lines.sort();
+    lines.sort_unstable();
     let output = lines.join("\n");
 
     assert_eq!(
