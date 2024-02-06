@@ -25,15 +25,15 @@ async fn main() {
         .api_route("/metrics", get(metrics::handler))
         .finish_api(&mut api);
 
-    let paths = lasso::Rodeo::from_iter(
-        api.paths
-            .unwrap()
-            .iter()
-            // this is a little awkward
-            // aide replaces the `:id` with `{id}` so we need to undo that...
-            .map(|(path, _)| path.replace('{', ":").replace('}', "")),
-    )
-    .into_reader();
+    let paths = api
+        .paths
+        .unwrap()
+        .iter()
+        // this is a little awkward
+        // aide replaces the `:id` with `{id}` so we need to undo that...
+        .map(|(path, _)| path.replace('{', ":").replace('}', ""))
+        .collect::<lasso::Rodeo>()
+        .into_reader();
 
     // Using the routes captured in the OpenApi object, we build the app metrics
     let state = AppState {

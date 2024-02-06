@@ -1,4 +1,4 @@
-use proc_macro2::Ident;
+use proc_macro2::{Ident, Span};
 use syn::{LitInt, Path};
 
 use self::attr::{RenameAll, VariantAttrs};
@@ -9,12 +9,13 @@ mod to_tokens;
 
 pub struct FixedCardinalityLabel {
     krate: Path,
-    rename_all: Option<RenameAll>,
+    rename_all: RenameAll,
     ident: Ident,
     variants: Vec<FixedCardinalityLabelVariant>,
 }
 
 pub struct FixedCardinalityLabelVariant {
+    span: Span,
     attrs: VariantAttrs,
     ident: Ident,
     value: Option<LitInt>,

@@ -99,14 +99,14 @@ impl<const N: usize> HistogramRef<'_, N> {
 
     /// Observe the duration in seconds since the given instant
     pub fn observe_duration_since(self, since: std::time::Instant) {
-        self.observe(since.elapsed().as_secs_f64())
+        self.observe(since.elapsed().as_secs_f64());
     }
 }
 
 impl<const N: usize> Histogram<N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(&self, x: f64) {
-        self.get_metric().observe(x)
+        self.get_metric().observe(x);
     }
 
     /// Create a [`HistogramVecTiemr`] object that automatically observes a duration when the timer is dropped.
@@ -125,7 +125,7 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
             self.with_labels(label)
                 .expect("label group should be in the set"),
             |x| x.observe(y),
-        )
+        );
     }
 
     /// Create a [`HistogramVecTiemr`] object that automatically observes a duration when the timer is dropped.
@@ -139,7 +139,7 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
 
     /// Observe the duration in seconds since the given instant
     pub fn observe_duration_since(self, label: L::Group<'_>, since: std::time::Instant) {
-        self.observe(label, since.elapsed().as_secs_f64())
+        self.observe(label, since.elapsed().as_secs_f64());
     }
 }
 
@@ -160,7 +160,7 @@ impl<'a, L: LabelGroupSet, const N: usize> HistogramVecTimer<'a, L, N> {
 impl<'a, L: LabelGroupSet, const N: usize> Drop for HistogramVecTimer<'a, L, N> {
     fn drop(&mut self) {
         if let Some(v) = self.vec {
-            v.get_metric(self.id, |m| m.observe_duration_since(self.start))
+            v.get_metric(self.id, |m| m.observe_duration_since(self.start));
         }
     }
 }
@@ -181,7 +181,7 @@ impl<'a, const N: usize> HistogramTimer<'a, N> {
 impl<'a, const N: usize> Drop for HistogramTimer<'a, N> {
     fn drop(&mut self) {
         if let Some(v) = self.vec {
-            v.get_metric().observe_duration_since(self.start)
+            v.get_metric().observe_duration_since(self.start);
         }
     }
 }

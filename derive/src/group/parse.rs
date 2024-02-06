@@ -10,6 +10,7 @@ impl TryFrom<Field> for LabelGroupField {
     fn try_from(input: Field) -> syn::Result<Self> {
         let attrs = LabelGroupFieldAttrs::parse_attrs(&input.attrs)?;
         Ok(LabelGroupField {
+            span: input.span(),
             vis: input.vis,
             name: input.ident.unwrap(),
             ty: input.ty,

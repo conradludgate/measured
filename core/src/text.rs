@@ -19,13 +19,14 @@ pub struct TextEncoder {
     b: BytesMut,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum State {
     Info,
     Metrics,
 }
 
 /// Prometheus only supports these 5 types of metrics
+#[derive(Clone, Copy, Debug)]
 pub enum MetricType {
     Counter,
     Histogram,
@@ -35,6 +36,7 @@ pub enum MetricType {
 }
 
 /// Values that prometheus supports in the text format
+#[derive(Clone, Copy, Debug)]
 pub enum MetricValue {
     Int(i64),
     Float(f64),
@@ -106,8 +108,6 @@ impl TextEncoder {
         labels: L,
         value: MetricValue,
     ) {
-        self.state = State::Metrics;
-        name.encode_text(&mut self.b);
         struct Visitor<'a, I> {
             first: bool,
             iter: I,
@@ -115,20 +115,20 @@ impl TextEncoder {
         }
         impl<I: Iterator<Item = &'static LabelName>> LabelVisitor for Visitor<'_, I> {
             fn write_int(&mut self, x: u64) {
-                self.write_str(itoa::Buffer::new().format(x))
+                self.write_str(itoa::Buffer::new().format(x));
             }
 
             fn write_float(&mut self, x: f64) {
                 if x.is_infinite() {
                     if x.is_sign_positive() {
-                        self.write_str("+Inf")
+                        self.write_str("+Inf");
                     } else {
-                        self.write_str("-Inf")
+                        self.write_str("-Inf");
                     }
                 } else if x.is_nan() {
-                    self.write_str("NaN")
+                    self.write_str("NaN");
                 } else {
-                    self.write_str(ryu::Buffer::new().format(x))
+                    self.write_str(ryu::Buffer::new().format(x));
                 }
             }
 
@@ -146,6 +146,9 @@ impl TextEncoder {
                 self.b.extend_from_slice(b"\"");
             }
         }
+
+        self.state = State::Metrics;
+        name.encode_text(&mut self.b);
 
         let mut visitor = Visitor {
             first: true,
@@ -186,11 +189,12 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
 
         impl LabelGroup for HistogramLabelLe {
             fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
-                core::iter::once(LabelName::from_static("le"))
+                const LE: &LabelName = LabelName::from_static("le");
+                core::iter::once(LE)
             }
 
             fn label_values(&self, v: &mut impl LabelVisitor) {
-                v.write_float(self.le)
+                v.write_float(self.le);
             }
         }
 

@@ -27,19 +27,19 @@ impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalitySet
 
 impl LabelValue for String {
     fn visit(&self, v: &mut impl LabelVisitor) {
-        v.write_str(self)
+        v.write_str(self);
     }
 }
 
 impl LabelValue for str {
     fn visit(&self, v: &mut impl LabelVisitor) {
-        v.write_str(self)
+        v.write_str(self);
     }
 }
 
 impl<T: LabelValue + ?Sized> LabelValue for &T {
     fn visit(&self, v: &mut impl LabelVisitor) {
-        T::visit(self, v)
+        T::visit(self, v);
     }
 }
 
@@ -152,7 +152,7 @@ impl<T: LabelGroup> LabelGroup for &T {
     }
 
     fn label_values(&self, v: &mut impl LabelVisitor) {
-        T::label_values(self, v)
+        T::label_values(self, v);
     }
 }
 

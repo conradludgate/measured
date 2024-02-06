@@ -1,40 +1,7 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{quote, quote_spanned, ToTokens};
 
 use super::FixedCardinalityLabel;
-
-// // impl FixedCardinalityLabel for ErrorKind {
-// //     fn cardinality() -> usize {
-// //         3
-// //     }
-
-// //     fn encode(&self) -> usize {
-// //         match self {
-// //             ErrorKind::User => 0,
-// //             ErrorKind::Internal => 1,
-// //             ErrorKind::Network => 2,
-// //         }
-// //     }
-
-// //     fn decode(value: usize) -> Self {
-// //         match value {
-// //             0 => ErrorKind::User,
-// //             1 => ErrorKind::Internal,
-// //             2 => ErrorKind::Network,
-// //             _ => panic!("invalid value"),
-// //         }
-// //     }
-// // }
-
-// // impl LabelValue for ErrorKind {
-// //     fn visit(&self, v: &mut impl super::LabelVisitor) {
-// //         match self {
-// //             ErrorKind::User => v.write_str("user"),
-// //             ErrorKind::Internal => v.write_str("internal"),
-// //             ErrorKind::Network => v.write_str("network"),
-// //         }
-// //     }
-// // }
 
 impl ToTokens for FixedCardinalityLabel {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -54,22 +21,16 @@ impl ToTokens for FixedCardinalityLabel {
         let visits = variants.iter().map(|var| {
             let var_ident = &var.ident;
             let write = if let Some(int) = &var.value {
-                quote!(v.write_int(#int))
+                quote_spanned!(int.span() => v.write_int(#int))
             } else {
-                let name = var.attrs.rename.as_ref().map_or_else(
-                    || {
-                        let default_name = var.ident.to_string();
-                        if let Some(rename_all) = rename_all {
-                            rename_all.apply(&default_name)
-                        } else {
-                            default_name
-                        }
-                    },
-                    |l| l.value(),
-                );
-                quote!(v.write_str(#name))
+                let name = var
+                    .attrs
+                    .rename
+                    .as_ref()
+                    .map_or_else(|| rename_all.apply(&var.ident.to_string()), |l| l.value());
+                quote_spanned!(var.span => v.write_str(#name))
             };
-            quote!(#ident :: #var_ident => #write,)
+            quote_spanned!(var.span => #ident :: #var_ident => #write,)
         });
 
         tokens.extend(quote! {

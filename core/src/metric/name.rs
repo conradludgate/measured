@@ -51,22 +51,22 @@ pub struct MetricName(str);
 
 pub(crate) const fn assert_metric_name(name: &'static str) {
     // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
-    if name.is_empty() {
-        panic!("string should not be empty")
-    }
+
+    assert!(!name.is_empty(), "string should not be empty");
 
     let mut i = 0;
     while i < name.len() {
         match name.as_bytes()[i] {
-            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => {}
+            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' | b':' => {}
             _ => panic!("string should only contain [a-zA-Z0-9_:]"),
         }
         i += 1;
     }
 
-    if name.as_bytes()[0].is_ascii_digit() {
-        panic!("string should not start with a digit")
-    }
+    assert!(
+        !name.as_bytes()[0].is_ascii_digit(),
+        "string should not start with a digit"
+    );
 }
 
 impl MetricName {
@@ -74,6 +74,7 @@ impl MetricName {
     ///
     /// # Panics
     /// Will panic if the string contains invalid characters
+    #[must_use]
     pub const fn from_static(value: &'static str) -> &'static Self {
         assert_metric_name(value);
 
@@ -83,6 +84,7 @@ impl MetricName {
     }
 
     /// Add a namespace prefix to this metric name.
+    #[must_use]
     pub const fn in_namespace(&self, ns: &'static str) -> WithNamespace<&'_ Self> {
         WithNamespace {
             namespace: MetricName::from_static(ns),
@@ -91,6 +93,7 @@ impl MetricName {
     }
 
     /// Adds a semantic suffix to this metric name.
+    #[must_use]
     pub const fn with_suffix<S: Suffix>(&self, suffix: S) -> WithSuffix<S, &'_ Self> {
         WithSuffix {
             suffix,
@@ -142,7 +145,7 @@ pub trait Suffix {
 
 impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for &T {
     fn encode_text(&self, b: &mut BytesMut) {
-        T::encode_text(self, b)
+        T::encode_text(self, b);
     }
 }
 
@@ -166,7 +169,7 @@ impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithNamespace<T> {
     fn encode_text(&self, b: &mut BytesMut) {
         b.extend_from_slice(self.namespace.0.as_bytes());
         b.extend_from_slice(b"_");
-        self.metric_name.encode_text(b)
+        self.metric_name.encode_text(b);
     }
 }
 

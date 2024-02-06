@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 
 use super::attr::{LabelGroupFieldAttrs, LabelGroupFieldAttrsSortKey};
 use super::{LabelGroup, LabelGroupField};
@@ -19,18 +19,20 @@ impl ToTokens for LabelGroup {
         let names = sorted_fields.iter().map(|x| x.name.to_string());
         let visits = sorted_fields.iter().map(|x| {
             let LabelGroupField { name, ty, .. } = x;
-            quote! {
+            quote_spanned! { x.span =>
                 <#ty as #krate::label::LabelValue>::visit(&self.#name, v);
             }
         });
 
         let label_group_set = Set(self);
+        let label_pairs = sorted_fields.len();
 
         tokens.extend(quote! {
             #[automatically_derived]
             impl #impl_generics #krate::label::LabelGroup for #ident #ty_generics #where_clause {
                 fn label_names() -> impl ::core::iter::IntoIterator<Item = &'static #krate::label::LabelName> {
-                    [#(#krate::label::LabelName::from_static(#names)),*]
+                    const LABEL_NAMES: [&#krate::label::LabelName; #label_pairs] = [#(#krate::label::LabelName::from_static(#names)),*];
+                    LABEL_NAMES
                 }
 
                 fn label_values(&self, v: &mut impl #krate::label::LabelVisitor) {
@@ -64,8 +66,12 @@ impl ToTokens for Set<'_> {
             } = x;
             match attrs {
                 LabelGroupFieldAttrs::Fixed => None,
-                LabelGroupFieldAttrs::FixedWith(ty) => Some(quote!( #vis #name: #ty, )),
-                LabelGroupFieldAttrs::DynamicWith(ty) => Some(quote!( #vis #name: #ty, )),
+                LabelGroupFieldAttrs::FixedWith(ty) => {
+                    Some(quote_spanned!( x.span => #vis #name: #ty, ))
+                }
+                LabelGroupFieldAttrs::DynamicWith(ty) => {
+                    Some(quote_spanned!( x.span => #vis #name: #ty, ))
+                }
             }
         });
 
@@ -85,8 +91,8 @@ impl ToTokens for Set<'_> {
                     name, attrs, ty, ..
                 } = x;
                 match attrs {
-                    LabelGroupFieldAttrs::Fixed => quote!(<#ty as #krate::label::FixedCardinalityLabel>::cardinality()),
-                    LabelGroupFieldAttrs::FixedWith(ty) => quote!(<#ty as #krate::label::FixedCardinalitySet>::cardinality(&self.#name)),
+                    LabelGroupFieldAttrs::Fixed => quote_spanned!( x.span => <#ty as #krate::label::FixedCardinalityLabel>::cardinality()),
+                    LabelGroupFieldAttrs::FixedWith(ty) => quote_spanned!( x.span => <#ty as #krate::label::FixedCardinalitySet>::cardinality(&self.#name)),
                     LabelGroupFieldAttrs::DynamicWith(_) =>unreachable!(),
                 }
             })
@@ -181,9 +187,13 @@ impl ToTokens for SetEncode<'_> {
                 } = x;
 
                 match attrs {
-                    LabelGroupFieldAttrs::Fixed => quote!(<#ty as #krate::label::FixedCardinalityLabel>::encode(&value.#name)),
-                    LabelGroupFieldAttrs::FixedWith(ty) => quote!(<#ty as #krate::label::LabelSet>::encode(&self.#name, &value.#name)?),
-                    LabelGroupFieldAttrs::DynamicWith(_) =>unreachable!(),
+                    LabelGroupFieldAttrs::Fixed => {
+                        quote_spanned!(x.span => <#ty as #krate::label::FixedCardinalityLabel>::encode(&value.#name))
+                    }
+                    LabelGroupFieldAttrs::FixedWith(ty) => {
+                        quote_spanned!(x.span => <#ty as #krate::label::LabelSet>::encode(&self.#name, value.#name)?)
+                    }
+                    LabelGroupFieldAttrs::DynamicWith(_) => unreachable!(),
                 }
             })
             .collect();
@@ -191,12 +201,12 @@ impl ToTokens for SetEncode<'_> {
         let dynamic_encodes: Vec<TokenStream> = dynamics
             .iter()
             .map(|x| {
-                let LabelGroupField {
-                    name, attrs, ..
-                } = x;
+                let LabelGroupField { name, attrs, .. } = x;
 
                 match attrs {
-                    LabelGroupFieldAttrs::DynamicWith(ty) => quote!(<#ty as #krate::label::LabelSet>::encode(&self.#name, &value.#name)?),
+                    LabelGroupFieldAttrs::DynamicWith(ty) => {
+                        quote_spanned!(x.span => <#ty as #krate::label::LabelSet>::encode(&self.#name, value.#name)?)
+                    }
                     _ => unreachable!(),
                 }
             })
@@ -245,8 +255,8 @@ impl ToTokens for SetDecode<'_> {
                 } = x;
 
                 match attrs {
-                    LabelGroupFieldAttrs::Fixed => quote!(let #name = <#ty as #krate::label::FixedCardinalityLabel>::decode(index1);),
-                    LabelGroupFieldAttrs::FixedWith(ty) => quote!(let #name = <#ty as #krate::label::LabelSet>::decode(&self.#name, index1);),
+                    LabelGroupFieldAttrs::Fixed => quote_spanned!(x.span => let #name = <#ty as #krate::label::FixedCardinalityLabel>::decode(index1);),
+                    LabelGroupFieldAttrs::FixedWith(ty) => quote_spanned!(x.span => let #name = <#ty as #krate::label::LabelSet>::decode(&self.#name, index1);),
                     LabelGroupFieldAttrs::DynamicWith(_) =>unreachable!(),
                 }
             })
@@ -268,16 +278,13 @@ impl ToTokens for SetDecode<'_> {
 
                 let index = &dynamic_indices[i];
                 match attrs {
-                    LabelGroupFieldAttrs::DynamicWith(ty) => quote!(let #name = <#ty as #krate::label::LabelSet>::decode(&self.#name, #index);),
+                    LabelGroupFieldAttrs::DynamicWith(ty) => quote_spanned!(x.span => let #name = <#ty as #krate::label::LabelSet>::decode(&self.#name, #index);),
                     _ => unreachable!(),
                 }
             })
             .collect();
 
-        let field_names = fixed.iter().chain(dynamics).map(|x| {
-            let LabelGroupField { name, .. } = x;
-            name
-        });
+        let field_names = fixed.iter().chain(dynamics).map(|x| &x.name);
 
         tokens.extend(quote! {
             fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {

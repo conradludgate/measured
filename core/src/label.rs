@@ -5,6 +5,8 @@ use core::hash::Hash;
 mod impls;
 pub use impls::ComposedGroup;
 
+use crate::metric::name::assert_metric_name;
+
 pub enum InvalidMetricName {
     InvalidChars,
     Empty,
@@ -20,53 +22,13 @@ impl LabelName {
     }
 
     pub const fn from_static(value: &'static str) -> &'static Self {
-        // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
-        if value.is_empty() {
-            panic!("string should not be empty")
-        }
-
-        let mut i = 0;
-        while i < value.len() {
-            match value.as_bytes()[i] {
-                b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => {}
-                _ => panic!("string should only contain [a-zA-Z0-9_:]"),
-            }
-            i += 1;
-        }
-
-        if value.as_bytes()[0].is_ascii_digit() {
-            panic!("string should not start with a digit")
-        }
+        assert_metric_name(value);
 
         // SAFETY: `LabelName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
         unsafe { &*(value as *const str as *const LabelName) }
     }
 }
-
-// impl<'a> TryFrom<&'a str> for &'a LabelName {
-//     type Error = InvalidMetricName;
-
-//     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-//         // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
-//         if value.is_empty() {
-//             return Err(InvalidMetricName::Empty);
-//         }
-
-//         value.bytes().try_fold((), |(), b| match b {
-//             b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => Ok(()),
-//             _ => Err(InvalidMetricName::InvalidChars),
-//         })?;
-
-//         if value.as_bytes()[0].is_ascii_digit() {
-//             return Err(InvalidMetricName::StartsWithNumber);
-//         }
-
-//         // SAFETY: `LabelName` is transparent over `str`. There's no way to do this safely.
-//         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
-//         Ok(unsafe { &*(value as *const str as *const LabelName) })
-//     }
-// }
 
 /// A trait for visiting the value of a label
 pub trait LabelVisitor {
@@ -144,11 +106,17 @@ pub trait FixedCardinalityLabel: LabelValue {
     /// The number of possible label values
     fn cardinality() -> usize;
 
+    /// Encode the label value into an integer
     fn encode(&self) -> usize;
+
+    /// Decode the integer into the associated label value.
+    ///
+    /// If the integer is outside the range of this set, the behaviour is not defined.
+    /// It would most likely panic.
     fn decode(value: usize) -> Self;
 }
 
-/// `FixedCardinalitySet` is a helper trait to represent a dynamic label with a fixed size.
+/// `FixedCardinalitySet` is an immutable [`LabelSet`] that has a known fixed size.
 ///
 /// An example of a dynamic label that has a fixed capacity is an API path with parameters removed
 /// * `/api/v1/users`
@@ -163,11 +131,14 @@ pub trait FixedCardinalityLabel: LabelValue {
 ///
 /// Additionally, sometimes the set of label values can only be known based on some startup configuration, but never changes.
 pub trait FixedCardinalitySet: LabelSet {
-    /// The number of possible label values
+    /// The maximum number of possible label values
+    ///
+    /// # Details
+    /// This number must never change due to some interior mutation, eg with an atomic or a mutex.
     fn cardinality(&self) -> usize;
 }
 
-/// `DynamicLabel` is a helper trait to represent a dynamic label with an unknown collection of values.
+/// `DynamicLabelSet`  is a mutable [`LabelSet`] that has an unknown maximum size.
 ///
 /// This is not recommended to be used, but provided for completeness sake.
 /// [Prometheus recommends against high-cardinality metrics](https://grafana.com/blog/2022/02/15/what-are-cardinality-spikes-and-why-do-they-matter/)
@@ -178,19 +149,23 @@ pub trait FixedCardinalitySet: LabelSet {
 /// 3. You know there wont be many labels but you just don't know what they are
 pub trait DynamicLabelSet: LabelSet {}
 
-/// `DynamicLabel` is a helper trait to represent a dynamic label with an unknown collection of values.
+/// `LabelSet` defines a way to take a label value, eg a `&str`, and encode it into a compressed integer for more efficient encoding.
 ///
-/// This is not recommended to be used, but provided for completeness sake.
-/// [Prometheus recommends against high-cardinality metrics](https://grafana.com/blog/2022/02/15/what-are-cardinality-spikes-and-why-do-they-matter/)
-/// but there might be cases where you still want to use this
-///
-/// 1. Compatibility with your existing setup
-/// 2. Not exporting to prometheus
-/// 3. You know there wont be many labels but you just don't know what they are
+/// How this encoding is done is up to the application, but several ways are provided.
+/// * [`lasso::RodeoReader`] is an immutable label set that stores a `&str` into a larger `String` allocation. It has a `HashMap` to quickly find the index of the string
+/// * [`lasso::ThreadedRodeo`] is a mutable label set that works similarly to the `RodeoReader`.
+/// * [`indexmap::IndexSet`] is an immutable `HashSet` that stores an associated index position of the inserted elements.
 pub trait LabelSet {
+    /// The label value this set can encode
     type Value<'a>: LabelValue;
 
+    /// Encode the label value into an integer. Returns `None` if the value is not in the set
     fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
+
+    /// Decode the integer into the associated label value.
+    ///
+    /// If the integer is outside the range of this set, the behaviour is not defined.
+    /// It would most likely panic.
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 

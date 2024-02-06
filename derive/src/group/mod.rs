@@ -1,4 +1,4 @@
-use proc_macro2::Ident;
+use proc_macro2::{Ident, Span};
 use syn::{Generics, Path, Type, Visibility};
 
 use self::attr::LabelGroupFieldAttrs;
@@ -18,6 +18,7 @@ pub struct LabelGroup {
 
 #[derive(Clone)]
 struct LabelGroupField {
+    span: Span,
     vis: Visibility,
     name: Ident,
     attrs: LabelGroupFieldAttrs,

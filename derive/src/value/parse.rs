@@ -21,6 +21,7 @@ impl TryFrom<Variant> for FixedCardinalityLabelVariant {
         }
 
         Ok(FixedCardinalityLabelVariant {
+            span,
             attrs,
             ident: input.ident,
             value: input
@@ -47,7 +48,10 @@ impl TryFrom<DeriveInput> for FixedCardinalityLabel {
 
         let args = ContainerAttrs::parse_attrs(&attrs)?;
         let Krate(krate) = args.krate.unwrap_or_default();
-        let rename_all = args.rename_all;
+
+        // <https://prometheus.io/docs/instrumenting/writing_exporters/#naming>
+        // > Prometheus metrics and label names are written in snake_case. Converting camelCase to snake_case is desirable
+        let rename_all = args.rename_all.unwrap_or(super::attr::RenameAll::Snake);
 
         let variants = match data {
             Data::Enum(e) => e

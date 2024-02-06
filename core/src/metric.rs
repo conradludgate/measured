@@ -94,6 +94,10 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         Some(LabelId(self.label_set.encode(label)?))
     }
 
+    /// Get the individual metric at the given identifier.
+    ///
+    /// # Panics
+    /// Can panic of cause strange behaviour if the label ID comes from a different metric family.
     pub fn get_metric<R>(
         &self,
         id: LabelId<L>,
@@ -171,7 +175,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                         self.label_set.decode_dense(index),
                         &name,
                         enc,
-                    )
+                    );
                 }
             }
             VecInner::Sparse(m) => {
@@ -181,7 +185,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                         self.label_set.decode(values.key()),
                         &name,
                         enc,
-                    )
+                    );
                 }
             }
         }

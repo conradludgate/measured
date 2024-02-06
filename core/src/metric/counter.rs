@@ -49,7 +49,7 @@ impl<L: LabelGroupSet> CounterVec<L> {
             self.with_labels(label)
                 .expect("label group should be in the set"),
             |x| x.inc(),
-        )
+        );
     }
 
     /// Increment the counter value by `y`, keyed by the label group
@@ -58,7 +58,7 @@ impl<L: LabelGroupSet> CounterVec<L> {
             self.with_labels(label)
                 .expect("label group should be in the set"),
             |x| x.inc_by(y),
-        )
+        );
     }
 }
 
