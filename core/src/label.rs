@@ -113,9 +113,7 @@ impl LabelGroup for NoLabels {
 /// The `LabelGroup` pairs might need some extra data in order to encode/decode the values into their
 /// compressed integer form.
 pub trait LabelGroupSet {
-    type Group<'a>: LabelGroup
-    where
-        Self: 'a;
+    type Group<'a>: LabelGroup;
 
     /// The number of possible label-pairs the associated group can represent
     fn cardinality(&self) -> Option<usize>;
@@ -165,15 +163,13 @@ pub trait FixedCardinalityLabel: LabelValue {
 ///
 /// Additionally, sometimes the set of label values can only be known based on some startup configuration, but never changes.
 pub trait FixedCardinalityDynamicLabel {
-    type Value<'a>: LabelValue
-    where
-        Self: 'a;
+    type Value<'a>: LabelValue;
 
     /// The number of possible label values
     fn cardinality(&self) -> usize;
 
     /// Find the integer that represents this value, if any
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize>;
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
 
     /// Extract the value uniquely represented by this integer
     fn decode(&self, value: usize) -> Self::Value<'_>;
@@ -189,11 +185,9 @@ pub trait FixedCardinalityDynamicLabel {
 /// 2. Not exporting to prometheus
 /// 3. You know there wont be many labels but you just don't know what they are
 pub trait DynamicLabel {
-    type Value<'a>: LabelValue
-    where
-        Self: 'a;
+    type Value<'a>: LabelValue;
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize>;
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 

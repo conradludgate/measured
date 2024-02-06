@@ -45,13 +45,13 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
 
 #[cfg(feature = "lasso")]
 impl<K: lasso::Key, S: BuildHasher> FixedCardinalityDynamicLabel for lasso::RodeoReader<K, S> {
-    type Value<'a> = &'a str where Self: 'a;
+    type Value<'a> = &'a str;
 
     fn cardinality(&self) -> usize {
         self.len()
     }
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.get(value)?.into_usize())
     }
 
@@ -62,9 +62,9 @@ impl<K: lasso::Key, S: BuildHasher> FixedCardinalityDynamicLabel for lasso::Rode
 
 #[cfg(feature = "lasso")]
 impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::ThreadedRodeo<K, S> {
-    type Value<'a> = &'a str where Self: 'a;
+    type Value<'a> = &'a str;
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.try_get_or_intern(value).ok()?.into_usize())
     }
 
@@ -78,9 +78,7 @@ impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabel for lasso::Threa
 pub struct ComposedGroup<A, B>(pub A, pub B);
 
 impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
-    type Group<'a> = ComposedGroup<A::Group<'a>, B::Group<'a>>
-    where
-        Self: 'a;
+    type Group<'a> = ComposedGroup<A::Group<'a>, B::Group<'a>>;
 
     fn cardinality(&self) -> Option<usize> {
         self.0
@@ -153,9 +151,7 @@ impl<T: LabelGroup> LabelGroup for &T {
 }
 
 impl<T: LabelGroupSet + ?Sized> LabelGroupSet for &'static T {
-    type Group<'a> = T::Group<'a>
-    where
-        Self: 'a;
+    type Group<'a> = T::Group<'a>;
 
     fn cardinality(&self) -> Option<usize> {
         T::cardinality(self)
@@ -181,9 +177,7 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for &'static T {
 }
 
 impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
-    type Group<'a> = T::Group<'a>
-    where
-        Self: 'a;
+    type Group<'a> = T::Group<'a>;
 
     fn cardinality(&self) -> Option<usize> {
         T::cardinality(self)
@@ -209,15 +203,13 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
 }
 
 impl<T: FixedCardinalityDynamicLabel + ?Sized> FixedCardinalityDynamicLabel for Arc<T> {
-    type Value<'a> = T::Value<'a>
-    where
-        Self: 'a;
+    type Value<'a> = T::Value<'a>;
 
     fn cardinality(&self) -> usize {
         T::cardinality(self)
     }
 
-    fn encode<'a>(&'a self, value: Self::Value<'a>) -> Option<usize> {
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         T::encode(self, value)
     }
 
