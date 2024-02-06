@@ -60,17 +60,23 @@ impl ToTokens for Set<'_> {
 
         let (_, ty_generics, _) = generics.split_for_impl();
 
-        let set_fields = sorted_fields.iter().filter_map(|x| {
+        let set_fields = sorted_fields.iter().map(|x| {
             let LabelGroupField {
-                vis, name, attrs, ..
+                vis,
+                name,
+                attrs,
+                ty,
+                ..
             } = x;
             match attrs {
-                LabelGroupFieldAttrs::Fixed => None,
+                LabelGroupFieldAttrs::Fixed => {
+                    quote_spanned!( x.span => #vis #name: #krate::label::StaticLabelSet<#ty>, )
+                }
                 LabelGroupFieldAttrs::FixedWith(ty) => {
-                    Some(quote_spanned!( x.span => #vis #name: #ty, ))
+                    quote_spanned!( x.span => #vis #name: #ty, )
                 }
                 LabelGroupFieldAttrs::DynamicWith(ty) => {
-                    Some(quote_spanned!( x.span => #vis #name: #ty, ))
+                    quote_spanned!( x.span => #vis #name: #ty, )
                 }
             }
         });
@@ -91,7 +97,7 @@ impl ToTokens for Set<'_> {
                     name, attrs, ty, ..
                 } = x;
                 match attrs {
-                    LabelGroupFieldAttrs::Fixed => quote_spanned!( x.span => <#ty as #krate::label::FixedCardinalityLabel>::cardinality()),
+                    LabelGroupFieldAttrs::Fixed => quote_spanned!( x.span => <#krate::label::StaticLabelSet<#ty> as #krate::label::FixedCardinalitySet>::cardinality(&self.#name)),
                     LabelGroupFieldAttrs::FixedWith(ty) => quote_spanned!( x.span => <#ty as #krate::label::FixedCardinalitySet>::cardinality(&self.#name)),
                     LabelGroupFieldAttrs::DynamicWith(_) => unreachable!(),
                 }
@@ -188,7 +194,7 @@ impl ToTokens for SetEncode<'_> {
 
                 match attrs {
                     LabelGroupFieldAttrs::Fixed => {
-                        quote_spanned!(x.span => <#ty as #krate::label::FixedCardinalityLabel>::encode(&value.#name))
+                        quote_spanned!(x.span => <#krate::label::StaticLabelSet<#ty> as #krate::label::LabelSet>::encode(&self.#name, value.#name)?)
                     }
                     LabelGroupFieldAttrs::FixedWith(ty) => {
                         quote_spanned!(x.span => <#ty as #krate::label::LabelSet>::encode(&self.#name, value.#name)?)
@@ -258,7 +264,7 @@ impl ToTokens for SetDecode<'_> {
                 } = x;
 
                 match attrs {
-                    LabelGroupFieldAttrs::Fixed => quote_spanned!(x.span => let #name = <#ty as #krate::label::FixedCardinalityLabel>::decode(index1);),
+                    LabelGroupFieldAttrs::Fixed => quote_spanned!(x.span => let #name = <#krate::label::StaticLabelSet<#ty> as #krate::label::LabelSet>::decode(&self.#name, index1);),
                     LabelGroupFieldAttrs::FixedWith(ty) => quote_spanned!(x.span => let #name = <#ty as #krate::label::LabelSet>::decode(&self.#name, index1);),
                     LabelGroupFieldAttrs::DynamicWith(_) =>unreachable!(),
                 }

@@ -33,6 +33,7 @@
 //!
 //! ```
 //! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+//! use measured::label::StaticLabelSet;
 //! use measured::metric::name::MetricName;
 //! use measured::text::TextEncoder;
 //!
@@ -55,7 +56,9 @@
 //! }
 //!
 //! // create a counter vec
-//! let counters = CounterVec::new(MyLabelGroupSet {});
+//! let counters = CounterVec::new(MyLabelGroupSet {
+//!     operation: StaticLabelSet::new(),
+//! });
 //! // increment the counter at a given label
 //! counters.inc(MyLabelGroup { operation: Operation::Create });
 //! counters.inc(MyLabelGroup { operation: Operation::Delete });
@@ -376,6 +379,7 @@ pub use measured_derive::FixedCardinalityLabel;
 /// }
 ///
 /// let set = ResponseSet {
+///     kind: measured::label::StaticLabelSet::new(),
 ///     route: ["/foo/bar", "/home"].into_iter().collect::<lasso::Rodeo>().into_reader(),
 ///     user_name: ThreadedRodeo::new(),
 /// };
@@ -427,6 +431,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 ///
 /// ```
 /// use measured::{HistogramVec, LabelGroup, FixedCardinalityLabel};
+/// use measured::label::StaticLabelSet;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
 /// use measured::text::TextEncoder;
@@ -450,7 +455,9 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 ///
 /// // create a histogram vec
 /// let histograms = HistogramVec::new_metric_vec(
-///     MyLabelGroupSet {},
+///     MyLabelGroupSet {
+///         operation: StaticLabelSet::new(),
+///     },
 ///     Thresholds::<8>::exponential_buckets(0.01, 2.0),
 /// );
 /// // observe a value
@@ -489,6 +496,7 @@ pub type Counter = Metric<CounterState>;
 ///
 /// ```
 /// use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+/// use measured::label::StaticLabelSet;
 /// use measured::metric::name::MetricName;
 /// use measured::text::TextEncoder;
 ///
@@ -510,7 +518,9 @@ pub type Counter = Metric<CounterState>;
 /// }
 ///
 /// // create a counter vec
-/// let counters = CounterVec::new(MyLabelGroupSet {});
+/// let counters = CounterVec::new(MyLabelGroupSet {
+///     operation: StaticLabelSet::new(),
+/// });
 /// // increment the counter at a given label
 /// counters.inc(MyLabelGroup { operation: Operation::Create });
 /// counters.inc(MyLabelGroup { operation: Operation::Delete });

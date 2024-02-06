@@ -269,6 +269,7 @@ mod tests {
     use bytes::BytesMut;
 
     use crate::{
+        label::StaticLabelSet,
         metric::{
             histogram::Thresholds,
             name::{MetricName, Total},
@@ -313,7 +314,10 @@ This is on a new line"#,
 
     #[test]
     fn text_encoding() {
-        let requests = CounterVec::new_sparse(RequestLabelSet {});
+        let requests = CounterVec::new_sparse(RequestLabelSet {
+            code: StaticLabelSet::new(),
+            method: StaticLabelSet::new(),
+        });
 
         let labels = RequestLabels {
             method: Method::Post,

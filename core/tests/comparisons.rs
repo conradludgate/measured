@@ -1,4 +1,5 @@
 use lasso::{Rodeo, RodeoReader};
+use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 
@@ -9,6 +10,7 @@ fn measured() {
     use measured::metric::name::{MetricName, Total};
 
     let error_set = ErrorsSet {
+        kind: StaticLabelSet::new(),
         route: Rodeo::from_iter(routes()).into_reader(),
     };
     let counter_vec = measured::CounterVec::new(error_set);

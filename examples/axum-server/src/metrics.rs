@@ -7,7 +7,7 @@ use axum::{
     RequestExt,
 };
 use measured::{
-    label::{self, FixedCardinalityLabel, LabelValue},
+    label::{self, FixedCardinalityLabel, LabelValue, StaticLabelSet},
     metric::{
         histogram::Thresholds,
         name::{MetricName, Total},
@@ -32,10 +32,20 @@ impl AppMetrics {
 
         Self {
             encoder: Mutex::default(),
-            http_requests: CounterVec::new_sparse(HttpRequestsSet { path: path.clone() }),
-            http_responses: CounterVec::new_sparse(HttpResponsesSet { path: path.clone() }),
+            http_requests: CounterVec::new_sparse(HttpRequestsSet {
+                method: StaticLabelSet::new(),
+                path: path.clone(),
+            }),
+            http_responses: CounterVec::new_sparse(HttpResponsesSet {
+                method: StaticLabelSet::new(),
+                status: StaticLabelSet::new(),
+                path: path.clone(),
+            }),
             http_request_duration: HistogramVec::new_sparse_metric_vec(
-                HttpRequestsSet { path: path.clone() },
+                HttpRequestsSet {
+                    method: StaticLabelSet::new(),
+                    path: path.clone(),
+                },
                 Thresholds::exponential_buckets(0.1, 2.0),
             ),
         }

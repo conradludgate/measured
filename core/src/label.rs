@@ -1,6 +1,7 @@
 //! Traits and types used for representing groups of label-pairs
 
 use core::hash::Hash;
+use std::marker::PhantomData;
 
 mod impls;
 pub use impls::ComposedGroup;
@@ -27,6 +28,33 @@ impl LabelName {
         // SAFETY: `LabelName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
         unsafe { &*(value as *const str as *const LabelName) }
+    }
+}
+
+#[derive(Default)]
+pub struct StaticLabelSet<T>(PhantomData<T>);
+
+impl<T> StaticLabelSet<T> {
+    pub const fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<T: FixedCardinalityLabel> FixedCardinalitySet for StaticLabelSet<T> {
+    fn cardinality(&self) -> usize {
+        T::cardinality()
+    }
+}
+
+impl<T: FixedCardinalityLabel> LabelSet for StaticLabelSet<T> {
+    type Value<'a> = T;
+
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
+        Some(value.encode())
+    }
+
+    fn decode(&self, value: usize) -> Self::Value<'_> {
+        T::decode(value)
     }
 }
 
@@ -205,6 +233,8 @@ mod tests {
     use fake::{faker::name::raw::Name, locales::EN, Fake};
     use lasso::{Rodeo, RodeoReader, ThreadedRodeo};
 
+    use crate::label::StaticLabelSet;
+
     use super::LabelGroupSet;
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
@@ -233,6 +263,7 @@ mod tests {
         rodeo.get_or_intern("/user/:id/videos");
 
         let set = ErrorsSet {
+            kind: StaticLabelSet::new(),
             route: rodeo.into_reader(),
         };
         assert_eq!(set.cardinality(), Some(12));
@@ -268,6 +299,7 @@ mod tests {
         rodeo.get_or_intern("/user/:id/videos");
 
         let set = ErrorsSet2 {
+            kind: StaticLabelSet::new(),
             route: rodeo.into_reader(),
             user: ThreadedRodeo::new(),
         };

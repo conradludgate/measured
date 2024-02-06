@@ -11,6 +11,7 @@ mod fixed_cardinality {
 
     use divan::{black_box, Bencher};
     use lasso::{Rodeo, RodeoReader, Spur};
+    use measured::label::StaticLabelSet;
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
     use rustc_hash::FxHasher;
@@ -22,6 +23,7 @@ mod fixed_cardinality {
         use measured::metric::name::{MetricName, Total};
 
         let error_set = ErrorsSet {
+            kind: StaticLabelSet::new(),
             route: Rodeo::from_iter(routes()).into_reader(),
         };
         let counter_vec = measured::CounterVec::new(error_set);
@@ -49,6 +51,7 @@ mod fixed_cardinality {
         use measured::metric::name::{MetricName, Total};
 
         let error_set = ErrorsSet {
+            kind: StaticLabelSet::new(),
             route: Rodeo::from_iter(routes()).into_reader(),
         };
         let counter_vec = measured::CounterVec::new_sparse(error_set);
@@ -216,6 +219,7 @@ mod high_cardinality {
     use divan::{black_box, Bencher};
     use fake::{faker::name::raw::Name, locales::EN, Fake};
     use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
+    use measured::label::StaticLabelSet;
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use metrics::SharedString;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
@@ -237,6 +241,7 @@ mod high_cardinality {
         use measured::metric::name::{MetricName, Total};
 
         let error_set = ErrorsSet {
+            kind: StaticLabelSet::new(),
             route: Rodeo::from_iter(routes()).into_reader(),
             user_name: ThreadedRodeo::with_hasher(Default::default()),
         };
