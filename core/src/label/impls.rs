@@ -82,6 +82,26 @@ impl<K: lasso::Key + Hash, S: BuildHasher + Clone> LabelSet for lasso::ThreadedR
     }
 }
 
+#[cfg(feature = "phf")]
+impl LabelSet for phf::OrderedSet<&'static str> {
+    type Value<'a> = &'a str;
+
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
+        self.get_index(value)
+    }
+
+    fn decode(&self, value: usize) -> Self::Value<'_> {
+        self.index(value).unwrap()
+    }
+}
+
+#[cfg(feature = "phf")]
+impl FixedCardinalitySet for phf::OrderedSet<&'static str> {
+    fn cardinality(&self) -> usize {
+        self.len()
+    }
+}
+
 /// `ComposedGroup` represents either a combine [`LabelGroup`] or a [`LabelGroupSet`]. See [`LabelGroup::compose_with`]
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct ComposedGroup<A, B>(pub A, pub B);
@@ -228,5 +248,127 @@ impl<T: LabelSet + ?Sized> LabelSet for Arc<T> {
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
         T::decode(self, value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::label::{FixedCardinalitySet, LabelSet};
+
+    #[cfg(feature = "phf")]
+    #[test]
+    fn phf_ordered_set() {
+        let set = phf::phf_ordered_set! {
+            "loop",
+            "continue",
+            "break",
+            "fn",
+            "extern",
+        };
+
+        assert_eq!(set.cardinality(), 5);
+
+        // make sure it's repeatable
+        for _ in 0..2 {
+            assert_eq!(set.encode("loop"), Some(0));
+            assert_eq!(set.decode(0), "loop");
+
+            assert_eq!(set.encode("continue"), Some(1));
+            assert_eq!(set.decode(1), "continue");
+
+            assert_eq!(set.encode("break"), Some(2));
+            assert_eq!(set.decode(2), "break");
+
+            assert_eq!(set.encode("fn"), Some(3));
+            assert_eq!(set.decode(3), "fn");
+
+            assert_eq!(set.encode("extern"), Some(4));
+            assert_eq!(set.decode(4), "extern");
+        }
+    }
+
+    #[cfg(feature = "indexmap")]
+    #[test]
+    fn indexset() {
+        use indexmap::IndexSet;
+
+        let set: IndexSet<&'static str> = ["loop", "continue", "break", "fn", "extern"]
+            .into_iter()
+            .collect();
+
+        assert_eq!(set.cardinality(), 5);
+
+        // make sure it's repeatable
+        for _ in 0..2 {
+            assert_eq!(set.encode("loop"), Some(0));
+            assert_eq!(set.decode(0), "loop");
+
+            assert_eq!(set.encode("continue"), Some(1));
+            assert_eq!(set.decode(1), "continue");
+
+            assert_eq!(set.encode("break"), Some(2));
+            assert_eq!(set.decode(2), "break");
+
+            assert_eq!(set.encode("fn"), Some(3));
+            assert_eq!(set.decode(3), "fn");
+
+            assert_eq!(set.encode("extern"), Some(4));
+            assert_eq!(set.decode(4), "extern");
+        }
+    }
+
+    #[cfg(feature = "lasso")]
+    #[test]
+    fn lasso_reader() {
+        let set = ["loop", "continue", "break", "fn", "extern"]
+            .into_iter()
+            .collect::<lasso::Rodeo>()
+            .into_reader();
+
+        assert_eq!(set.cardinality(), 5);
+
+        // make sure it's repeatable
+        for _ in 0..2 {
+            assert_eq!(set.encode("loop"), Some(0));
+            assert_eq!(set.decode(0), "loop");
+
+            assert_eq!(set.encode("continue"), Some(1));
+            assert_eq!(set.decode(1), "continue");
+
+            assert_eq!(set.encode("break"), Some(2));
+            assert_eq!(set.decode(2), "break");
+
+            assert_eq!(set.encode("fn"), Some(3));
+            assert_eq!(set.decode(3), "fn");
+
+            assert_eq!(set.encode("extern"), Some(4));
+            assert_eq!(set.decode(4), "extern");
+        }
+    }
+
+    #[cfg(feature = "lasso")]
+    #[test]
+    fn lasso_dynamic() {
+        use lasso::Spur;
+
+        let set = lasso::ThreadedRodeo::<Spur>::new();
+
+        // make sure it's repeatable
+        for _ in 0..2 {
+            assert_eq!(set.encode("loop"), Some(0));
+            assert_eq!(set.decode(0), "loop");
+
+            assert_eq!(set.encode("continue"), Some(1));
+            assert_eq!(set.decode(1), "continue");
+
+            assert_eq!(set.encode("break"), Some(2));
+            assert_eq!(set.decode(2), "break");
+
+            assert_eq!(set.encode("fn"), Some(3));
+            assert_eq!(set.decode(3), "fn");
+
+            assert_eq!(set.encode("extern"), Some(4));
+            assert_eq!(set.decode(4), "extern");
+        }
     }
 }

@@ -191,7 +191,6 @@ mod fixed_cardinality {
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
-    #[label(rename_all = "kebab-case")]
     enum ErrorKind {
         User,
         Internal,

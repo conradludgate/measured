@@ -14,6 +14,7 @@ readme = "../README.md"
 default = ["lasso"]
 lasso = ["dep:lasso"]
 indexmap = ["dep:indexmap"]
+phf = ["dep:phf"]
 
 [dependencies]
 bytes = "1"
@@ -28,6 +29,7 @@ measured-derive = { path = "../derive", version = "0.0.8" }
 # TODO: add features for the dependencies
 indexmap = { version = "2", optional = true }
 lasso = { version = "0.7", optional = true, features = ["multi-threaded"] }
+phf = { version = "0.11", optional = true }
 
 [dev-dependencies]
 fake = "2.9.2"
@@ -37,6 +39,7 @@ metrics = "0.22"
 metrics-exporter-prometheus = { version = "0.13", default-features = false }
 prometheus-client = "0.22.1"
 rand = "0.8"
+phf = { features = ["macros"] }
 
 [[bench]]
 name = "counters"
