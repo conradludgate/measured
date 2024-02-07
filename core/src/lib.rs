@@ -77,7 +77,7 @@
 //! `measured` offers a trait called [`FixedCardinalitySet`](label::FixedCardinalitySet) that allows for compact encoding.
 //!
 //! Implementations of [`FixedCardinalitySet`](label::FixedCardinalitySet) are provided for you,
-//! notably [`indexmap::IndexSet`] and [`lasso::RodeoReader`].
+//! notably [`phf::OrderedSet`], [`indexmap::IndexSet`], and [`lasso::RodeoReader`].
 //! I recommend the latter for string-based labels that are not `&'static` as it will offer the most efficient use of memory.
 //!
 //! ```

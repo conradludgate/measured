@@ -1,0 +1,92 @@
+http_request_errors: {
+  grid-rows: 2
+  # grid-gap: 0
+  label_set: ErrorPathSet {
+    grid-rows: 2
+    error_kind
+    path: {
+      grid-rows: 1
+      grid-gap: 0
+      strings: {
+        grid-rows: 2
+        grid-gap: 0
+        a: "/api/v1/users"
+        b: "/api/v1/users/:id"
+        c: "/api/v1/products"
+        d: "/api/v1/products/:id"
+        e: "/api/v1/products/:id/owner"
+        f: "/api/v1/products/:id/purchase"
+
+        a.style.fill: "lightblue"
+        b.style.fill: "lightsalmon"
+        c.style.fill: "magenta"
+        d.style.fill: "lightgreen"
+        e.style.fill: "hotpink"
+        f.style.fill: "wheat"
+      }
+    }
+  }
+  metrics: {
+    grid-columns: 6
+    grid-rows: 3
+    grid-gap: 0
+
+    a1.class: path_a
+    a2.class: path_a
+    a3.class: path_a
+    b1.class: path_b
+    b2.class: path_b
+    b3.class: path_b
+    c1.class: path_c
+    c2.class: path_c
+    c3.class: path_c
+    d1.class: path_d
+    d2.class: path_d
+    d3.class: path_d
+    e1.class: path_e
+    e2.class: path_e
+    e3.class: path_e
+    f1.class: path_f
+    f2.class: path_f
+    f3.class: path_f
+  }
+}
+
+classes: {
+  path_a: {
+    width: 129
+    style: {
+      fill: "lightblue"
+    }
+  }
+  path_b: {
+    width: 129
+    style: {
+      fill: "lightsalmon"
+    }
+  }
+  path_c: {
+    width: 129
+    style: {
+      fill: "magenta"
+    }
+  }
+  path_d: {
+    width: 129
+    style: {
+      fill: "lightgreen"
+    }
+  }
+  path_e: {
+    width: 129
+    style: {
+      fill: "hotpink"
+    }
+  }
+  path_f: {
+    width: 129
+    style: {
+      fill: "wheat"
+    }
+  }
+}

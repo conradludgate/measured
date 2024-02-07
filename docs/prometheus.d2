@@ -1,0 +1,298 @@
+http_request_errors: {
+  metrics: {
+    grid-columns: 6
+    grid-rows: 3
+    grid-gap: 10
+
+    # a
+    a1: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "user"
+        "path"
+        "/api/v1/users".class: path_a
+      }
+    }
+
+    a2: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "internal"
+        "path"
+        "/api/v1/users".class: path_a
+      }
+    }
+
+    a3: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "network"
+        "path"
+        "/api/v1/users".class: path_a
+      }
+    }
+
+    # b
+    b1: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "user"
+        "path"
+        "/api/v1/users/:id".class: path_b
+      }
+    }
+
+    b2: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "internal"
+        "path"
+        "/api/v1/users/:id".class: path_b
+      }
+    }
+
+    b3: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "network"
+        "path"
+        "/api/v1/users/:id".class: path_b
+      }
+    }
+
+    # c
+    c1: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "user"
+        "path"
+        "/api/v1/products".class: path_c
+      }
+    }
+
+    c2: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "internal"
+        "path"
+        "/api/v1/products".class: path_c
+      }
+    }
+
+    c3: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "network"
+        "path"
+        "/api/v1/products".class: path_c
+      }
+    }
+
+    # d
+    d1: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "user"
+        "path"
+        "/api/v1/products/:id".class: path_d
+      }
+    }
+
+    d2: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "internal"
+        "path"
+        "/api/v1/products/:id".class: path_d
+      }
+    }
+
+    d3: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "network"
+        "path"
+        "/api/v1/products/:id".class: path_d
+      }
+    }
+
+    # e
+    e1: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "user"
+        "path"
+        "/api/v1/products/:id/owner".class: path_e
+      }
+    }
+
+    e2: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "internal"
+        "path"
+        "/api/v1/products/:id/owner".class: path_e
+      }
+    }
+
+    e3: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "network"
+        "path"
+        "/api/v1/products/:id/owner".class: path_e
+      }
+    }
+
+    # f
+    f1: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "user"
+        "path"
+        "/api/v1/products/:id/purchase".class: path_f
+      }
+    }
+
+    f2: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "internal"
+        "path"
+        "/api/v1/products/:id/purchase".class: path_f
+      }
+    }
+
+    f3: {
+      grid-rows: 1
+      grid-gap: 5
+      labels: {
+        grid-rows: 2
+        grid-columns: 2
+        grid-gap: 10
+        "error_kind"
+        "network"
+        "path"
+        "/api/v1/products/:id/purchase".class: path_f
+      }
+    }
+  }
+}
+
+classes: {
+    path_a: {
+      style: {
+        fill: "lightblue"
+      }
+    }
+    path_b: {
+      style: {
+        fill: "lightsalmon"
+      }
+    }
+    path_c: {
+      style: {
+        fill: "magenta"
+      }
+    }
+    path_d: {
+      style: {
+        fill: "lightgreen"
+      }
+    }
+    path_e: {
+      style: {
+        fill: "hotpink"
+      }
+    }
+    path_f: {
+      style: {
+        fill: "wheat"
+      }
+    }
+  }
