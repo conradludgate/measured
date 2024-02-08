@@ -11,6 +11,7 @@ use measured::{
     metric::{
         histogram::Thresholds,
         name::{MetricName, Total},
+        MetricFamilyEncoding,
     },
     text::TextEncoder,
     CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup,
@@ -98,15 +99,15 @@ pub async fn handler(s: State<AppState>) -> Response {
 
     http_requests.collect_into(
         MetricName::from_static("http_requests").with_suffix(Total),
-        &mut encoder,
+        &mut *encoder,
     );
     http_responses.collect_into(
         MetricName::from_static("http_response").with_suffix(Total),
-        &mut encoder,
+        &mut *encoder,
     );
     http_request_duration.collect_into(
         MetricName::from_static("http_request_duration_seconds"),
-        &mut encoder,
+        &mut *encoder,
     );
 
     Response::new(encoder.finish().into())

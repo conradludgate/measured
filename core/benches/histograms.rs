@@ -12,7 +12,7 @@ mod fixed_cardinality {
     use bytes::Bytes;
     use divan::{black_box, Bencher};
     use lasso::{Rodeo, RodeoReader, Spur};
-    use measured::{label::StaticLabelSet, metric::histogram::Thresholds};
+    use measured::{label::StaticLabelSet, metric::{group::Encoding, histogram::Thresholds, MetricFamilyEncoding}};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
@@ -38,7 +38,7 @@ mod fixed_cardinality {
         }
 
         const NAME: &MetricName = MetricName::from_static("http_request_errors");
-        encoder.write_help(&NAME, "help text");
+        encoder.write_help(NAME, "help text");
         h.collect_into(NAME, encoder);
         encoder.finish()
     }
@@ -236,7 +236,7 @@ mod no_cardinality {
 
     use bytes::Bytes;
     use divan::{black_box, Bencher};
-    use measured::metric::histogram::Thresholds;
+    use measured::metric::{group::Encoding, histogram::Thresholds, MetricFamilyEncoding};
     use prometheus::exponential_buckets;
 
     const LOOPS: usize = 20000;
@@ -254,7 +254,7 @@ mod no_cardinality {
         }
 
         const NAME: &MetricName = MetricName::from_static("http_request_errors");
-        encoder.write_help(&NAME, "help text");
+        encoder.write_help(NAME, "help text");
         h.collect_into(NAME, encoder);
         encoder.finish()
     }

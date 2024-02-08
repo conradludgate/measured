@@ -14,6 +14,7 @@ use self::name::MetricNameEncoder;
 
 pub mod counter;
 pub mod gauge;
+pub mod group;
 pub mod histogram;
 pub mod name;
 
@@ -208,24 +209,22 @@ pub trait MetricEncoding<T>: MetricType {
     );
 }
 
-impl<M: MetricType> Metric<M> {
+pub trait MetricFamilyEncoding<T> {
+    /// Collect these metric values into the given encoder with the given metric name
+    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T);
+}
+
+impl<M: MetricEncoding<T>, T> MetricFamilyEncoding<T> for Metric<M> {
     /// Collect this metric value into the given encoder with the given metric name
-    pub fn collect_into<T>(&self, name: impl MetricNameEncoder, enc: &mut T)
-    where
-        M: MetricEncoding<T>,
-    {
+    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
         M::write_type(&name, enc);
         self.metric
             .collect_into(&self.metadata, NoLabels, name, enc);
     }
 }
 
-impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
-    /// Collect these metric values into the given encoder with the given metric name
-    pub fn collect_into<T>(&self, name: impl MetricNameEncoder, enc: &mut T)
-    where
-        M: MetricEncoding<T>,
-    {
+impl<M: MetricEncoding<T>, L: LabelGroupSet, T> MetricFamilyEncoding<T> for MetricVec<M, L> {
+    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
         M::write_type(&name, enc);
         match &self.metrics {
             VecInner::Dense(m) => {

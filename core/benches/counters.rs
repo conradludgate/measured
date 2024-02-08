@@ -11,7 +11,7 @@ mod fixed_cardinality {
 
     use divan::{black_box, Bencher};
     use lasso::{Rodeo, RodeoReader, Spur};
-    use measured::label::StaticLabelSet;
+    use measured::{label::StaticLabelSet, metric::{group::Encoding, MetricFamilyEncoding}};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
     use rustc_hash::FxHasher;
@@ -218,7 +218,7 @@ mod high_cardinality {
     use divan::{black_box, Bencher};
     use fake::{faker::name::raw::Name, locales::EN, Fake};
     use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
-    use measured::label::StaticLabelSet;
+    use measured::{label::StaticLabelSet, metric::{group::Encoding, MetricFamilyEncoding}};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use metrics::SharedString;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};

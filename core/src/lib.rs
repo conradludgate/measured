@@ -10,6 +10,7 @@
 //! ```
 //! use measured::Counter;
 //! use measured::metric::name::MetricName;
+//! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::TextEncoder;
 //!
 //! // create a counter
@@ -35,6 +36,7 @@
 //! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
 //! use measured::label::StaticLabelSet;
 //! use measured::metric::name::MetricName;
+//! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::TextEncoder;
 //!
 //! // Define a fixed cardinality label
@@ -83,6 +85,7 @@
 //! ```
 //! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
 //! use measured::metric::name::MetricName;
+//! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::TextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
@@ -124,6 +127,7 @@
 //! ```
 //! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
 //! use measured::metric::name::MetricName;
+//! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::TextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
@@ -385,6 +389,7 @@ pub use measured_derive::LabelGroup;
 /// use measured::Histogram;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::text::TextEncoder;
 ///
 /// // create a histogram with 8 buckets starting at 0.01, increasing by 2x each time up to 2.56
@@ -407,6 +412,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::text::TextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -450,6 +456,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 /// ```
 /// use measured::Counter;
 /// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::text::TextEncoder;
 ///
 /// // create a counter
@@ -471,6 +478,7 @@ pub type Counter = Metric<CounterState>;
 /// use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::text::TextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -511,6 +519,7 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 /// ```
 /// use measured::Gauge;
 /// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::text::TextEncoder;
 ///
 /// // create a gauge
@@ -532,6 +541,7 @@ pub type Gauge = Metric<GaugeState>;
 /// use measured::{GaugeVec, LabelGroup, FixedCardinalityLabel};
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::text::TextEncoder;
 ///
 /// // Define a fixed cardinality label

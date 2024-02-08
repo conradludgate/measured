@@ -8,6 +8,7 @@ use crate::{
     metric::{
         counter::CounterState,
         gauge::GaugeState,
+        group::Encoding,
         histogram::{HistogramState, Thresholds},
         name::{Bucket, Count, MetricNameEncoder, Sum},
         MetricEncoding,
@@ -49,6 +50,22 @@ impl Default for TextEncoder {
     }
 }
 
+impl Encoding for TextEncoder {
+    /// Write the help line for a metric
+    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) {
+        if self.state == State::Metrics {
+            self.write_line();
+        }
+        self.state = State::Info;
+
+        self.b.extend_from_slice(b"# HELP ");
+        name.encode_text(&mut self.b);
+        self.b.extend_from_slice(b" ");
+        self.b.extend_from_slice(help.as_bytes());
+        self.b.extend_from_slice(b"\n");
+    }
+}
+
 impl TextEncoder {
     /// Create a new text encoder.
     ///
@@ -68,20 +85,6 @@ impl TextEncoder {
 
     fn write_line(&mut self) {
         self.b.put_u8(b'\n');
-    }
-
-    /// Write the help line for a metric
-    pub fn write_help(&mut self, name: &impl MetricNameEncoder, help: &str) {
-        if self.state == State::Metrics {
-            self.write_line();
-        }
-        self.state = State::Info;
-
-        self.b.extend_from_slice(b"# HELP ");
-        name.encode_text(&mut self.b);
-        self.b.extend_from_slice(b" ");
-        self.b.extend_from_slice(help.as_bytes());
-        self.b.extend_from_slice(b"\n");
     }
 
     /// Write the type line for a metric
@@ -301,8 +304,10 @@ mod tests {
     use crate::{
         label::StaticLabelSet,
         metric::{
+            group::Encoding,
             histogram::Thresholds,
             name::{MetricName, Total},
+            MetricFamilyEncoding,
         },
         CounterVec, Histogram,
     };
@@ -391,7 +396,7 @@ http_request_total{method="get",code="400"} 3
         let mut encoder = TextEncoder::default();
 
         let name = MetricName::from_static("http_request_duration_seconds");
-        encoder.write_help(&name, "A histogram of the request duration.");
+        encoder.write_help(name, "A histogram of the request duration.");
         histogram.collect_into(name, &mut encoder);
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();

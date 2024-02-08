@@ -88,7 +88,7 @@ impl MetricName {
     pub const fn in_namespace(&self, ns: &'static str) -> WithNamespace<&'_ Self> {
         WithNamespace {
             namespace: MetricName::from_static(ns),
-            metric_name: self,
+            inner: self,
         }
     }
 
@@ -151,11 +151,18 @@ impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for &T {
 
 /// See [`MetricName::in_namespace`]
 pub struct WithNamespace<T: ?Sized> {
-    namespace: &'static MetricName,
-    metric_name: T,
+    pub(crate) namespace: &'static MetricName,
+    pub(crate) inner: T,
 }
 
 impl<T> WithNamespace<T> {
+    pub const fn new(ns: &'static str, inner: T) -> Self {
+        Self {
+            namespace: MetricName::from_static(ns),
+            inner,
+        }
+    }
+
     /// Adds a semantic suffix to this metric name.
     pub const fn with_suffix<S: Suffix>(self, suffix: S) -> WithSuffix<S, Self> {
         WithSuffix {
@@ -169,7 +176,7 @@ impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithNamespace<T> {
     fn encode_text(&self, b: &mut BytesMut) {
         b.extend_from_slice(self.namespace.0.as_bytes());
         b.extend_from_slice(b"_");
-        self.metric_name.encode_text(b);
+        self.inner.encode_text(b);
     }
 }
 
