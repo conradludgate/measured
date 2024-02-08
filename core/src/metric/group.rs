@@ -16,29 +16,29 @@ impl<E: Encoding> Encoding for &mut E {
     }
 }
 
-pub trait MetricGroupEncoding<Enc: Encoding> {
-    fn encode(&self, enc: &mut Enc);
+pub trait MetricGroup<Enc: Encoding> {
+    fn collect_into(&self, enc: &mut Enc);
 }
 
-impl<A, B, E> MetricGroupEncoding<E> for ComposedGroup<A, B>
+impl<A, B, E> MetricGroup<E> for ComposedGroup<A, B>
 where
-    A: MetricGroupEncoding<E>,
-    B: MetricGroupEncoding<E>,
+    A: MetricGroup<E>,
+    B: MetricGroup<E>,
     E: Encoding,
 {
-    fn encode(&self, enc: &mut E) {
-        self.0.encode(enc);
-        self.1.encode(enc);
+    fn collect_into(&self, enc: &mut E) {
+        self.0.collect_into(enc);
+        self.1.collect_into(enc);
     }
 }
 
-impl<G, E> MetricGroupEncoding<E> for WithNamespace<G>
+impl<G, E> MetricGroup<E> for WithNamespace<G>
 where
-    G: for<'a> MetricGroupEncoding<WithNamespace<&'a mut E>>,
+    G: for<'a> MetricGroup<WithNamespace<&'a mut E>>,
     E: Encoding,
 {
-    fn encode(&self, enc: &mut E) {
-        self.inner.encode(&mut WithNamespace {
+    fn collect_into(&self, enc: &mut E) {
+        self.inner.collect_into(&mut WithNamespace {
             namespace: self.namespace,
             inner: enc,
         });
@@ -103,20 +103,14 @@ impl<'a, M: MetricEncoding<E>, E> MetricEncoding<&'a mut E> for M {
 #[cfg(all(feature = "lasso", test))]
 mod tests {
     use lasso::{Rodeo, RodeoReader};
-    use measured_derive::{FixedCardinalityLabel, LabelGroup};
+    use measured_derive::{FixedCardinalityLabel, LabelGroup, MetricGroup};
     use prometheus_client::encoding::EncodeLabelValue;
 
     use crate::{
-        label::StaticLabelSet,
-        metric::{
-            name::{MetricName, WithNamespace},
-            MetricFamilyEncoding,
-        },
-        text::TextEncoder,
-        CounterVec,
+        label::StaticLabelSet, metric::name::WithNamespace, text::TextEncoder, CounterVec,
     };
 
-    use super::{Encoding, MetricGroupEncoding};
+    use super::MetricGroup;
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
     #[label(crate = crate, set = ErrorsSet)]
@@ -134,7 +128,8 @@ mod tests {
         Network,
     }
 
-    // #[derive(MetricGroupEncoder)]
+    #[derive(MetricGroup)]
+    #[metric(crate = crate)]
     struct MyMetrics {
         /// help text
         errors: CounterVec<ErrorsSet>,
@@ -162,11 +157,10 @@ mod tests {
         let http_request_group = WithNamespace::new("http_request", group);
 
         let mut text_encoder = TextEncoder::new();
-        http_request_group.encode(&mut text_encoder);
+        http_request_group.collect_into(&mut text_encoder);
         assert_eq!(
             text_encoder.finish(),
-            br#"# HELP http_request_errors help text
-# TYPE http_request_errors counter
+            br#"# TYPE http_request_errors counter
 http_request_errors{kind="user",route="/api/v1/users"} 0
 http_request_errors{kind="user",route="/api/v1/users/:id"} 0
 http_request_errors{kind="user",route="/api/v1/products"} 0
@@ -187,19 +181,5 @@ http_request_errors{kind="network",route="/api/v1/products/:id/owner"} 0
 http_request_errors{kind="network",route="/api/v1/products/:id/purchase"} 0
 "#[..]
         );
-    }
-
-    // TODO: macro
-
-    impl<Enc> MetricGroupEncoding<Enc> for MyMetrics
-    where
-        Enc: Encoding,
-        CounterVec<ErrorsSet>: MetricFamilyEncoding<Enc>,
-    {
-        fn encode(&self, enc: &mut Enc) {
-            const ERRORS: &MetricName = MetricName::from_static("errors");
-            enc.write_help(ERRORS, "help text");
-            self.errors.collect_into(ERRORS, enc);
-        }
     }
 }

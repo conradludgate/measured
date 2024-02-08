@@ -1,11 +1,8 @@
 use quote::ToTokens;
 use syn::{parse_macro_input, DeriveInput};
 
-// this is some of the worst macro code I have ever written.
-// to me in 5 months time, I am so sorry.
-// i was really not feeling like dealing with syn so you have to deal with this monstosity of copy-pasta
-
 mod group;
+mod metric_group;
 mod value;
 
 #[proc_macro_derive(FixedCardinalityLabel, attributes(label))]
@@ -18,8 +15,17 @@ pub fn derive_label(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[proc_macro_derive(LabelGroup, attributes(label))]
-pub fn derive_group(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn derive_label_group(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     match group::LabelGroup::try_from(parse_macro_input!(input as DeriveInput)) {
+        Ok(output) => output.to_token_stream(),
+        Err(err) => err.into_compile_error().into_token_stream(),
+    }
+    .into()
+}
+
+#[proc_macro_derive(MetricGroup, attributes(metric))]
+pub fn derive_metric_group(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    match metric_group::MetricGroup::try_from(parse_macro_input!(input as DeriveInput)) {
         Ok(output) => output.to_token_stream(),
         Err(err) => err.into_compile_error().into_token_stream(),
     }

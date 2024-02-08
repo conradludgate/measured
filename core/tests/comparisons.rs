@@ -1,5 +1,8 @@
 use lasso::{Rodeo, RodeoReader};
-use measured::{label::StaticLabelSet, metric::{group::Encoding, MetricFamilyEncoding}};
+use measured::{
+    label::StaticLabelSet,
+    metric::{group::Encoding, MetricFamilyEncoding},
+};
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 

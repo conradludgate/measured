@@ -8,31 +8,39 @@ use axum::{
 };
 use measured::{
     label::{self, FixedCardinalityLabel, LabelValue, StaticLabelSet},
-    metric::{
-        histogram::Thresholds,
-        name::{MetricName, Total},
-        MetricFamilyEncoding,
-    },
+    metric::{group::MetricGroup, histogram::Thresholds},
     text::TextEncoder,
-    CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup,
+    CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup,
 };
 use tokio::{sync::Mutex, time::Instant};
 
 use crate::AppState;
 
-pub struct AppMetrics {
+pub struct AppMetricsEncoder {
     encoder: Mutex<TextEncoder>,
+    pub metrics: AppMetrics,
+}
+
+#[derive(MetricGroup)]
+pub struct AppMetrics {
     pub http_requests: CounterVec<HttpRequestsSet>,
     pub http_responses: CounterVec<HttpResponsesSet>,
     pub http_request_duration: HistogramVec<HttpRequestsSet, 6>,
 }
 
+impl AppMetricsEncoder {
+    pub fn new(metrics: AppMetrics) -> Self {
+        Self {
+            encoder: Mutex::default(),
+            metrics,
+        }
+    }
+}
+
 impl AppMetrics {
     pub fn new(paths: lasso::RodeoReader) -> Self {
         let path = Arc::new(paths);
-
         Self {
-            encoder: Mutex::default(),
             http_requests: CounterVec::new_sparse(HttpRequestsSet {
                 method: StaticLabelSet::new(),
                 path: path.clone(),
@@ -59,7 +67,7 @@ pub async fn middleware(s: State<AppState>, mut request: Request, next: Next) ->
         http_responses,
         http_request_duration,
         ..
-    } = &*s.0.metrics;
+    } = &s.0.metrics.metrics;
 
     let path = request.extract_parts::<MatchedPath>().await.unwrap();
     let path = path.as_str();
@@ -87,29 +95,10 @@ pub async fn middleware(s: State<AppState>, mut request: Request, next: Next) ->
 }
 
 pub async fn handler(s: State<AppState>) -> Response {
-    let AppMetrics {
-        encoder,
-        http_requests,
-        http_responses,
-        http_request_duration,
-        ..
-    } = &*s.0.metrics;
+    let AppMetricsEncoder { encoder, metrics } = &*s.0.metrics;
 
     let mut encoder = encoder.lock().await;
-
-    http_requests.collect_into(
-        MetricName::from_static("http_requests").with_suffix(Total),
-        &mut *encoder,
-    );
-    http_responses.collect_into(
-        MetricName::from_static("http_response").with_suffix(Total),
-        &mut *encoder,
-    );
-    http_request_duration.collect_into(
-        MetricName::from_static("http_request_duration_seconds"),
-        &mut *encoder,
-    );
-
+    metrics.collect_into(&mut *encoder);
     Response::new(encoder.finish().into())
 }
 

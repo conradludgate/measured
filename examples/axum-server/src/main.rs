@@ -5,14 +5,14 @@ use aide::{
     openapi::OpenApi,
 };
 use axum::{extract::Path, http::StatusCode, middleware};
-use metrics::AppMetrics;
+use metrics::{AppMetrics, AppMetricsEncoder};
 use tokio::net::TcpListener;
 
 mod metrics;
 
 #[derive(Clone)]
 struct AppState {
-    metrics: Arc<AppMetrics>,
+    metrics: Arc<AppMetricsEncoder>,
 }
 
 #[tokio::main]
@@ -37,7 +37,7 @@ async fn main() {
 
     // Using the routes captured in the OpenApi object, we build the app metrics
     let state = AppState {
-        metrics: Arc::new(AppMetrics::new(paths)),
+        metrics: Arc::new(AppMetricsEncoder::new(AppMetrics::new(paths))),
     };
 
     let app = app

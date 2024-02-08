@@ -12,7 +12,10 @@ mod fixed_cardinality {
     use bytes::Bytes;
     use divan::{black_box, Bencher};
     use lasso::{Rodeo, RodeoReader, Spur};
-    use measured::{label::StaticLabelSet, metric::{group::Encoding, histogram::Thresholds, MetricFamilyEncoding}};
+    use measured::{
+        label::StaticLabelSet,
+        metric::{group::Encoding, histogram::Thresholds, MetricFamilyEncoding},
+    };
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};

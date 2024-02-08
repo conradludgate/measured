@@ -382,6 +382,8 @@ pub use measured_derive::FixedCardinalityLabel;
 /// ```
 pub use measured_derive::LabelGroup;
 
+pub use measured_derive::MetricGroup;
+
 /// A [`Metric`] that counts individual observations from an event or sample stream in configurable buckets.
 /// Similar to a Summary, it also provides a sum of observations and an observation count.
 ///
