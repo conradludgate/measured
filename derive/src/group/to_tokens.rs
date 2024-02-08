@@ -23,7 +23,7 @@ impl ToTokens for LabelGroup {
             let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
             quote_spanned! { x.span =>
                 const #ident: &#krate::label::LabelName = #krate::label::LabelName::from_static(#name_string);
-                #krate::label::LabelSetVisitor::write_value(v, #ident, &self.#name);
+                #krate::label::LabelGroupVisitor::write_value(v, #ident, &self.#name);
             }
         });
 
@@ -32,7 +32,7 @@ impl ToTokens for LabelGroup {
         tokens.extend(quote! {
             #[automatically_derived]
             impl #impl_generics #krate::label::LabelGroup for #ident #ty_generics #where_clause {
-                fn visit_values(&self, v: &mut impl #krate::label::LabelSetVisitor) {
+                fn visit_values(&self, v: &mut impl #krate::label::LabelGroupVisitor) {
                     #(#visits)*
                 }
             }

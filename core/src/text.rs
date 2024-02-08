@@ -4,7 +4,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use memchr::memchr3_iter;
 
 use crate::{
-    label::{LabelGroup, LabelName, LabelSetVisitor, LabelValue, LabelVisitor},
+    label::{LabelGroup, LabelName, LabelGroupVisitor, LabelValue, LabelVisitor},
     metric::{
         counter::CounterState,
         gauge::GaugeState,
@@ -138,7 +138,7 @@ impl TextEncoder {
                 self.b.extend_from_slice(b"\"");
             }
         }
-        impl LabelSetVisitor for Visitor<'_> {
+        impl LabelGroupVisitor for Visitor<'_> {
             fn write_value(&mut self, name: &LabelName, x: &impl LabelValue) {
                 if self.first {
                     self.first = false;
@@ -198,7 +198,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         }
 
         impl LabelGroup for HistogramLabelLe {
-            fn visit_values(&self, v: &mut impl LabelSetVisitor) {
+            fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
                 const LE: &LabelName = LabelName::from_static("le");
                 v.write_value(LE, &F64(self.le));
             }
