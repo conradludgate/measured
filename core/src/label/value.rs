@@ -29,42 +29,44 @@ impl<T: FixedCardinalityLabel> LabelSet for StaticLabelSet<T> {
 
 /// A [`LabelVisitor`] that is useful for testing purposes
 #[derive(Default, Debug)]
-pub struct LabelTestVisitor(pub Vec<String>);
+pub struct LabelTestVisitor;
 
 impl LabelVisitor for LabelTestVisitor {
-    fn write_int(&mut self, x: u64) {
-        self.write_str(itoa::Buffer::new().format(x));
+    type Output = String;
+    fn write_int(self, x: u64) -> String {
+        self.write_str(itoa::Buffer::new().format(x))
     }
 
-    fn write_float(&mut self, x: f64) {
+    fn write_float(self, x: f64) -> String {
         if x.is_infinite() {
             if x.is_sign_positive() {
-                self.write_str("+Inf");
+                self.write_str("+Inf")
             } else {
-                self.write_str("-Inf");
+                self.write_str("-Inf")
             }
         } else if x.is_nan() {
-            self.write_str("NaN");
+            self.write_str("NaN")
         } else {
-            self.write_str(ryu::Buffer::new().format(x));
+            self.write_str(ryu::Buffer::new().format(x))
         }
     }
 
-    fn write_str(&mut self, x: &str) {
-        self.0.push(x.to_owned())
+    fn write_str(self, x: &str) -> String {
+        x.to_owned()
     }
 }
 
 /// A trait for visiting the value of a label
 pub trait LabelVisitor {
-    fn write_int(&mut self, x: u64);
-    fn write_float(&mut self, x: f64);
-    fn write_str(&mut self, x: &str);
+    type Output;
+    fn write_int(self, x: u64) -> Self::Output;
+    fn write_float(self, x: f64) -> Self::Output;
+    fn write_str(self, x: &str) -> Self::Output;
 }
 
 /// A type that contains a label value
 pub trait LabelValue {
-    fn visit(&self, v: &mut impl LabelVisitor);
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output;
 }
 
 /// `FixedCardinalityLabel` represents a label value with a value<-> integer encoding known at compile time.

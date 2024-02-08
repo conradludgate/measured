@@ -260,23 +260,12 @@ pub mod text;
 /// assert_eq!(Operation::decode(3), Operation::DeleteAll);
 ///
 /// use measured::label::LabelValue as _;
+/// use measured::label::LabelTestVisitor;
 ///
-/// let mut visitor = measured::label::LabelTestVisitor::default();
-/// Operation::Create.visit(&mut visitor);
-/// Operation::Update.visit(&mut visitor);
-/// Operation::Delete.visit(&mut visitor);
-/// Operation::DeleteAll.visit(&mut visitor);
-///
-/// assert_eq!(
-///     visitor.0,
-///     [
-///         "create".to_string(),
-///         "update".to_string(),
-///         "delete".to_string(),
-///         "delete_all".to_string(),
-///     ],
-///     "values are snake_cased by default",
-/// );
+/// assert_eq!(Operation::Create.visit(LabelTestVisitor), "create");
+/// assert_eq!(Operation::Update.visit(LabelTestVisitor), "update");
+/// assert_eq!(Operation::Delete.visit(LabelTestVisitor), "delete");
+/// assert_eq!(Operation::DeleteAll.visit(LabelTestVisitor), "delete_all");
 /// ```
 ///
 /// ## Integer values
@@ -303,21 +292,11 @@ pub mod text;
 /// assert_eq!(StatusCode::decode(2), StatusCode::InternalServerError);
 ///
 /// use measured::label::LabelValue as _;
+/// use measured::label::LabelTestVisitor;
 ///
-/// let mut visitor = measured::label::LabelTestVisitor::default();
-/// StatusCode::Ok.visit(&mut visitor);
-/// StatusCode::ImATeapot.visit(&mut visitor);
-/// StatusCode::InternalServerError.visit(&mut visitor);
-///
-/// assert_eq!(
-///     visitor.0,
-///     [
-///         "200".to_string(),
-///         "418".to_string(),
-///         "500".to_string(),
-///     ],
-///     "variants with integer values will use those values",
-/// );
+/// assert_eq!(StatusCode::Ok.visit(LabelTestVisitor), "200");
+/// assert_eq!(StatusCode::ImATeapot.visit(LabelTestVisitor), "418");
+/// assert_eq!(StatusCode::InternalServerError.visit(LabelTestVisitor), "500");
 /// ```
 ///
 /// ## Custom values
@@ -334,20 +313,11 @@ pub mod text;
 /// }
 ///
 /// use measured::label::LabelValue as _;
+/// use measured::label::LabelTestVisitor;
 ///
-/// let mut visitor = measured::label::LabelTestVisitor::default();
-/// StatusCode::Ok.visit(&mut visitor);
-/// StatusCode::ImATeapot.visit(&mut visitor);
-/// StatusCode::InternalServerError.visit(&mut visitor);
-///
-/// assert_eq!(
-///     visitor.0,
-///     [
-///         "a-okay".to_string(),
-///         "IM-A-TEAPOT".to_string(),
-///         "INTERNAL-SERVER-ERROR".to_string(),
-///     ],
-/// );
+/// assert_eq!(StatusCode::Ok.visit(LabelTestVisitor), "a-okay");
+/// assert_eq!(StatusCode::ImATeapot.visit(LabelTestVisitor), "IM-A-TEAPOT");
+/// assert_eq!(StatusCode::InternalServerError.visit(LabelTestVisitor), "INTERNAL-SERVER-ERROR");
 /// ```
 pub use measured_derive::FixedCardinalityLabel;
 

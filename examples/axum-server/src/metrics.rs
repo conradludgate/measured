@@ -153,7 +153,7 @@ impl From<axum::http::Method> for Method {
 struct StatusCode(axum::http::StatusCode);
 
 impl LabelValue for StatusCode {
-    fn visit(&self, v: &mut impl label::LabelVisitor) {
+    fn visit<V: label::LabelVisitor>(&self, v: V) -> V::Output {
         v.write_int(self.0.as_u16() as u64)
     }
 }

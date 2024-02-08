@@ -28,20 +28,20 @@ impl<T: LabelValue + Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet
 }
 
 impl LabelValue for String {
-    fn visit(&self, v: &mut impl LabelVisitor) {
-        v.write_str(self);
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_str(self)
     }
 }
 
 impl LabelValue for str {
-    fn visit(&self, v: &mut impl LabelVisitor) {
-        v.write_str(self);
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_str(self)
     }
 }
 
 impl<T: LabelValue + ?Sized> LabelValue for &T {
-    fn visit(&self, v: &mut impl LabelVisitor) {
-        T::visit(self, v);
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        T::visit(self, v)
     }
 }
 

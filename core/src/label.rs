@@ -9,8 +9,8 @@ pub mod value;
 pub use group::{ComposedGroup, LabelGroup, LabelGroupSet, LabelGroupVisitor, NoLabels};
 pub use name::LabelName;
 pub use value::{
-    DynamicLabelSet, FixedCardinalityLabel, FixedCardinalitySet, LabelSet, LabelValue,
-    LabelVisitor, StaticLabelSet,
+    DynamicLabelSet, FixedCardinalityLabel, FixedCardinalitySet, LabelSet, LabelTestVisitor,
+    LabelValue, LabelVisitor, StaticLabelSet,
 };
 
 #[cfg(all(test, feature = "lasso"))]

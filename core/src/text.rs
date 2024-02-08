@@ -4,7 +4,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use memchr::memchr3_iter;
 
 use crate::{
-    label::{LabelGroup, LabelName, LabelGroupVisitor, LabelValue, LabelVisitor},
+    label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
         counter::CounterState,
         gauge::GaugeState,
@@ -110,35 +110,39 @@ impl TextEncoder {
         value: MetricValue,
     ) {
         struct Visitor<'a> {
-            first: bool,
             b: &'a mut BytesMut,
         }
         impl LabelVisitor for Visitor<'_> {
-            fn write_int(&mut self, x: u64) {
-                self.write_str(itoa::Buffer::new().format(x));
+            type Output = ();
+            fn write_int(self, x: u64) {
+                self.write_str(itoa::Buffer::new().format(x))
             }
 
-            fn write_float(&mut self, x: f64) {
+            fn write_float(self, x: f64) {
                 if x.is_infinite() {
                     if x.is_sign_positive() {
-                        self.write_str("+Inf");
+                        self.write_str("+Inf")
                     } else {
-                        self.write_str("-Inf");
+                        self.write_str("-Inf")
                     }
                 } else if x.is_nan() {
-                    self.write_str("NaN");
+                    self.write_str("NaN")
                 } else {
-                    self.write_str(ryu::Buffer::new().format(x));
+                    self.write_str(ryu::Buffer::new().format(x))
                 }
             }
 
-            fn write_str(&mut self, x: &str) {
+            fn write_str(self, x: &str) {
                 self.b.extend_from_slice(b"=\"");
                 write_label_str_value(x, &mut *self.b);
                 self.b.extend_from_slice(b"\"");
             }
         }
-        impl LabelGroupVisitor for Visitor<'_> {
+        struct GroupVisitor<'a> {
+            first: bool,
+            b: &'a mut BytesMut,
+        }
+        impl LabelGroupVisitor for GroupVisitor<'_> {
             fn write_value(&mut self, name: &LabelName, x: &impl LabelValue) {
                 if self.first {
                     self.first = false;
@@ -147,14 +151,14 @@ impl TextEncoder {
                     self.b.extend_from_slice(b",");
                 }
                 self.b.extend_from_slice(name.as_str().as_bytes());
-                x.visit(self);
+                x.visit(Visitor { b: self.b });
             }
         }
 
         self.state = State::Metrics;
         name.encode_text(&mut self.b);
 
-        let mut visitor = Visitor {
+        let mut visitor = GroupVisitor {
             first: true,
             b: &mut self.b,
         };
@@ -188,8 +192,8 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
     ) {
         struct F64(f64);
         impl LabelValue for F64 {
-            fn visit(&self, v: &mut impl LabelVisitor) {
-                v.write_float(self.0);
+            fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+                v.write_float(self.0)
             }
         }
 
