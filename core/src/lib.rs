@@ -8,21 +8,35 @@
 //! The most basic usage is defining a single counter. This is very easy.
 //!
 //! ```
-//! use measured::Counter;
+//! use measured::{Counter, MetricGroup};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::TextEncoder;
 //!
-//! // create a counter
-//! let counter = Counter::new();
-//! // increment the counter value
-//! counter.get_metric().inc();
+//! // Define a metric group, consisting of 1 or more metrics
+//! #[derive(MetricGroup)]
+//! struct MyMetricGroup {
+//!     my_first_counter: Counter,
+//! }
 //!
-//! // sample the counter and encode the value to a textual format.
+//! // create the metrics
+//! let metrics = MyMetricGroup {
+//!     my_first_counter: Counter::new(),
+//! };
+//!
+//! // increment the counter value
+//! metrics.my_first_counter.get_metric().inc();
+//!
+//! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = MetricName::from_static("my_first_counter");
-//! counter.collect_into(name, &mut text_encoder);
+//! metrics.collect_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
+//!
+//! assert_eq!(
+//!     bytes,
+//!     r#"# TYPE my_first_counter counter
+//! my_first_counter 1
+//! "#);
 //! ```
 //!
 //! ## With labels
@@ -30,10 +44,10 @@
 //! It's common to have labels added to your metrics, such as adding an operation type. When all possible values
 //! can be determined at compile time, you can define the label value as a [`FixedCardinalityLabel`] enum.
 //!
-//! Multiple label pairs are collected into a [`LabelGroup`](label::LabelGroup).
+//! Multiple label pairs are collected into a [`LabelGroup`].
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+//! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
 //! use measured::label::StaticLabelSet;
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
@@ -42,7 +56,6 @@
 //! // Define a fixed cardinality label
 //!
 //! #[derive(FixedCardinalityLabel)]
-//!
 //! enum Operation {
 //!     Create,
 //!     Update,
@@ -57,19 +70,35 @@
 //!     operation: Operation,
 //! }
 //!
-//! // create a counter vec
-//! let counters = CounterVec::new(MyLabelGroupSet {
-//!     operation: StaticLabelSet::new(),
-//! });
-//! // increment the counter at a given label
-//! counters.inc(MyLabelGroup { operation: Operation::Create });
-//! counters.inc(MyLabelGroup { operation: Operation::Delete });
+//! // Define a metric group, consisting of 1 or more metrics
+//! #[derive(MetricGroup)]
+//! struct MyMetricGroup {
+//!     my_first_counter: CounterVec<MyLabelGroupSet>,
+//! }
 //!
-//! // sample the counters and encode the values to a textual format.
+//! // create the metrics
+//! let metrics = MyMetricGroup {
+//!     my_first_counter: CounterVec::new(MyLabelGroupSet {
+//!         operation: StaticLabelSet::new(),
+//!     })
+//! };
+//!
+//! // increment the counter at a given label
+//! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Create });
+//! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Delete });
+//!
+//! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = MetricName::from_static("my_first_counter");
-//! counters.collect_into(name, &mut text_encoder);
+//! metrics.collect_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
+//!
+//! assert_eq!(
+//!     bytes,
+//!     r#"# TYPE my_first_counter counter
+//! my_first_counter{operation="create"} 1
+//! my_first_counter{operation="update"} 0
+//! my_first_counter{operation="delete"} 1
+//! "#);
 //! ```
 //!
 //! ## With dynamic labels and label sets
@@ -83,7 +112,7 @@
 //! I recommend the latter for string-based labels that are not `&'static` as it will offer the most efficient use of memory.
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+//! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::TextEncoder;
@@ -97,26 +126,38 @@
 //!     path: &'a str,
 //! }
 //!
-//! // initialise your fixed cardinality set
-//! let set = MyLabelGroupSet {
-//!     path: lasso::Rodeo::from_iter([
-//!         "/api/v1/products",
-//!         "/api/v1/users",
-//!     ])
-//!     .into_reader(),
+//! // Define a metric group, consisting of 1 or more metrics
+//! #[derive(MetricGroup)]
+//! struct MyMetricGroup {
+//!     my_first_counter: CounterVec<MyLabelGroupSet>,
+//! }
+//!
+//! // create the metrics
+//! let metrics = MyMetricGroup {
+//!     my_first_counter: CounterVec::new(MyLabelGroupSet {
+//!         path: lasso::Rodeo::from_iter([
+//!             "/api/v1/products",
+//!             "/api/v1/users",
+//!         ])
+//!         .into_reader(),
+//!     })
 //! };
 //!
-//! // create a counter vec
-//! let counters = CounterVec::new(set);
 //! // increment the counter at a given label
-//! counters.inc(MyLabelGroup { path: "/api/v1/products" });
-//! counters.inc(MyLabelGroup { path: "/api/v1/users" });
+//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
+//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
 //!
-//! // sample the counters and encode the values to a textual format.
+//! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = MetricName::from_static("my_first_counter");
-//! counters.collect_into(name, &mut text_encoder);
+//! metrics.collect_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
+//!
+//! assert_eq!(
+//!     bytes,
+//!     r#"# TYPE my_first_counter counter
+//! my_first_counter{path="/api/v1/products"} 1
+//! my_first_counter{path="/api/v1/users"} 1
+//! "#);
 //! ```
 //!
 //! In the rare case that the label cannot be determined even at startup, you can still use them. You will have to make use of the
@@ -125,7 +166,7 @@
 //! It's not advised to use this for high cardinality labels, but if you must, this still offers good performance.
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
+//! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::TextEncoder;
@@ -139,22 +180,34 @@
 //!     path: &'a str,
 //! }
 //!
-//! // initialise your dynamic cardinality set
-//! let set = MyLabelGroupSet {
-//!     path: lasso::ThreadedRodeo::new(),
+//! // Define a metric group, consisting of 1 or more metrics
+//! #[derive(MetricGroup)]
+//! struct MyMetricGroup {
+//!     my_first_counter: CounterVec<MyLabelGroupSet>,
+//! }
+//!
+//! // create the metrics
+//! let metrics = MyMetricGroup {
+//!     my_first_counter: CounterVec::new(MyLabelGroupSet {
+//!         path: lasso::ThreadedRodeo::new(),
+//!     })
 //! };
 //!
-//! // create a counter vec
-//! let counters = CounterVec::new(set);
 //! // increment the counter at a given label
-//! counters.inc(MyLabelGroup { path: "/api/v1/products" });
-//! counters.inc(MyLabelGroup { path: "/api/v1/users" });
+//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
+//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
 //!
-//! // sample the counters and encode the values to a textual format.
+//! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! let name = MetricName::from_static("my_first_counter");
-//! counters.collect_into(name, &mut text_encoder);
+//! metrics.collect_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
+//!
+//! assert_eq!(
+//!     bytes,
+//!     r#"# TYPE my_first_counter counter
+//! my_first_counter{path="/api/v1/products"} 1
+//! my_first_counter{path="/api/v1/users"} 1
+//! "#);
 //! ```
 //!
 //! ## Prometheus vs Memory Fragmentation
@@ -233,7 +286,7 @@ pub mod label;
 pub mod metric;
 pub mod text;
 
-/// Implement [`FixedCardinalityLabel`](label::FixedCardinalityLabel) on an `enum`
+/// Implement [`FixedCardinalityLabel`] on an `enum`
 ///
 /// # Examples
 ///
@@ -325,9 +378,11 @@ pub mod text;
 /// ```
 pub use measured_derive::FixedCardinalityLabel;
 
-/// Implement [`LabelGroup`](label::LabelGroup) on a `struct`
+pub use label::value::FixedCardinalityLabel;
+
+/// Implement [`LabelGroup`] on a `struct`
 ///
-/// A [`LabelGroup`](label::LabelGroup) is a collection of named [`LabelValue`](label::LabelValue)s. Additonally to the label group,
+/// A [`LabelGroup`] is a collection of named [`LabelValue`](label::LabelValue)s. Additonally to the label group,
 /// there is also a [`LabelGroupSet`](label::LabelGroupSet) that is created by this macro.
 /// The set provides additional information needed to encode the values in the group.
 ///
@@ -382,7 +437,14 @@ pub use measured_derive::FixedCardinalityLabel;
 /// ```
 pub use measured_derive::LabelGroup;
 
+pub use label::group::LabelGroup;
+
+/// Implement [`MetricGroup`] on a `struct`
+///
+/// A [`MetricGroup`] is a collection of named [`Metric`]s or [`MetricVec`]s.
 pub use measured_derive::MetricGroup;
+
+pub use metric::group::MetricGroup;
 
 /// A [`Metric`] that counts individual observations from an event or sample stream in configurable buckets.
 /// Similar to a Summary, it also provides a sum of observations and an observation count.
@@ -407,7 +469,7 @@ pub use measured_derive::MetricGroup;
 /// ```
 pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 
-/// A collection of multiple [`Histogram`]s, keyed by [`LabelGroup`](label::LabelGroup)s
+/// A collection of multiple [`Histogram`]s, keyed by [`LabelGroup`]s
 ///
 /// ```
 /// use measured::{HistogramVec, LabelGroup, FixedCardinalityLabel};
@@ -474,7 +536,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 /// ```
 pub type Counter = Metric<CounterState>;
 
-/// A collection of multiple [`Counter`]s, keyed by [`LabelGroup`](label::LabelGroup)s
+/// A collection of multiple [`Counter`]s, keyed by [`LabelGroup`]s
 ///
 /// ```
 /// use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
@@ -537,7 +599,7 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 /// ```
 pub type Gauge = Metric<GaugeState>;
 
-/// A collection of multiple [`Gauge`]s, keyed by [`LabelGroup`](label::LabelGroup)s
+/// A collection of multiple [`Gauge`]s, keyed by [`LabelGroup`]s
 ///
 /// ```
 /// use measured::{GaugeVec, LabelGroup, FixedCardinalityLabel};

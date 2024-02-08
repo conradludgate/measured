@@ -32,8 +32,8 @@ fn measured() {
     encoder.write_help(&metric, "help text");
     counter_vec.collect_into(&metric, &mut encoder);
     assert_eq!(
-        &*encoder.finish(),
-        br#"# HELP http_request_errors_total help text
+        encoder.finish(),
+        r#"# HELP http_request_errors_total help text
 # TYPE http_request_errors_total counter
 http_request_errors_total{kind="user",route="/api/v1/users"} 2000
 http_request_errors_total{kind="user",route="/api/v1/users/:id"} 2000

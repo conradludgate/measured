@@ -323,7 +323,7 @@ This is on a new line"#,
             &mut b,
         );
 
-        assert_eq!(&b, &br#"Hello \\ \"World\"\nThis is on a new line"#[..]);
+        assert_eq!(b, r#"Hello \\ \"World\"\nThis is on a new line"#);
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]

@@ -71,7 +71,7 @@ pub trait LabelValue {
 
 /// `FixedCardinalityLabel` represents a label value with a value<-> integer encoding known at compile time.
 ///
-/// This is usually implemented by enums with the [`FixedCardinalityLabel`](crate::FixedCardinalityLabel) derive macro
+/// This is usually implemented by enums with the [`FixedCardinalityLabel`](macro@crate::FixedCardinalityLabel) derive macro
 pub trait FixedCardinalityLabel: LabelValue {
     /// The number of possible label values
     fn cardinality() -> usize;

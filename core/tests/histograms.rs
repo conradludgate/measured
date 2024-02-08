@@ -17,8 +17,8 @@ fn measured() {
     encoder.write_help(metric, "help text");
     h.collect_into(metric, &mut encoder);
     assert_eq!(
-        &*encoder.finish(),
-        br#"# HELP http_request_errors help text
+        encoder.finish(),
+        r#"# HELP http_request_errors help text
 # TYPE http_request_errors histogram
 http_request_errors_bucket{le="0.1"} 3
 http_request_errors_bucket{le="0.2"} 4

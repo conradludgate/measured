@@ -160,7 +160,7 @@ mod tests {
         http_request_group.collect_into(&mut text_encoder);
         assert_eq!(
             text_encoder.finish(),
-            br#"# TYPE http_request_errors counter
+            r#"# TYPE http_request_errors counter
 http_request_errors{kind="user",route="/api/v1/users"} 0
 http_request_errors{kind="user",route="/api/v1/users/:id"} 0
 http_request_errors{kind="user",route="/api/v1/products"} 0
@@ -179,7 +179,7 @@ http_request_errors{kind="network",route="/api/v1/products"} 0
 http_request_errors{kind="network",route="/api/v1/products/:id"} 0
 http_request_errors{kind="network",route="/api/v1/products/:id/owner"} 0
 http_request_errors{kind="network",route="/api/v1/products/:id/purchase"} 0
-"#[..]
+"#
         );
     }
 }

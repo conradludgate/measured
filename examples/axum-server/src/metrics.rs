@@ -7,8 +7,8 @@ use axum::{
     RequestExt,
 };
 use measured::{
-    label::{self, FixedCardinalityLabel, LabelValue, StaticLabelSet},
-    metric::{group::MetricGroup, histogram::Thresholds},
+    label::{self, LabelValue, StaticLabelSet},
+    metric::histogram::Thresholds,
     text::TextEncoder,
     CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup,
 };
