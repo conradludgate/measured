@@ -229,3 +229,124 @@ mod fixed_cardinality {
         }
     }
 }
+
+#[divan::bench_group(sample_size = 5, sample_count = 500)]
+mod no_cardinality {
+    use std::time::Instant;
+
+    use bytes::Bytes;
+    use divan::{black_box, Bencher};
+    use measured::metric::histogram::Thresholds;
+    use prometheus::exponential_buckets;
+
+    const LOOPS: usize = 20000;
+    const N: usize = 8;
+
+    #[inline(never)]
+    fn measured_inner(
+        encoder: &mut measured::text::TextEncoder,
+        h: &measured::Histogram<N>,
+    ) -> Bytes {
+        use measured::metric::name::MetricName;
+
+        for _ in 0..black_box(LOOPS) {
+            h.start_timer();
+        }
+
+        const NAME: &MetricName = MetricName::from_static("http_request_errors");
+        encoder.write_help(&NAME, "help text");
+        h.collect_into(NAME, encoder);
+        encoder.finish()
+    }
+
+    #[divan::bench]
+    fn measured(bencher: Bencher) {
+        let h = measured::Histogram::new_metric(Thresholds::<N>::exponential_buckets(1.0, 2.0));
+
+        bencher
+            .with_inputs(measured::text::TextEncoder::new)
+            .bench_refs(|encoder| measured_inner(encoder, &h));
+    }
+
+    #[divan::bench]
+    fn prometheus(bencher: Bencher) {
+        let registry = prometheus::Registry::new();
+        let h = prometheus::register_histogram_with_registry!(
+            "http_request_errors",
+            "help text",
+            exponential_buckets(1.0, 2.0, N).unwrap(),
+            registry
+        )
+        .unwrap();
+
+        bencher.with_inputs(String::new).bench_refs(|string| {
+            for _ in 0..black_box(LOOPS) {
+                let timer = h.start_timer();
+                timer.stop_and_record();
+            }
+
+            string.clear();
+            prometheus::TextEncoder
+                .encode_utf8(&registry.gather(), string)
+                .unwrap();
+        });
+    }
+
+    #[divan::bench]
+    fn metrics(bencher: Bencher) {
+        let recorder = metrics_exporter_prometheus::PrometheusBuilder::new()
+            .set_buckets_for_metric(
+                metrics_exporter_prometheus::Matcher::Full("http_request_errors".to_string()),
+                &exponential_buckets(1.0, 2.0, N).unwrap(),
+            )
+            .unwrap()
+            .build_recorder();
+
+        metrics::with_local_recorder(&recorder, || {
+            metrics::describe_histogram!("http_request_errors", "help text");
+        });
+
+        bencher.bench(|| {
+            metrics::with_local_recorder(&recorder, || {
+                for _ in 0..black_box(LOOPS) {
+                    let start = Instant::now();
+                    metrics::histogram!("http_request_errors")
+                        .record(start.elapsed().as_secs_f64());
+                }
+            });
+
+            recorder.handle().render()
+        });
+    }
+
+    #[divan::bench]
+    fn prometheus_client(bencher: Bencher) {
+        use prometheus_client::encoding::text::encode;
+        use prometheus_client::metrics::histogram::exponential_buckets;
+        use prometheus_client::metrics::histogram::Histogram;
+        use prometheus_client::registry::Registry;
+
+        let mut registry = <Registry>::default();
+
+        let h = Histogram::new(exponential_buckets(1.0, 2.0, N as u16));
+
+        // Register the metric family with the registry.
+        registry.register(
+            // With the metric name.
+            "http_request_errors",
+            // And the metric help text.
+            "Number of HTTP requests received",
+            h.clone(),
+        );
+
+        bencher.with_inputs(String::new).bench_refs(|string| {
+            for _ in 0..black_box(LOOPS) {
+                let start = Instant::now();
+                h.observe(start.elapsed().as_secs_f64());
+            }
+
+            string.clear();
+            encode(string, &registry).unwrap();
+        });
+    }
+}

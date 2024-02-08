@@ -6,8 +6,21 @@ use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 #[derive(Clone, Copy)]
 pub struct HistogramStateMut<const N: usize> {
     pub buckets: [u64; N],
-    pub count: u64,
+    pub inf: u64,
     pub sum: f64,
+}
+
+impl<const N: usize> HistogramStateMut<N> {
+    /// Add a single observation to the [`Histogram`].
+    pub fn observe(&mut self, bucket: usize, x: f64) {
+        assert!(bucket <= N);
+        if bucket < N {
+            self.buckets[bucket] += 1;
+        } else {
+            self.inf += 1;
+        }
+        self.sum += x;
+    }
 }
 
 pub struct HistogramState<const N: usize> {
@@ -21,7 +34,7 @@ impl<const N: usize> Default for HistogramState<N> {
         Self {
             inner: Mutex::new(HistogramStateMut {
                 buckets: [0; N],
-                count: 0,
+                inf: 0,
                 sum: 0.0,
             }),
         }
@@ -84,13 +97,8 @@ impl<const N: usize> Thresholds<N> {
 impl<const N: usize> MetricRef<'_, HistogramState<N>> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
-        let increase: [u64; N] = std::array::from_fn(|i| if x <= self.1.le[i] { 1 } else { 0 });
-        let mut inner = self.0.inner.lock();
-        for (x, y) in std::iter::zip(&mut inner.buckets, increase) {
-            *x += y;
-        }
-        inner.count += 1;
-        inner.sum += x;
+        let bucket = self.1.le.partition_point(|le| x > *le);
+        self.0.inner.lock().observe(bucket, x);
     }
 
     /// Observe the duration in seconds since the given instant

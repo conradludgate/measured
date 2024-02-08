@@ -16,7 +16,9 @@ impl<T: LabelValue + Hash + Eq + Clone, S: core::hash::BuildHasher> FixedCardina
 }
 
 #[cfg(feature = "indexmap")]
-impl<T: LabelValue + Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet for indexmap::IndexSet<T, S> {
+impl<T: LabelValue + Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet
+    for indexmap::IndexSet<T, S>
+{
     type Value<'a> = T;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
@@ -54,7 +56,10 @@ impl<K: lasso::Key, S: core::hash::BuildHasher> FixedCardinalitySet for lasso::R
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key + Hash, S: core::hash::BuildHasher + Clone> DynamicLabelSet for lasso::ThreadedRodeo<K, S> {}
+impl<K: lasso::Key + Hash, S: core::hash::BuildHasher + Clone> DynamicLabelSet
+    for lasso::ThreadedRodeo<K, S>
+{
+}
 
 #[cfg(feature = "lasso")]
 impl<K: lasso::Key, S: core::hash::BuildHasher> LabelSet for lasso::RodeoReader<K, S> {
@@ -70,7 +75,9 @@ impl<K: lasso::Key, S: core::hash::BuildHasher> LabelSet for lasso::RodeoReader<
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key + Hash, S: core::hash::BuildHasher + Clone> LabelSet for lasso::ThreadedRodeo<K, S> {
+impl<K: lasso::Key + Hash, S: core::hash::BuildHasher + Clone> LabelSet
+    for lasso::ThreadedRodeo<K, S>
+{
     type Value<'a> = &'a str;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {

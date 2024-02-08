@@ -205,23 +205,24 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         }
 
         let state = *self.inner.lock();
+        let mut val = 0;
 
         for i in 0..N {
             let le = metadata.get()[i];
-            let val = state.buckets[i];
+            val += state.buckets[i];
             enc.write_metric(
                 &name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
                 MetricValue::Int(val as i64),
             );
         }
-        let count = state.count as i64;
+        let count = val + state.inf;
         enc.write_metric(
             &name.by_ref().with_suffix(Bucket),
             labels
                 .by_ref()
                 .compose_with(HistogramLabelLe { le: f64::INFINITY }),
-            MetricValue::Int(count),
+            MetricValue::Int(count as i64),
         );
         enc.write_metric(
             &name.by_ref().with_suffix(Sum),
@@ -231,7 +232,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         enc.write_metric(
             &name.by_ref().with_suffix(Count),
             labels,
-            MetricValue::Int(count),
+            MetricValue::Int(count as i64),
         );
     }
 }
