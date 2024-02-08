@@ -2,8 +2,8 @@ use alloc::sync::Arc;
 use core::hash::{BuildHasher, Hash};
 
 use super::{
-    DynamicLabelSet, FixedCardinalitySet, LabelGroup, LabelGroupSet, LabelName, LabelSet,
-    LabelValue, LabelVisitor,
+    DynamicLabelSet, FixedCardinalitySet, LabelGroup, LabelGroupSet, LabelSet, LabelValue,
+    LabelVisitor,
 };
 
 #[cfg(feature = "indexmap")]
@@ -159,23 +159,15 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
 }
 
 impl<A: LabelGroup, B: LabelGroup> LabelGroup for ComposedGroup<A, B> {
-    fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
-        A::label_names().into_iter().chain(B::label_names())
-    }
-
-    fn label_values(&self, v: &mut impl LabelVisitor) {
-        self.0.label_values(v);
-        self.1.label_values(v);
+    fn visit_values(&self, v: &mut impl super::LabelSetVisitor) {
+        self.0.visit_values(v);
+        self.1.visit_values(v);
     }
 }
 
 impl<T: LabelGroup> LabelGroup for &T {
-    fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
-        T::label_names()
-    }
-
-    fn label_values(&self, v: &mut impl LabelVisitor) {
-        T::label_values(self, v);
+    fn visit_values(&self, v: &mut impl super::LabelSetVisitor) {
+        T::visit_values(self, v);
     }
 }
 

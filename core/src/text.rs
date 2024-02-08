@@ -4,7 +4,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use memchr::memchr3_iter;
 
 use crate::{
-    label::{LabelGroup, LabelName, LabelVisitor},
+    label::{LabelGroup, LabelName, LabelSetVisitor, LabelValue, LabelVisitor},
     metric::{
         histogram::Thresholds,
         name::{Bucket, Count, MetricNameEncoder, Sum},
@@ -108,12 +108,11 @@ impl TextEncoder {
         labels: L,
         value: MetricValue,
     ) {
-        struct Visitor<'a, I> {
+        struct Visitor<'a> {
             first: bool,
-            iter: I,
             b: &'a mut BytesMut,
         }
-        impl<I: Iterator<Item = &'static LabelName>> LabelVisitor for Visitor<'_, I> {
+        impl LabelVisitor for Visitor<'_> {
             fn write_int(&mut self, x: u64) {
                 self.write_str(itoa::Buffer::new().format(x));
             }
@@ -133,17 +132,21 @@ impl TextEncoder {
             }
 
             fn write_str(&mut self, x: &str) {
+                self.b.extend_from_slice(b"=\"");
+                write_label_str_value(x, &mut *self.b);
+                self.b.extend_from_slice(b"\"");
+            }
+        }
+        impl LabelSetVisitor for Visitor<'_> {
+            fn write_value(&mut self, name: &LabelName, x: &impl LabelValue) {
                 if self.first {
                     self.first = false;
                     self.b.extend_from_slice(b"{");
                 } else {
                     self.b.extend_from_slice(b",");
                 }
-                let label_name = self.iter.next().expect("missing label name");
-                self.b.extend_from_slice(label_name.as_str().as_bytes());
-                self.b.extend_from_slice(b"=\"");
-                write_label_str_value(x, &mut *self.b);
-                self.b.extend_from_slice(b"\"");
+                self.b.extend_from_slice(name.as_str().as_bytes());
+                x.visit(self);
             }
         }
 
@@ -152,10 +155,9 @@ impl TextEncoder {
 
         let mut visitor = Visitor {
             first: true,
-            iter: L::label_names().into_iter(),
             b: &mut self.b,
         };
-        labels.label_values(&mut visitor);
+        labels.visit_values(&mut visitor);
         if !visitor.first {
             self.b.extend_from_slice(b"}");
         }
@@ -183,18 +185,21 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
     ) {
+        struct F64(f64);
+        impl LabelValue for F64 {
+            fn visit(&self, v: &mut impl LabelVisitor) {
+                v.write_float(self.0);
+            }
+        }
+
         struct HistogramLabelLe {
             le: f64,
         }
 
         impl LabelGroup for HistogramLabelLe {
-            fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
+            fn visit_values(&self, v: &mut impl LabelSetVisitor) {
                 const LE: &LabelName = LabelName::from_static("le");
-                core::iter::once(LE)
-            }
-
-            fn label_values(&self, v: &mut impl LabelVisitor) {
-                v.write_float(self.le);
+                v.write_value(LE, &F64(self.le));
             }
         }
 

@@ -3,7 +3,14 @@ http_request_errors: {
   # grid-gap: 0
   label_set: ErrorPathSet {
     grid-rows: 2
-    error_kind
+    # error_kind: {
+    #   grid-columns: 3
+    #   grid-gap: 0
+
+    #   "user".class: [error_kind; kind_1]
+    #   "internal".class: [error_kind; kind_2]
+    #   "network".class: [error_kind; kind_3]
+    # }
     path: {
       grid-rows: 1
       grid-gap: 0
@@ -17,12 +24,12 @@ http_request_errors: {
         e: "/api/v1/products/:id/owner"
         f: "/api/v1/products/:id/purchase"
 
-        a.style.fill: "lightblue"
-        b.style.fill: "lightsalmon"
-        c.style.fill: "magenta"
-        d.style.fill: "lightgreen"
-        e.style.fill: "hotpink"
-        f.style.fill: "wheat"
+        a.class: path_a
+        b.class: path_b
+        c.class: path_c
+        d.class: path_d
+        e.class: path_e
+        f.class: path_f
       }
     }
   }
@@ -31,62 +38,62 @@ http_request_errors: {
     grid-rows: 3
     grid-gap: 0
 
-    a1.class: path_a
-    a2.class: path_a
-    a3.class: path_a
-    b1.class: path_b
-    b2.class: path_b
-    b3.class: path_b
-    c1.class: path_c
-    c2.class: path_c
-    c3.class: path_c
-    d1.class: path_d
-    d2.class: path_d
-    d3.class: path_d
-    e1.class: path_e
-    e2.class: path_e
-    e3.class: path_e
-    f1.class: path_f
-    f2.class: path_f
-    f3.class: path_f
+    a1.class: [metric; path_a; kind_1]
+    a2.class: [metric; path_a; kind_2]
+    a3.class: [metric; path_a; kind_3]
+    b1.class: [metric; path_b; kind_1]
+    b2.class: [metric; path_b; kind_2]
+    b3.class: [metric; path_b; kind_3]
+    c1.class: [metric; path_c; kind_1]
+    c2.class: [metric; path_c; kind_2]
+    c3.class: [metric; path_c; kind_3]
+    d1.class: [metric; path_d; kind_1]
+    d2.class: [metric; path_d; kind_2]
+    d3.class: [metric; path_d; kind_3]
+    e1.class: [metric; path_e; kind_1]
+    e2.class: [metric; path_e; kind_2]
+    e3.class: [metric; path_e; kind_3]
+    f1.class: [metric; path_f; kind_1]
+    f2.class: [metric; path_f; kind_2]
+    f3.class: [metric; path_f; kind_3]
   }
 }
 
 classes: {
-  path_a: {
+  metric: {
     width: 129
+  }
+  path_a: {
     style: {
       fill: "lightblue"
     }
   }
   path_b: {
-    width: 129
     style: {
       fill: "lightsalmon"
     }
   }
   path_c: {
-    width: 129
     style: {
       fill: "magenta"
     }
   }
   path_d: {
-    width: 129
     style: {
       fill: "lightgreen"
     }
   }
   path_e: {
-    width: 129
     style: {
       fill: "hotpink"
     }
   }
   path_f: {
-    width: 129
     style: {
       fill: "wheat"
     }
   }
+  kind_1
+  kind_2
+  kind_3
 }

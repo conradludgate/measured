@@ -1,3 +1,4 @@
+use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 
@@ -16,26 +17,22 @@ impl ToTokens for LabelGroup {
 
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-        let names = sorted_fields.iter().map(|x| x.name.to_string());
         let visits = sorted_fields.iter().map(|x| {
-            let LabelGroupField { name, ty, .. } = x;
+            let LabelGroupField { name, .. } = x;
+            let name_string = name.to_string();
+            let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
             quote_spanned! { x.span =>
-                <#ty as #krate::label::LabelValue>::visit(&self.#name, v);
+                const #ident: &#krate::label::LabelName = #krate::label::LabelName::from_static(#name_string);
+                #krate::label::LabelSetVisitor::write_value(v, #ident, &self.#name);
             }
         });
 
         let label_group_set = Set(self);
-        let label_pairs = sorted_fields.len();
 
         tokens.extend(quote! {
             #[automatically_derived]
             impl #impl_generics #krate::label::LabelGroup for #ident #ty_generics #where_clause {
-                fn label_names() -> impl ::core::iter::IntoIterator<Item = &'static #krate::label::LabelName> {
-                    const LABEL_NAMES: [&#krate::label::LabelName; #label_pairs] = [#(#krate::label::LabelName::from_static(#names)),*];
-                    LABEL_NAMES
-                }
-
-                fn label_values(&self, v: &mut impl #krate::label::LabelVisitor) {
+                fn visit_values(&self, v: &mut impl #krate::label::LabelSetVisitor) {
                     #(#visits)*
                 }
             }

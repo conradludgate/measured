@@ -39,10 +39,14 @@ metrics = "0.22"
 metrics-exporter-prometheus = { version = "0.13", default-features = false }
 prometheus-client = "0.22.1"
 rand = "0.8"
-phf = { features = ["macros"] }
+phf = { version = "0.11", features = ["macros"] }
 
 [[bench]]
 name = "counters"
+harness = false
+
+[[bench]]
+name = "histograms"
 harness = false
 
 # Properly document all features on docs.rs

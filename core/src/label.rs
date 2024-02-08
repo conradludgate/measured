@@ -93,13 +93,15 @@ pub trait LabelVisitor {
     fn write_str(&mut self, x: &str);
 }
 
+/// A trait for the label names and values in a label set
+pub trait LabelSetVisitor {
+    fn write_value(&mut self, name: &LabelName, x: &impl LabelValue);
+}
+
 /// `LabelGroup` represents a group of label-pairs
 pub trait LabelGroup {
-    /// Get all the label names in order
-    fn label_names() -> impl IntoIterator<Item = &'static LabelName>;
-
     /// Writes all the label values into the visitor in the same order as the names
-    fn label_values(&self, v: &mut impl LabelVisitor);
+    fn visit_values(&self, v: &mut impl LabelSetVisitor);
 
     /// Borrow this label group
     fn by_ref(&self) -> &Self {
@@ -119,11 +121,7 @@ pub trait LabelGroup {
 pub struct NoLabels;
 
 impl LabelGroup for NoLabels {
-    fn label_names() -> impl IntoIterator<Item = &'static LabelName> {
-        core::iter::empty()
-    }
-
-    fn label_values(&self, _v: &mut impl LabelVisitor) {}
+    fn visit_values(&self, _v: &mut impl LabelSetVisitor) {}
 }
 
 /// `LabelGroupSet` is a helper for [`LabelGroup`]s.
