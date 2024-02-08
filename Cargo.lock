@@ -52,6 +52,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
+
+[[package]]
 name = "anstyle"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -542,6 +548,10 @@ name = "hashbrown"
 version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
+dependencies = [
+ "ahash",
+ "allocator-api2",
+]
 
 [[package]]
 name = "heck"
@@ -771,9 +781,9 @@ name = "measured"
 version = "0.0.9"
 dependencies = [
  "bytes",
- "dashmap",
  "divan",
  "fake",
+ "hashbrown 0.14.3",
  "indexmap 2.1.0",
  "itoa",
  "lasso",
@@ -787,6 +797,7 @@ dependencies = [
  "rand",
  "rustc-hash",
  "ryu",
+ "spin",
 ]
 
 [[package]]
@@ -1349,6 +1360,15 @@ checksum = "7b5fac59a5cb5dd637972e5fca70daf0523c9067fcdc4842f053dae04a18f8e9"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "spin"
+version = "0.9.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
 ]
 
 [[package]]

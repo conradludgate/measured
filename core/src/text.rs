@@ -204,7 +204,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
             }
         }
 
-        let state = *self.inner.lock().unwrap();
+        let state = *self.inner.lock();
 
         for i in 0..N {
             let le = metadata.get()[i];

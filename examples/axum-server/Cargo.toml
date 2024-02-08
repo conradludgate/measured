@@ -8,5 +8,5 @@ edition = "2021"
 aide = { version = "0.13", features = ["axum"] }
 axum = "0.7"
 lasso = { version = "0.7" }
-measured = { path = "../../core" }
+measured = { path = "../../core", features = ["lasso"] }
 tokio = { version = "1", features = ["full"] }

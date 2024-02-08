@@ -1,8 +1,13 @@
 //! All about metrics
 
 use core::hash::Hash;
+use std::{
+    hash::{BuildHasher, BuildHasherDefault},
+    sync::OnceLock,
+};
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
+use hashbrown::HashMap;
 use rustc_hash::FxHasher;
 
 use self::name::MetricNameEncoder;
@@ -11,9 +16,6 @@ pub mod counter;
 pub mod gauge;
 pub mod histogram;
 pub mod name;
-
-type BuildFxHasher = core::hash::BuildHasherDefault<FxHasher>;
-type FxDashMap<K, V> = dashmap::DashMap<K, V, BuildFxHasher>;
 
 /// Defines a metric
 pub trait MetricType: Default {
@@ -39,7 +41,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 
 enum VecInner<U: Hash + Eq, M: MetricType> {
     Dense(Box<[M]>),
-    Sparse(FxDashMap<U, M>),
+    Sparse(DashMap<U, M>),
 }
 
 impl<M: MetricType> Metric<M> {
@@ -57,6 +59,32 @@ impl<M: MetricType> Metric<M> {
     }
 }
 
+// taken from dashmap
+fn default_shard_amount() -> usize {
+    static DEFAULT_SHARD_AMOUNT: OnceLock<usize> = OnceLock::new();
+    *DEFAULT_SHARD_AMOUNT.get_or_init(|| {
+        (std::thread::available_parallelism().map_or(1, usize::from) * 4).next_power_of_two()
+    })
+}
+
+type FxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
+struct DashMap<K, V> {
+    shards: Box<[spin::RwLock<FxHashMap<K, V>>]>,
+    shift: u32,
+}
+
+fn new_sparse<U: Hash + Eq, M: MetricType>() -> DashMap<U, M> {
+    let shards = default_shard_amount();
+    let mut vec = Vec::with_capacity(shards);
+    vec.resize_with(shards, || {
+        spin::RwLock::new(HashMap::with_hasher(BuildHasherDefault::default()))
+    });
+    DashMap {
+        shards: vec.into_boxed_slice(),
+        shift: (std::mem::size_of::<usize>() * 8) as u32 - shards.trailing_zeros(),
+    }
+}
+
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new metric vec with the given label set and metric metadata
     pub fn new_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
@@ -66,7 +94,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 vec.resize_with(c, M::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
-            None => VecInner::Sparse(FxDashMap::with_hasher(BuildFxHasher::default())),
+            None => VecInner::Sparse(new_sparse()),
         };
 
         Self {
@@ -79,7 +107,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(FxDashMap::with_hasher(BuildFxHasher::default())),
+            metrics: VecInner::Sparse(new_sparse()),
             metadata,
             label_set,
         }
@@ -92,7 +120,18 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
 
     /// Get an identifier for the specific metric identified by this label group
     pub fn with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
-        Some(LabelId(self.label_set.encode(label)?))
+        let id = self.label_set.encode(label)?;
+
+        let hash = match &self.metrics {
+            VecInner::Dense(metrics) => {
+                let index = self.label_set.encode_dense(id).expect("If the label set is fixed in cardinality, it must return a value here in the range of `0..cardinality`");
+                debug_assert!(index < metrics.len());
+                index as u64
+            }
+            VecInner::Sparse(_) => BuildHasherDefault::<FxHasher>::default().hash_one(id),
+        };
+
+        Some(LabelId { id, hash })
     }
 
     /// Get the individual metric at the given identifier.
@@ -104,19 +143,33 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         id: LabelId<L>,
         f: impl for<'a> FnOnce(MetricRef<'a, M>) -> R,
     ) -> R {
-        let index = id.0;
         match &self.metrics {
             VecInner::Dense(metrics) => {
-                let m = &metrics[self.label_set.encode_dense(index).unwrap()];
+                let m = &metrics[id.hash as usize];
                 f(MetricRef(m, &self.metadata))
             }
             VecInner::Sparse(metrics) => {
-                if let Some(m) = metrics.get(&index) {
-                    return f(MetricRef(m.value(), &self.metadata));
+                let shard = &metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
+
+                if let Some((_, v)) = shard.read().raw_table().get(id.hash, |(k, _v)| *k == id.id) {
+                    return f(MetricRef(v, &self.metadata));
                 }
 
-                let m = metrics.entry(index).or_default().downgrade();
-                f(MetricRef(m.value(), &self.metadata))
+                {
+                    shard
+                        .write()
+                        .raw_entry_mut()
+                        .from_hash(id.hash, |k| *k == id.id)
+                        .or_insert_with(|| (id.id, M::default()));
+                }
+
+                let shard = shard.read();
+                let (_, v) = shard
+                    .raw_table()
+                    .get(id.hash, |(k, _v)| *k == id.id)
+                    .expect("it was just inserted");
+
+                f(MetricRef(v, &self.metadata))
             }
         }
     }
@@ -125,7 +178,13 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     pub fn get_cardinality(&self) -> (usize, Option<usize>) {
         match &self.metrics {
             VecInner::Dense(x) => (x.len(), Some(x.len())),
-            VecInner::Sparse(x) => (x.len(), self.label_set.cardinality()),
+            VecInner::Sparse(x) => (
+                x.shards
+                    .iter()
+                    .map(|shard| shard.read().len())
+                    .sum::<usize>(),
+                self.label_set.cardinality(),
+            ),
         }
     }
 
@@ -180,20 +239,20 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 }
             }
             VecInner::Sparse(m) => {
-                for values in m {
-                    values.value().collect_into(
-                        &self.metadata,
-                        self.label_set.decode(values.key()),
-                        &name,
-                        enc,
-                    );
+                for shard in m.shards.iter() {
+                    for (k, v) in shard.read().iter() {
+                        v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc);
+                    }
                 }
             }
         }
     }
 }
 
-pub struct LabelId<L: LabelGroupSet>(L::Unique);
+pub struct LabelId<L: LabelGroupSet> {
+    id: L::Unique,
+    hash: u64,
+}
 
 impl<L: LabelGroupSet> Clone for LabelId<L> {
     fn clone(&self) -> Self {
@@ -201,14 +260,9 @@ impl<L: LabelGroupSet> Clone for LabelId<L> {
     }
 }
 impl<L: LabelGroupSet> Copy for LabelId<L> {}
-impl<L: LabelGroupSet> Hash for LabelId<L> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
 impl<L: LabelGroupSet> PartialEq for LabelId<L> {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.id == other.id
     }
 }
 impl<L: LabelGroupSet> Eq for LabelId<L> {}

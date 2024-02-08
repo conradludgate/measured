@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use spin::Mutex;
 
 use super::{MetricRef, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
@@ -85,7 +85,7 @@ impl<const N: usize> MetricRef<'_, HistogramState<N>> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
         let increase: [u64; N] = std::array::from_fn(|i| if x <= self.1.le[i] { 1 } else { 0 });
-        let mut inner = self.0.inner.lock().unwrap();
+        let mut inner = self.0.inner.lock();
         for (x, y) in std::iter::zip(&mut inner.buckets, increase) {
             *x += y;
         }

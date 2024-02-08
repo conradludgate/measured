@@ -226,7 +226,7 @@ pub trait LabelSet {
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "lasso"))]
 mod tests {
     use fake::{faker::name::raw::Name, locales::EN, Fake};
     use lasso::{Rodeo, RodeoReader, ThreadedRodeo};

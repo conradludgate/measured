@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use core::hash::{BuildHasher, Hash};
+use core::hash::Hash;
 
 use super::{
     DynamicLabelSet, FixedCardinalitySet, LabelGroup, LabelGroupSet, LabelSet, LabelValue,
@@ -7,7 +7,7 @@ use super::{
 };
 
 #[cfg(feature = "indexmap")]
-impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalitySet
+impl<T: LabelValue + Hash + Eq + Clone, S: core::hash::BuildHasher> FixedCardinalitySet
     for indexmap::IndexSet<T, S>
 {
     fn cardinality(&self) -> usize {
@@ -16,7 +16,7 @@ impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> FixedCardinalitySet
 }
 
 #[cfg(feature = "indexmap")]
-impl<T: LabelValue + Hash + Eq + Clone, S: BuildHasher> LabelSet for indexmap::IndexSet<T, S> {
+impl<T: LabelValue + Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet for indexmap::IndexSet<T, S> {
     type Value<'a> = T;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
@@ -47,17 +47,17 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key, S: BuildHasher> FixedCardinalitySet for lasso::RodeoReader<K, S> {
+impl<K: lasso::Key, S: core::hash::BuildHasher> FixedCardinalitySet for lasso::RodeoReader<K, S> {
     fn cardinality(&self) -> usize {
         self.len()
     }
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key + Hash, S: BuildHasher + Clone> DynamicLabelSet for lasso::ThreadedRodeo<K, S> {}
+impl<K: lasso::Key + Hash, S: core::hash::BuildHasher + Clone> DynamicLabelSet for lasso::ThreadedRodeo<K, S> {}
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key, S: BuildHasher> LabelSet for lasso::RodeoReader<K, S> {
+impl<K: lasso::Key, S: core::hash::BuildHasher> LabelSet for lasso::RodeoReader<K, S> {
     type Value<'a> = &'a str;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
@@ -70,7 +70,7 @@ impl<K: lasso::Key, S: BuildHasher> LabelSet for lasso::RodeoReader<K, S> {
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key + Hash, S: BuildHasher + Clone> LabelSet for lasso::ThreadedRodeo<K, S> {
+impl<K: lasso::Key + Hash, S: core::hash::BuildHasher + Clone> LabelSet for lasso::ThreadedRodeo<K, S> {
     type Value<'a> = &'a str;
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
