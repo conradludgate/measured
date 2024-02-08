@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -24,7 +24,7 @@ itoa = "1"
 rustc-hash = "1"
 dashmap = "5"
 
-measured-derive = { path = "../derive", version = "0.0.8" }
+measured-derive = { path = "../derive", version = "0.0.9" }
 
 # TODO: add features for the dependencies
 indexmap = { version = "2", optional = true }
