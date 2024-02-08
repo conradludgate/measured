@@ -14,15 +14,17 @@ mod fixed_cardinality {
     use lasso::{Rodeo, RodeoReader, Spur};
     use measured::{label::StaticLabelSet, metric::histogram::Thresholds};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
+    use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
     use rustc_hash::FxHasher;
 
     const LOOPS: usize = 2000;
+    const N: usize = 8;
 
     #[inline(never)]
     fn measured_inner(
         encoder: &mut measured::text::TextEncoder,
-        h: &measured::HistogramVec<ErrorsSet, 8>,
+        h: &measured::HistogramVec<ErrorsSet, N>,
     ) -> Bytes {
         use measured::metric::name::MetricName;
 
@@ -49,7 +51,7 @@ mod fixed_cardinality {
         };
         let h = measured::HistogramVec::new_metric_vec(
             error_set,
-            Thresholds::<8>::exponential_buckets(1.0, 2.0),
+            Thresholds::<N>::exponential_buckets(1.0, 2.0),
         );
 
         bencher
@@ -65,7 +67,7 @@ mod fixed_cardinality {
         };
         let h = measured::HistogramVec::new_sparse_metric_vec(
             error_set,
-            Thresholds::<8>::exponential_buckets(1.0, 2.0),
+            Thresholds::<N>::exponential_buckets(1.0, 2.0),
         );
         bencher
             .with_inputs(measured::text::TextEncoder::new)
@@ -79,6 +81,7 @@ mod fixed_cardinality {
             "http_request_errors",
             "help text",
             &["kind", "route"],
+            exponential_buckets(1.0, 2.0, N).unwrap(),
             registry
         )
         .unwrap();
@@ -104,7 +107,13 @@ mod fixed_cardinality {
 
     #[divan::bench]
     fn metrics(bencher: Bencher) {
-        let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+        let recorder = metrics_exporter_prometheus::PrometheusBuilder::new()
+            .set_buckets_for_metric(
+                metrics_exporter_prometheus::Matcher::Full("http_request_errors".to_string()),
+                &exponential_buckets(1.0, 2.0, N).unwrap(),
+            )
+            .unwrap()
+            .build_recorder();
 
         metrics::with_local_recorder(&recorder, || {
             metrics::describe_histogram!("http_request_errors", "help text");
@@ -139,7 +148,7 @@ mod fixed_cardinality {
         let mut registry = <Registry>::default();
 
         let h = Family::<ErrorStatic, Histogram>::new_with_constructor(|| {
-            Histogram::new(exponential_buckets(1.0, 2.0, 8))
+            Histogram::new(exponential_buckets(1.0, 2.0, N as u16))
         });
 
         // Register the metric family with the registry.

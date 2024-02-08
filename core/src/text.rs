@@ -6,11 +6,11 @@ use memchr::memchr3_iter;
 use crate::{
     label::{LabelGroup, LabelName, LabelSetVisitor, LabelValue, LabelVisitor},
     metric::{
-        histogram::Thresholds,
+        counter::CounterState,
+        histogram::{HistogramState, Thresholds},
         name::{Bucket, Count, MetricNameEncoder, Sum},
         MetricEncoding,
     },
-    CounterState, HistogramState,
 };
 
 /// The prometheus text encoder helper
@@ -203,16 +203,18 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
             }
         }
 
+        let state = *self.inner.lock().unwrap();
+
         for i in 0..N {
             let le = metadata.get()[i];
-            let val = &self.buckets[i];
+            let val = state.buckets[i];
             enc.write_metric(
                 &name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
-                MetricValue::Int(val.load(core::sync::atomic::Ordering::Relaxed) as i64),
+                MetricValue::Int(val as i64),
             );
         }
-        let count = self.count.load(core::sync::atomic::Ordering::Relaxed) as i64;
+        let count = state.count as i64;
         enc.write_metric(
             &name.by_ref().with_suffix(Bucket),
             labels
@@ -223,9 +225,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         enc.write_metric(
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
-            MetricValue::Float(f64::from_bits(
-                self.sum.load(core::sync::atomic::Ordering::Relaxed),
-            )),
+            MetricValue::Float(state.sum),
         );
         enc.write_metric(
             &name.by_ref().with_suffix(Count),

@@ -1,24 +1,29 @@
-use core::sync::atomic::AtomicU64;
+use std::sync::Mutex;
 
 use super::{MetricRef, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 
+#[derive(Clone, Copy)]
+pub struct HistogramStateMut<const N: usize> {
+    pub buckets: [u64; N],
+    pub count: u64,
+    pub sum: f64,
+}
+
 pub struct HistogramState<const N: usize> {
-    pub buckets: [AtomicU64; N],
-    pub count: AtomicU64,
-    pub sum: AtomicU64,
+    pub inner: Mutex<HistogramStateMut<N>>,
 }
 
 pub type HistogramRef<'a, const N: usize> = MetricRef<'a, HistogramState<N>>;
 
 impl<const N: usize> Default for HistogramState<N> {
     fn default() -> Self {
-        #[allow(clippy::declare_interior_mutable_const)]
-        const ZERO: AtomicU64 = AtomicU64::new(0);
         Self {
-            buckets: [ZERO; N],
-            count: ZERO,
-            sum: AtomicU64::new(f64::to_bits(0.0)),
+            inner: Mutex::new(HistogramStateMut {
+                buckets: [0; N],
+                count: 0,
+                sum: 0.0,
+            }),
         }
     }
 }
@@ -76,25 +81,17 @@ impl<const N: usize> Thresholds<N> {
     }
 }
 
-impl<const N: usize> HistogramRef<'_, N> {
+impl<const N: usize> MetricRef<'_, HistogramState<N>> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
-        for i in 0..N {
-            if x <= self.1.le[i] {
-                self.0.buckets[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            }
+        // TODO: does this SIMD?
+        let increase: [u64; N] = std::array::from_fn(|i| if x <= self.1.le[i] { 1 } else { 0 });
+        let mut inner = self.0.inner.lock().unwrap();
+        for (x, y) in std::iter::zip(&mut inner.buckets, increase) {
+            *x += y;
         }
-        self.0
-            .count
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        self.0
-            .sum
-            .fetch_update(
-                core::sync::atomic::Ordering::Release,
-                core::sync::atomic::Ordering::Acquire,
-                |y| Some(f64::to_bits(f64::from_bits(y) + x)),
-            )
-            .expect("we always return Some in fetch_update");
+        inner.count += 1;
+        inner.sum += x;
     }
 
     /// Observe the duration in seconds since the given instant
