@@ -7,6 +7,7 @@ use crate::{
     label::{LabelGroup, LabelName, LabelSetVisitor, LabelValue, LabelVisitor},
     metric::{
         counter::CounterState,
+        gauge::GaugeState,
         histogram::{HistogramState, Thresholds},
         name::{Bucket, Count, MetricNameEncoder, Sum},
         MetricEncoding,
@@ -238,6 +239,25 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
 impl MetricEncoding<TextEncoder> for CounterState {
     fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
         enc.write_type(&name, MetricType::Counter);
+    }
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut TextEncoder,
+    ) {
+        enc.write_metric(
+            &name,
+            labels,
+            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
+        );
+    }
+}
+
+impl MetricEncoding<TextEncoder> for GaugeState {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
+        enc.write_type(&name, MetricType::Gauge);
     }
     fn collect_into(
         &self,

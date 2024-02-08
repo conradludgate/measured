@@ -221,7 +221,9 @@
 
 extern crate alloc;
 
-use metric::{counter::CounterState, histogram::HistogramState, Metric, MetricVec};
+use metric::{
+    counter::CounterState, gauge::GaugeState, histogram::HistogramState, Metric, MetricVec,
+};
 
 pub mod label;
 pub mod metric;
@@ -533,3 +535,64 @@ pub type Counter = Metric<CounterState>;
 /// let bytes = text_encoder.finish();
 /// ```
 pub type CounterVec<L> = MetricVec<CounterState, L>;
+
+/// A [`Metric`] that represents a single numerical value that can go up or down over time.
+///
+/// ```
+/// use measured::Gauge;
+/// use measured::metric::name::MetricName;
+/// use measured::text::TextEncoder;
+///
+/// // create a gauge
+/// let gauge = Gauge::new();
+/// // increment the gauge value
+/// gauge.get_metric().inc();
+///
+/// // sample the gauge and encode the value to a textual format.
+/// let mut text_encoder = TextEncoder::new();
+/// let name = MetricName::from_static("my_first_gauge");
+/// gauge.collect_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
+pub type Gauge = Metric<GaugeState>;
+
+/// A collection of multiple [`Gauge`]s, keyed by [`LabelGroup`](label::LabelGroup)s
+///
+/// ```
+/// use measured::{GaugeVec, LabelGroup, FixedCardinalityLabel};
+/// use measured::label::StaticLabelSet;
+/// use measured::metric::name::MetricName;
+/// use measured::text::TextEncoder;
+///
+/// // Define a fixed cardinality label
+///
+/// #[derive(FixedCardinalityLabel)]
+/// enum Operation {
+///     Create,
+///     Update,
+///     Delete,
+/// }
+///
+/// // Define a label group, consisting of 1 or more label values
+///
+/// #[derive(LabelGroup)]
+/// #[label(set = MyLabelGroupSet)]
+/// struct MyLabelGroup {
+///     operation: Operation,
+/// }
+///
+/// // create a gauge vec
+/// let gauges = GaugeVec::new(MyLabelGroupSet {
+///     operation: StaticLabelSet::new(),
+/// });
+/// // increment the gauge at a given label
+/// gauges.inc(MyLabelGroup { operation: Operation::Create });
+/// gauges.inc(MyLabelGroup { operation: Operation::Delete });
+///
+/// // sample the gauges and encode the values to a textual format.
+/// let mut text_encoder = TextEncoder::new();
+/// let name = MetricName::from_static("my_first_gauge");
+/// gauges.collect_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
+pub type GaugeVec<L> = MetricVec<GaugeState, L>;

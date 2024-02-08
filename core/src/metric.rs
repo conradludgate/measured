@@ -8,6 +8,7 @@ use rustc_hash::FxHasher;
 use self::name::MetricNameEncoder;
 
 pub mod counter;
+pub mod gauge;
 pub mod histogram;
 pub mod name;
 
