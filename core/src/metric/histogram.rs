@@ -1,4 +1,4 @@
-use spin::Mutex;
+use parking_lot::Mutex;
 
 use super::{MetricRef, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};

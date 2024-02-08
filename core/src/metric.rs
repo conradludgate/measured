@@ -69,7 +69,7 @@ fn default_shard_amount() -> usize {
 
 type FxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 struct DashMap<K, V> {
-    shards: Box<[spin::RwLock<FxHashMap<K, V>>]>,
+    shards: Box<[parking_lot::RwLock<FxHashMap<K, V>>]>,
     shift: u32,
 }
 
@@ -77,7 +77,7 @@ fn new_sparse<U: Hash + Eq, M: MetricType>() -> DashMap<U, M> {
     let shards = default_shard_amount();
     let mut vec = Vec::with_capacity(shards);
     vec.resize_with(shards, || {
-        spin::RwLock::new(HashMap::with_hasher(BuildHasherDefault::default()))
+        parking_lot::RwLock::new(HashMap::with_hasher(BuildHasherDefault::default()))
     });
     DashMap {
         shards: vec.into_boxed_slice(),

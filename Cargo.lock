@@ -791,13 +791,13 @@ dependencies = [
  "memchr",
  "metrics",
  "metrics-exporter-prometheus",
+ "parking_lot",
  "phf",
  "prometheus",
  "prometheus-client",
  "rand",
  "rustc-hash",
  "ryu",
- "spin",
 ]
 
 [[package]]
@@ -1360,15 +1360,6 @@ checksum = "7b5fac59a5cb5dd637972e5fca70daf0523c9067fcdc4842f053dae04a18f8e9"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "spin"
-version = "0.9.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-dependencies = [
- "lock_api",
 ]
 
 [[package]]
