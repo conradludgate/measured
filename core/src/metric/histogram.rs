@@ -20,19 +20,11 @@ impl<const N: usize> HistogramStateInner<N> {
         } else {
             self.inf.fetch_add(1, Ordering::Relaxed);
         }
-        loop {
-            let current = self.sum.load(Ordering::Acquire);
-            let new = f64::from_bits(current) + x;
-            let result = self.sum.compare_exchange_weak(
-                current,
-                f64::to_bits(new),
-                Ordering::Release,
-                Ordering::Relaxed,
-            );
-            if result.is_ok() {
-                return;
-            }
-        }
+        self.sum
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(f64::to_bits(f64::from_bits(v) + x))
+            })
+            .unwrap();
     }
 
     pub(crate) fn sample(&mut self) -> ([u64; N], u64, f64) {
