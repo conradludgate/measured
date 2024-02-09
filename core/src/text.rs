@@ -211,19 +211,20 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
             }
         }
 
-        let state = *self.inner.lock();
+        let (buckets, inf, sum) = self.inner.write().sample();
         let mut val = 0;
 
+        #[allow(clippy::needless_range_loop)]
         for i in 0..N {
             let le = metadata.get()[i];
-            val += state.buckets[i];
+            val += buckets[i];
             enc.write_metric(
                 &name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
                 MetricValue::Int(val as i64),
             );
         }
-        let count = val + state.inf;
+        let count = val + inf;
         enc.write_metric(
             &name.by_ref().with_suffix(Bucket),
             labels
@@ -234,7 +235,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         enc.write_metric(
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
-            MetricValue::Float(state.sum),
+            MetricValue::Float(sum),
         );
         enc.write_metric(
             &name.by_ref().with_suffix(Count),

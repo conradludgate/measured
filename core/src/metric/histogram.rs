@@ -1,41 +1,69 @@
-use parking_lot::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use parking_lot::RwLock;
 
 use super::{MetricRef, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 
-#[derive(Clone, Copy)]
-pub struct HistogramStateMut<const N: usize> {
-    pub buckets: [u64; N],
-    pub inf: u64,
-    pub sum: f64,
+pub struct HistogramStateInner<const N: usize> {
+    pub buckets: [AtomicU64; N],
+    pub inf: AtomicU64,
+    pub sum: AtomicU64,
 }
 
-impl<const N: usize> HistogramStateMut<N> {
+impl<const N: usize> HistogramStateInner<N> {
     /// Add a single observation to the [`Histogram`].
-    pub fn observe(&mut self, bucket: usize, x: f64) {
+    pub fn observe(&self, bucket: usize, x: f64) {
         assert!(bucket <= N);
         if bucket < N {
-            self.buckets[bucket] += 1;
+            self.buckets[bucket].fetch_add(1, Ordering::Relaxed);
         } else {
-            self.inf += 1;
+            self.inf.fetch_add(1, Ordering::Relaxed);
         }
-        self.sum += x;
+        loop {
+            let current = self.sum.load(Ordering::Acquire);
+            let new = f64::from_bits(current) + x;
+            let result = self.sum.compare_exchange_weak(
+                current,
+                f64::to_bits(new),
+                Ordering::Release,
+                Ordering::Relaxed,
+            );
+            if result.is_ok() {
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn sample(&mut self) -> ([u64; N], u64, f64) {
+        let mut output = [0; N];
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..N {
+            output[i] = *self.buckets[i].get_mut();
+        }
+        (
+            output,
+            *self.inf.get_mut(),
+            f64::from_bits(*self.sum.get_mut()),
+        )
     }
 }
 
 pub struct HistogramState<const N: usize> {
-    pub inner: Mutex<HistogramStateMut<N>>,
+    pub inner: RwLock<HistogramStateInner<N>>,
 }
 
 pub type HistogramRef<'a, const N: usize> = MetricRef<'a, HistogramState<N>>;
 
 impl<const N: usize> Default for HistogramState<N> {
     fn default() -> Self {
+        #[allow(clippy::declare_interior_mutable_const)]
+        const ZERO: AtomicU64 = AtomicU64::new(0);
         Self {
-            inner: Mutex::new(HistogramStateMut {
-                buckets: [0; N],
-                inf: 0,
-                sum: 0.0,
+            inner: RwLock::new(HistogramStateInner {
+                buckets: [ZERO; N],
+                inf: ZERO,
+                sum: ZERO,
             }),
         }
     }
@@ -98,7 +126,7 @@ impl<const N: usize> MetricRef<'_, HistogramState<N>> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
         let bucket = self.1.le.partition_point(|le| x > *le);
-        self.0.inner.lock().observe(bucket, x);
+        self.0.inner.read().observe(bucket, x);
     }
 
     /// Observe the duration in seconds since the given instant

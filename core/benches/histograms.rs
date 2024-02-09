@@ -252,7 +252,7 @@ mod no_cardinality {
 
     #[divan::bench]
     fn measured(bencher: Bencher) {
-        let h = measured::Histogram::new_metric(Thresholds::<N>::exponential_buckets(1.0, 2.0));
+        let h = measured::Histogram::new_metric(Thresholds::<N>::exponential_buckets(0.00001, 2.0));
 
         bencher
             .with_inputs(measured::text::TextEncoder::new)
@@ -265,7 +265,7 @@ mod no_cardinality {
         let h = prometheus::register_histogram_with_registry!(
             "http_request_errors",
             "help text",
-            exponential_buckets(1.0, 2.0, N).unwrap(),
+            exponential_buckets(0.00001, 2.0, N).unwrap(),
             registry
         )
         .unwrap();
@@ -288,7 +288,7 @@ mod no_cardinality {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new()
             .set_buckets_for_metric(
                 metrics_exporter_prometheus::Matcher::Full("http_request_errors".to_string()),
-                &exponential_buckets(1.0, 2.0, N).unwrap(),
+                &exponential_buckets(0.00001, 2.0, N).unwrap(),
             )
             .unwrap()
             .build_recorder();
@@ -319,7 +319,7 @@ mod no_cardinality {
 
         let mut registry = <Registry>::default();
 
-        let h = Histogram::new(exponential_buckets(1.0, 2.0, N as u16));
+        let h = Histogram::new(exponential_buckets(0.00001, 2.0, N as u16));
 
         // Register the metric family with the registry.
         registry.register(
