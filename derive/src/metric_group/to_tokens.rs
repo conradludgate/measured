@@ -30,8 +30,15 @@ impl ToTokens for MetricGroup {
                 MetricGroupFieldAttrs::Metric { .. } => {
                     wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding<#enc> ));
                 }
-                MetricGroupFieldAttrs::Group { .. } => {
+                MetricGroupFieldAttrs::Group { namespace: None } => {
                     wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::group::MetricGroup<#enc> ));
+                }
+                MetricGroupFieldAttrs::Group { namespace: Some(_) } => {
+                    wc.predicates.push(parse_quote_spanned!(field.span =>
+                        #ty: for<'__enc_tmp_lt> #krate::metric::group::MetricGroup<
+                            #krate::metric::name::WithNamespace<&'__enc_tmp_lt mut #enc>,
+                        >
+                    ));
                 }
             }
         }
@@ -50,7 +57,19 @@ impl ToTokens for MetricGroup {
                         <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_into(&self.#name, #ident, enc);
                     }
                 },
-                MetricGroupFieldAttrs::Group { namespace: _ } => todo!(),
+                MetricGroupFieldAttrs::Group { namespace: None } => {
+                    quote_spanned! { x.span =>
+                        <#ty as #krate::metric::group::MetricGroup<#enc>>::collect_into(&self.#name, enc);
+                    }
+                },
+                MetricGroupFieldAttrs::Group { namespace: Some(ns) } => {
+                    quote_spanned! { x.span =>
+                        <#krate::metric::name::WithNamespace<&#ty> as #krate::metric::group::MetricGroup<#enc>>::collect_into(
+                            &#krate::metric::name::WithNamespace::new(#ns, &self.#name),
+                            enc,
+                        );
+                    }
+                },
             }
         });
 

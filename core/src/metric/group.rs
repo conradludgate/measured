@@ -20,6 +20,16 @@ pub trait MetricGroup<Enc: Encoding> {
     fn collect_into(&self, enc: &mut Enc);
 }
 
+impl<G, E> MetricGroup<E> for &G
+where
+    G: MetricGroup<E>,
+    E: Encoding,
+{
+    fn collect_into(&self, enc: &mut E) {
+        G::collect_into(self, enc);
+    }
+}
+
 impl<A, B, E> MetricGroup<E> for ComposedGroup<A, B>
 where
     A: MetricGroup<E>,
@@ -106,9 +116,7 @@ mod tests {
     use measured_derive::{FixedCardinalityLabel, LabelGroup, MetricGroup};
     use prometheus_client::encoding::EncodeLabelValue;
 
-    use crate::{
-        label::StaticLabelSet, metric::name::WithNamespace, text::TextEncoder, CounterVec,
-    };
+    use crate::{label::StaticLabelSet, text::TextEncoder, Counter, CounterVec};
 
     use super::MetricGroup;
 
@@ -130,37 +138,49 @@ mod tests {
 
     #[derive(MetricGroup)]
     #[metric(crate = crate)]
-    struct MyMetrics {
+    struct MyHttpMetrics {
         /// help text
         errors: CounterVec<ErrorsSet>,
     }
 
-    fn routes() -> &'static [&'static str] {
-        &[
-            "/api/v1/users",
-            "/api/v1/users/:id",
-            "/api/v1/products",
-            "/api/v1/products/:id",
-            "/api/v1/products/:id/owner",
-            "/api/v1/products/:id/purchase",
-        ]
+    #[derive(MetricGroup)]
+    #[metric(crate = crate)]
+    struct MyMetrics {
+        /// help text
+        events_total: Counter,
+
+        #[metric(namespace = "http_request")]
+        http: MyHttpMetrics,
     }
 
     #[test]
     fn http_errors() {
         let group = MyMetrics {
-            errors: CounterVec::new(ErrorsSet {
-                kind: StaticLabelSet::new(),
-                route: Rodeo::from_iter(routes()).into_reader(),
-            }),
+            events_total: Counter::new(),
+            http: MyHttpMetrics {
+                errors: CounterVec::new(ErrorsSet {
+                    kind: StaticLabelSet::new(),
+                    route: Rodeo::from_iter([
+                        "/api/v1/users",
+                        "/api/v1/users/:id",
+                        "/api/v1/products",
+                        "/api/v1/products/:id",
+                        "/api/v1/products/:id/owner",
+                        "/api/v1/products/:id/purchase",
+                    ])
+                    .into_reader(),
+                }),
+            },
         };
-        let http_request_group = WithNamespace::new("http_request", group);
 
         let mut text_encoder = TextEncoder::new();
-        http_request_group.collect_into(&mut text_encoder);
+        group.collect_into(&mut text_encoder);
         assert_eq!(
             text_encoder.finish(),
-            r#"# TYPE http_request_errors counter
+            r#"# TYPE events_total counter
+events_total 0
+
+# TYPE http_request_errors counter
 http_request_errors{kind="user",route="/api/v1/users"} 0
 http_request_errors{kind="user",route="/api/v1/users/:id"} 0
 http_request_errors{kind="user",route="/api/v1/products"} 0
