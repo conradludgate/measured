@@ -27,6 +27,7 @@ impl GaugeRef<'_> {
             .count
             .fetch_add(x, core::sync::atomic::Ordering::Relaxed);
     }
+
     /// Decrement the gauge value by 1
     pub fn dec(self) {
         self.0

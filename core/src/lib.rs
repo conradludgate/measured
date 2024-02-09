@@ -25,7 +25,7 @@
 //! };
 //!
 //! // increment the counter value
-//! metrics.my_first_counter.get_metric().inc();
+//! metrics.my_first_counter.inc();
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
@@ -526,7 +526,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 /// // create a counter
 /// let counter = Counter::new();
 /// // increment the counter value
-/// counter.get_metric().inc();
+/// counter.inc();
 ///
 /// // sample the counter and encode the value to a textual format.
 /// let mut text_encoder = TextEncoder::new();

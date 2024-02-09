@@ -8,6 +8,7 @@ use std::{
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use hashbrown::HashMap;
+use parking_lot::RwLockWriteGuard;
 use rustc_hash::FxHasher;
 
 use self::name::MetricNameEncoder;
@@ -26,6 +27,9 @@ pub trait MetricType: Default {
 
 /// A shared ref to an individual metric value
 pub struct MetricRef<'a, M: MetricType>(&'a M, &'a M::Metadata);
+
+/// A unique ref to an individual metric value
+pub struct MetricMut<'a, M: MetricType>(&'a mut M, &'a mut M::Metadata);
 
 /// A single metric value.
 pub struct Metric<M: MetricType> {
@@ -57,6 +61,11 @@ impl<M: MetricType> Metric<M> {
     /// Get a ref to the metric
     pub fn get_metric(&self) -> MetricRef<'_, M> {
         MetricRef(&self.metric, &self.metadata)
+    }
+
+    /// Get a mut ref to the metric
+    pub fn get_metric_mut(&mut self) -> MetricMut<'_, M> {
+        MetricMut(&mut self.metric, &mut self.metadata)
     }
 }
 
@@ -156,21 +165,48 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                     return f(MetricRef(v, &self.metadata));
                 }
 
-                {
-                    shard
-                        .write()
-                        .raw_entry_mut()
-                        .from_hash(id.hash, |k| *k == id.id)
-                        .or_insert_with(|| (id.id, M::default()));
-                }
+                let shard = {
+                    let mut shard = shard.write();
+                    let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
+                    match entry {
+                        hashbrown::hash_map::RawEntryMut::Occupied(_) => {}
+                        hashbrown::hash_map::RawEntryMut::Vacant(v) => {
+                            v.insert_hashed_nocheck(id.hash, id.id, M::default());
+                        }
+                    }
+                    RwLockWriteGuard::downgrade(shard)
+                };
 
-                let shard = shard.read();
                 let (_, v) = shard
                     .raw_table()
                     .get(id.hash, |(k, _v)| *k == id.id)
                     .expect("it was just inserted");
 
                 f(MetricRef(v, &self.metadata))
+            }
+        }
+    }
+
+    /// Get the individual metric at the given identifier.
+    ///
+    /// # Panics
+    /// Can panic of cause strange behaviour if the label ID comes from a different metric family.
+    pub fn get_metric_mut(&mut self, id: LabelId<L>) -> MetricMut<M> {
+        match &mut self.metrics {
+            VecInner::Dense(metrics) => {
+                let m = &mut metrics[id.hash as usize];
+                MetricMut(m, &mut self.metadata)
+            }
+            VecInner::Sparse(metrics) => {
+                let shard = &mut metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
+
+                let (_, v) = shard
+                    .get_mut()
+                    .raw_entry_mut()
+                    .from_hash(id.hash, |k| *k == id.id)
+                    .or_insert_with(|| (id.id, M::default()));
+
+                MetricMut(v, &mut self.metadata)
             }
         }
     }
