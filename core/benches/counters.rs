@@ -1,3 +1,11 @@
+use std::hash::{BuildHasher, BuildHasherDefault};
+
+use divan::black_box;
+use measured_derive::FixedCardinalityLabel;
+use prometheus_client::encoding::EncodeLabelValue;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rustc_hash::FxHasher;
+
 #[global_allocator]
 static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
@@ -5,21 +13,69 @@ fn main() {
     divan::Divan::from_args().threads([0]).run_benches();
 }
 
+fn thread_rng() -> SmallRng {
+    SmallRng::seed_from_u64(
+        BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()),
+    )
+}
+
+fn iter() -> impl Iterator<Item = (ErrorKind, &'static str)> {
+    let mut rng = thread_rng();
+    std::iter::from_fn(move || {
+        let route = rng.gen_range(0..routes().len());
+        let error = rng.gen_range(0..errors().len());
+        Some((errors()[error], routes()[route]))
+    })
+    .take(20000)
+}
+
+fn routes() -> &'static [&'static str] {
+    black_box(&[
+        "/api/v1/users",
+        "/api/v1/users/:id",
+        "/api/v1/products",
+        "/api/v1/products/:id",
+        "/api/v1/products/:id/owner",
+        "/api/v1/products/:id/purchase",
+    ])
+}
+
+fn errors() -> &'static [ErrorKind] {
+    black_box(&[ErrorKind::User, ErrorKind::Internal, ErrorKind::Network])
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
+enum ErrorKind {
+    User,
+    Internal,
+    Network,
+}
+
+impl ErrorKind {
+    fn to_str(self) -> &'static str {
+        match self {
+            ErrorKind::User => "user",
+            ErrorKind::Internal => "internal",
+            ErrorKind::Network => "network",
+        }
+    }
+}
+
 #[divan::bench_group(sample_size = 5, sample_count = 500)]
 mod fixed_cardinality {
     use std::hash::BuildHasherDefault;
 
-    use divan::{black_box, Bencher};
+    use divan::Bencher;
     use lasso::{Rodeo, RodeoReader, Spur};
     use measured::{
         label::StaticLabelSet,
         metric::{group::Encoding, MetricFamilyEncoding},
     };
-    use measured_derive::{FixedCardinalityLabel, LabelGroup};
-    use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
+    use measured_derive::LabelGroup;
+    use prometheus_client::encoding::EncodeLabelSet;
     use rustc_hash::FxHasher;
 
-    const LOOPS: usize = 2000;
+    use crate::{iter, routes, ErrorKind};
 
     #[divan::bench]
     fn measured(bencher: Bencher) {
@@ -34,12 +90,8 @@ mod fixed_cardinality {
         bencher
             .with_inputs(measured::text::TextEncoder::new)
             .bench_refs(|encoder| {
-                for _ in 0..black_box(LOOPS) {
-                    for &kind in errors() {
-                        for route in routes() {
-                            counter_vec.inc(Error { kind, route });
-                        }
-                    }
+                for (kind, route) in iter() {
+                    counter_vec.inc(Error { kind, route });
                 }
 
                 let metric = MetricName::from_static("http_request_errors").with_suffix(Total);
@@ -62,12 +114,8 @@ mod fixed_cardinality {
         bencher
             .with_inputs(measured::text::TextEncoder::new)
             .bench_refs(|encoder| {
-                for _ in 0..black_box(LOOPS) {
-                    for &kind in errors() {
-                        for route in routes() {
-                            counter_vec.inc(Error { kind, route });
-                        }
-                    }
+                for (kind, route) in iter() {
+                    counter_vec.inc(Error { kind, route });
                 }
 
                 let metric = MetricName::from_static("http_request_errors").with_suffix(Total);
@@ -89,12 +137,8 @@ mod fixed_cardinality {
         .unwrap();
 
         bencher.with_inputs(String::new).bench_refs(|string| {
-            for _ in 0..black_box(LOOPS) {
-                for &kind in errors() {
-                    for route in routes() {
-                        counter_vec.with_label_values(&[kind.to_str(), route]).inc();
-                    }
-                }
+            for (kind, route) in iter() {
+                counter_vec.with_label_values(&[kind.to_str(), route]).inc();
             }
 
             string.clear();
@@ -114,13 +158,9 @@ mod fixed_cardinality {
 
         bencher.bench(|| {
             metrics::with_local_recorder(&recorder, || {
-                for _ in 0..black_box(LOOPS) {
-                    for &kind in errors() {
-                        for route in routes() {
-                            let labels = [("kind", kind.to_str()), ("route", route)];
-                            metrics::counter!("http_request_errors", &labels).increment(1);
-                        }
-                    }
+                for (kind, route) in iter() {
+                    let labels = [("kind", kind.to_str()), ("route", route)];
+                    metrics::counter!("http_request_errors", &labels).increment(1);
                 }
             });
 
@@ -149,34 +189,15 @@ mod fixed_cardinality {
         );
 
         bencher.with_inputs(String::new).bench_refs(|string| {
-            for _ in 0..black_box(LOOPS) {
-                for &kind in errors() {
-                    for route in routes() {
-                        counter_vec
-                            .get_or_create(&ErrorStatic { kind, route })
-                            .inc();
-                    }
-                }
+            for (kind, route) in iter() {
+                counter_vec
+                    .get_or_create(&ErrorStatic { kind, route })
+                    .inc();
             }
 
             string.clear();
             encode(string, &registry).unwrap();
         });
-    }
-
-    fn routes() -> &'static [&'static str] {
-        black_box(&[
-            "/api/v1/users",
-            "/api/v1/users/:id",
-            "/api/v1/products",
-            "/api/v1/products/:id",
-            "/api/v1/products/:id/owner",
-            "/api/v1/products/:id/purchase",
-        ])
-    }
-
-    fn errors() -> &'static [ErrorKind] {
-        black_box(&[ErrorKind::User, ErrorKind::Internal, ErrorKind::Network])
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
@@ -192,52 +213,30 @@ mod fixed_cardinality {
         kind: ErrorKind,
         route: &'static str,
     }
-
-    #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
-    enum ErrorKind {
-        User,
-        Internal,
-        Network,
-    }
-
-    impl ErrorKind {
-        fn to_str(self) -> &'static str {
-            match self {
-                ErrorKind::User => "user",
-                ErrorKind::Internal => "internal",
-                ErrorKind::Network => "network",
-            }
-        }
-    }
 }
 
 #[divan::bench_group(sample_size = 2, sample_count = 100)]
 mod high_cardinality {
-    use std::{
-        hash::BuildHasherDefault,
-        sync::atomic::{AtomicU64, Ordering},
-    };
+    use std::hash::BuildHasherDefault;
 
-    use divan::{black_box, Bencher};
+    use divan::Bencher;
     use fake::{faker::name::raw::Name, locales::EN, Fake};
     use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
     use measured::{
         label::StaticLabelSet,
         metric::{group::Encoding, MetricFamilyEncoding},
     };
-    use measured_derive::{FixedCardinalityLabel, LabelGroup};
+    use measured_derive::LabelGroup;
     use metrics::SharedString;
-    use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-    use rand::{rngs::StdRng, SeedableRng};
+    use prometheus_client::encoding::EncodeLabelSet;
     use rustc_hash::FxHasher;
 
-    const LOOPS: usize = 100;
+    use crate::{iter, routes, thread_rng, ErrorKind};
 
-    fn get_names(thread: &AtomicU64) -> Vec<String> {
-        let extra = errors().len() * routes().len();
-        let mut rng = StdRng::seed_from_u64(thread.fetch_add(1, Ordering::AcqRel));
-        std::iter::repeat_with(|| Name(EN).fake_with_rng::<String, StdRng>(&mut rng))
-            .take(LOOPS * extra)
+    fn get_names() -> Vec<String> {
+        let mut rng = thread_rng();
+        std::iter::repeat_with(|| Name(EN).fake_with_rng::<String, _>(&mut rng))
+            .take(2000)
             .collect()
     }
 
@@ -252,22 +251,15 @@ mod high_cardinality {
         };
         let counter_vec = measured::CounterVec::new(error_set);
 
-        let thread = AtomicU64::new(0);
-
         bencher
-            .with_inputs(|| (measured::text::TextEncoder::new(), get_names(&thread)))
+            .with_inputs(|| (measured::text::TextEncoder::new(), get_names()))
             .bench_refs(|(encoder, names)| {
-                let mut names = names.iter();
-                for _ in 0..black_box(LOOPS) {
-                    for &kind in errors() {
-                        for route in routes() {
-                            counter_vec.inc(Error {
-                                kind,
-                                route,
-                                user_name: names.next().unwrap(),
-                            });
-                        }
-                    }
+                for ((kind, route), name) in iter().zip(names) {
+                    counter_vec.inc(Error {
+                        kind,
+                        route,
+                        user_name: name,
+                    });
                 }
 
                 let metric = MetricName::from_static("http_request_errors").with_suffix(Total);
@@ -288,20 +280,13 @@ mod high_cardinality {
         )
         .unwrap();
 
-        let thread = AtomicU64::new(0);
-
         bencher
-            .with_inputs(|| (String::new(), get_names(&thread)))
+            .with_inputs(|| (String::new(), get_names()))
             .bench_refs(|(string, names)| {
-                let mut names = names.iter();
-                for _ in 0..black_box(LOOPS) {
-                    for &kind in errors() {
-                        for route in routes() {
-                            counter_vec
-                                .with_label_values(&[kind.to_str(), route, &names.next().unwrap()])
-                                .inc();
-                        }
-                    }
+                for ((kind, route), name) in iter().zip(names) {
+                    counter_vec
+                        .with_label_values(&[kind.to_str(), route, &name])
+                        .inc();
                 }
 
                 string.clear();
@@ -319,32 +304,20 @@ mod high_cardinality {
             metrics::describe_counter!("http_request_errors", "help text");
         });
 
-        let thread = AtomicU64::new(0);
-
-        bencher
-            .with_inputs(|| get_names(&thread))
-            .bench_refs(|names| {
-                let mut names = names.iter();
-                metrics::with_local_recorder(&recorder, || {
-                    for _ in 0..black_box(LOOPS) {
-                        for &kind in errors() {
-                            for route in routes() {
-                                let labels = [
-                                    ("kind", SharedString::const_str(kind.to_str())),
-                                    ("route", SharedString::const_str(route)),
-                                    (
-                                        "user_name",
-                                        SharedString::from_owned(names.next().unwrap().to_owned()),
-                                    ),
-                                ];
-                                metrics::counter!("http_request_errors", &labels).increment(1);
-                            }
-                        }
-                    }
-                });
-
-                recorder.handle().render()
+        bencher.with_inputs(get_names).bench_refs(|names| {
+            metrics::with_local_recorder(&recorder, || {
+                for ((kind, route), name) in iter().zip(names) {
+                    let labels = [
+                        ("kind", SharedString::const_str(kind.to_str())),
+                        ("route", SharedString::const_str(route)),
+                        ("user_name", SharedString::from_owned(name.to_owned())),
+                    ];
+                    metrics::counter!("http_request_errors", &labels).increment(1);
+                }
             });
+
+            recorder.handle().render()
+        });
     }
 
     #[divan::bench]
@@ -367,44 +340,22 @@ mod high_cardinality {
             counter_vec.clone(),
         );
 
-        let thread = AtomicU64::new(0);
-
         bencher
-            .with_inputs(|| (String::new(), get_names(&thread)))
+            .with_inputs(|| (String::new(), get_names()))
             .bench_refs(|(string, names)| {
-                let mut names = names.iter();
-                for _ in 0..black_box(LOOPS) {
-                    for &kind in errors() {
-                        for route in routes() {
-                            counter_vec
-                                .get_or_create(&ErrorStatic {
-                                    kind,
-                                    route,
-                                    user_name: names.next().unwrap().to_owned(),
-                                })
-                                .inc();
-                        }
-                    }
+                for ((kind, route), name) in iter().zip(names) {
+                    counter_vec
+                        .get_or_create(&ErrorStatic {
+                            kind,
+                            route,
+                            user_name: name.to_owned(),
+                        })
+                        .inc();
                 }
 
                 string.clear();
                 encode(string, &registry).unwrap();
             });
-    }
-
-    fn routes() -> &'static [&'static str] {
-        black_box(&[
-            "/api/v1/users",
-            "/api/v1/users/:id",
-            "/api/v1/products",
-            "/api/v1/products/:id",
-            "/api/v1/products/:id/owner",
-            "/api/v1/products/:id/purchase",
-        ])
-    }
-
-    fn errors() -> &'static [ErrorKind] {
-        black_box(&[ErrorKind::User, ErrorKind::Internal, ErrorKind::Network])
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
@@ -422,23 +373,5 @@ mod high_cardinality {
         kind: ErrorKind,
         route: &'static str,
         user_name: String,
-    }
-
-    #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
-    #[label(rename_all = "kebab-case")]
-    enum ErrorKind {
-        User,
-        Internal,
-        Network,
-    }
-
-    impl ErrorKind {
-        fn to_str(self) -> &'static str {
-            match self {
-                ErrorKind::User => "user",
-                ErrorKind::Internal => "internal",
-                ErrorKind::Network => "network",
-            }
-        }
     }
 }

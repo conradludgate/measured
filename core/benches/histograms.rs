@@ -7,7 +7,7 @@ fn main() {
 
 #[divan::bench_group(sample_size = 5, sample_count = 500)]
 mod fixed_cardinality {
-    use std::hash::BuildHasherDefault;
+    use std::hash::{BuildHasher, BuildHasherDefault};
 
     use bytes::Bytes;
     use divan::{black_box, Bencher};
@@ -19,9 +19,9 @@ mod fixed_cardinality {
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
     use rustc_hash::FxHasher;
 
-    const LOOPS: usize = 2000;
     const N: usize = 8;
 
     #[inline(never)]
@@ -31,13 +31,8 @@ mod fixed_cardinality {
     ) -> Bytes {
         use measured::metric::name::MetricName;
 
-        let mut n = latencies().iter().cycle();
-        for _ in 0..black_box(LOOPS) {
-            for &kind in errors() {
-                for route in routes() {
-                    h.observe(Error { kind, route }, *n.next().unwrap());
-                }
-            }
+        for (kind, route, latency) in iter() {
+            h.observe(Error { kind, route }, latency);
         }
 
         const NAME: &MetricName = MetricName::from_static("http_request_errors");
@@ -54,7 +49,7 @@ mod fixed_cardinality {
         };
         let h = measured::HistogramVec::new_metric_vec(
             error_set,
-            Thresholds::<N>::exponential_buckets(1.0, 2.0),
+            Thresholds::<N>::exponential_buckets(0.001, 2.0),
         );
 
         bencher
@@ -70,7 +65,7 @@ mod fixed_cardinality {
         };
         let h = measured::HistogramVec::new_sparse_metric_vec(
             error_set,
-            Thresholds::<N>::exponential_buckets(1.0, 2.0),
+            Thresholds::<N>::exponential_buckets(0.001, 2.0),
         );
         bencher
             .with_inputs(measured::text::TextEncoder::new)
@@ -84,21 +79,16 @@ mod fixed_cardinality {
             "http_request_errors",
             "help text",
             &["kind", "route"],
-            exponential_buckets(1.0, 2.0, N).unwrap(),
+            exponential_buckets(0.001, 2.0, N).unwrap(),
             registry
         )
         .unwrap();
 
         bencher.with_inputs(String::new).bench_refs(|string| {
-            let mut n = latencies().iter().cycle();
-            for _ in 0..black_box(LOOPS) {
-                for &kind in errors() {
-                    for route in routes() {
-                        counter_vec
-                            .with_label_values(&[kind.to_str(), route])
-                            .observe(*n.next().unwrap());
-                    }
-                }
+            for (kind, route, latency) in iter() {
+                counter_vec
+                    .with_label_values(&[kind.to_str(), route])
+                    .observe(latency);
             }
 
             string.clear();
@@ -113,7 +103,7 @@ mod fixed_cardinality {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new()
             .set_buckets_for_metric(
                 metrics_exporter_prometheus::Matcher::Full("http_request_errors".to_string()),
-                &exponential_buckets(1.0, 2.0, N).unwrap(),
+                &exponential_buckets(0.001, 2.0, N).unwrap(),
             )
             .unwrap()
             .build_recorder();
@@ -124,15 +114,9 @@ mod fixed_cardinality {
 
         bencher.bench(|| {
             metrics::with_local_recorder(&recorder, || {
-                let mut n = latencies().iter().cycle();
-                for _ in 0..black_box(LOOPS) {
-                    for &kind in errors() {
-                        for route in routes() {
-                            let labels = [("kind", kind.to_str()), ("route", route)];
-                            metrics::histogram!("http_request_errors", &labels)
-                                .record(*n.next().unwrap());
-                        }
-                    }
+                for (kind, route, latency) in iter() {
+                    let labels = [("kind", kind.to_str()), ("route", route)];
+                    metrics::histogram!("http_request_errors", &labels).record(latency);
                 }
             });
 
@@ -151,7 +135,7 @@ mod fixed_cardinality {
         let mut registry = <Registry>::default();
 
         let h = Family::<ErrorStatic, Histogram>::new_with_constructor(|| {
-            Histogram::new(exponential_buckets(1.0, 2.0, N as u16))
+            Histogram::new(exponential_buckets(0.001, 2.0, N as u16))
         });
 
         // Register the metric family with the registry.
@@ -164,19 +148,30 @@ mod fixed_cardinality {
         );
 
         bencher.with_inputs(String::new).bench_refs(|string| {
-            let mut n = latencies().iter().cycle();
-            for _ in 0..black_box(LOOPS) {
-                for &kind in errors() {
-                    for route in routes() {
-                        h.get_or_create(&ErrorStatic { kind, route })
-                            .observe(*n.next().unwrap());
-                    }
-                }
+            for (kind, route, latency) in iter() {
+                h.get_or_create(&ErrorStatic { kind, route })
+                    .observe(latency);
             }
 
             string.clear();
             encode(string, &registry).unwrap();
         });
+    }
+
+    fn thread_rng() -> SmallRng {
+        SmallRng::seed_from_u64(
+            BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()),
+        )
+    }
+
+    fn iter() -> impl Iterator<Item = (ErrorKind, &'static str, f64)> {
+        let mut rng = thread_rng();
+        std::iter::from_fn(move || {
+            let route = rng.gen_range(0..routes().len());
+            let error = rng.gen_range(0..errors().len());
+            Some((errors()[error], routes()[route], rng.gen()))
+        })
+        .take(20000)
     }
 
     fn routes() -> &'static [&'static str] {
@@ -192,13 +187,6 @@ mod fixed_cardinality {
 
     fn errors() -> &'static [ErrorKind] {
         black_box(&[ErrorKind::User, ErrorKind::Internal, ErrorKind::Network])
-    }
-
-    fn latencies() -> &'static [f64] {
-        black_box(&[
-            0.2, 1.2, 0.5, 2.6, 7.0, 50.0, 4.0, 100.0, 5.0, 64.0, 54.4, 24.0, 16.7, 15.5, 1000.0,
-            77.7, 1.0,
-        ])
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
