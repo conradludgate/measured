@@ -17,6 +17,10 @@ impl<T: LabelValue + core::hash::Hash + Eq + Clone, S: core::hash::BuildHasher> 
 {
     type Value<'a> = T;
 
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        Some(self.len())
+    }
+
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         self.get_index_of(&value)
     }
@@ -45,11 +49,7 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key, S: core::hash::BuildHasher> FixedCardinalitySet for lasso::RodeoReader<K, S> {
-    fn cardinality(&self) -> usize {
-        self.len()
-    }
-}
+impl<K: lasso::Key, S: core::hash::BuildHasher> FixedCardinalitySet for lasso::RodeoReader<K, S> {}
 
 #[cfg(feature = "lasso")]
 impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> DynamicLabelSet
@@ -60,6 +60,10 @@ impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> Dynam
 #[cfg(feature = "lasso")]
 impl<K: lasso::Key, S: core::hash::BuildHasher> LabelSet for lasso::RodeoReader<K, S> {
     type Value<'a> = &'a str;
+
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        Some(self.len())
+    }
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.get(value)?.into_usize())
@@ -76,6 +80,10 @@ impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> Label
 {
     type Value<'a> = &'a str;
 
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        None
+    }
+
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.try_get_or_intern(value).ok()?.into_usize())
     }
@@ -88,6 +96,10 @@ impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> Label
 #[cfg(feature = "phf")]
 impl LabelSet for phf::OrderedSet<&'static str> {
     type Value<'a> = &'a str;
+
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        Some(self.len())
+    }
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         self.get_index(value)
@@ -107,7 +119,7 @@ impl FixedCardinalitySet for phf::OrderedSet<&'static str> {
 
 impl<T: FixedCardinalitySet + ?Sized> FixedCardinalitySet for Arc<T> {
     fn cardinality(&self) -> usize {
-        T::cardinality(self)
+        <T as FixedCardinalitySet>::cardinality(self)
     }
 }
 
@@ -115,6 +127,10 @@ impl<T: DynamicLabelSet + ?Sized> DynamicLabelSet for Arc<T> {}
 
 impl<T: LabelSet + ?Sized> LabelSet for Arc<T> {
     type Value<'a> = T::Value<'a>;
+
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        T::dynamic_cardinality(self)
+    }
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         T::encode(self, value)

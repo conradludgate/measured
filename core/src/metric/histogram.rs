@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use parking_lot::RwLock;
 
@@ -108,6 +111,20 @@ impl<const N: usize> Thresholds<N> {
         Thresholds { le: buckets }
     }
 
+    /// Create the histogram thresholds with the given sizes
+    ///
+    /// # Panics
+    /// Will panic if the buckets are not strictly monotonically increasing
+    pub fn with_buckets(buckets: [f64; N]) -> Self {
+        for i in 0..N - 1 {
+            assert!(
+                buckets[i] < buckets[i + 1],
+                "consecutive histogram buckets must not decrease or be equal",
+            );
+        }
+        Thresholds { le: buckets }
+    }
+
     /// View the bucket upper bounds
     pub fn get(&self) -> &[f64; N] {
         &self.le
@@ -121,9 +138,16 @@ impl<const N: usize> MetricRef<'_, HistogramState<N>> {
         self.0.inner.read().observe(bucket, x);
     }
 
+    /// Observe the duration in seconds
+    pub fn observe_duration(self, duration: std::time::Duration) {
+        self.observe(duration.as_secs_f64());
+    }
+
     /// Observe the duration in seconds since the given instant
-    pub fn observe_duration_since(self, since: std::time::Instant) {
-        self.observe(since.elapsed().as_secs_f64());
+    pub fn observe_duration_since(self, since: std::time::Instant) -> std::time::Duration {
+        let d = since.elapsed();
+        self.observe_duration(d);
+        d
     }
 }
 
@@ -139,6 +163,16 @@ impl<const N: usize> Histogram<N> {
             vec: Some(self),
             start: std::time::Instant::now(),
         }
+    }
+}
+
+impl<L: LabelGroupSet + Default, const N: usize> HistogramVec<L, N> {
+    pub fn new(t: Thresholds<N>) -> Self {
+        Self::new_metric_vec(L::default(), t)
+    }
+
+    pub fn new_sparse(t: Thresholds<N>) -> Self {
+        Self::new_sparse_metric_vec(L::default(), t)
     }
 }
 
@@ -161,9 +195,20 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
         })
     }
 
+    /// Observe the duration in seconds
+    pub fn observe_duration(self, label: L::Group<'_>, duration: std::time::Duration) {
+        self.observe(label, duration.as_secs_f64());
+    }
+
     /// Observe the duration in seconds since the given instant
-    pub fn observe_duration_since(self, label: L::Group<'_>, since: std::time::Instant) {
-        self.observe(label, since.elapsed().as_secs_f64());
+    pub fn observe_duration_since(
+        self,
+        label: L::Group<'_>,
+        since: std::time::Instant,
+    ) -> Duration {
+        let d = since.elapsed();
+        self.observe_duration(label, d);
+        d
     }
 }
 
@@ -178,6 +223,11 @@ impl<'a, L: LabelGroupSet, const N: usize> HistogramVecTimer<'a, L, N> {
     /// Discard the timer, do not observe the duration.
     pub fn forget(mut self) {
         self.vec = None;
+    }
+
+    pub fn observe(mut self) -> Duration {
+        let v = self.vec.take().unwrap();
+        v.get_metric(self.id, |x| x.observe_duration_since(self.start))
     }
 }
 
@@ -199,6 +249,11 @@ impl<'a, const N: usize> HistogramTimer<'a, N> {
     /// Discard the timer, do not observe the duration.
     pub fn forget(mut self) {
         self.vec = None;
+    }
+
+    pub fn observe(mut self) -> Duration {
+        let v = self.vec.take().unwrap();
+        v.get_metric().observe_duration_since(self.start)
     }
 }
 

@@ -48,6 +48,18 @@ impl GaugeRef<'_> {
     }
 }
 
+impl Default for Gauge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<L: LabelGroupSet + Default> Default for GaugeVec<L> {
+    fn default() -> Self {
+        Self::new(L::default())
+    }
+}
+
 impl<L: LabelGroupSet> GaugeVec<L> {
     /// Create a new `GaugeVec`, with label keys identified by the label_set argument.
     pub fn new(label_set: L) -> Self {

@@ -1,5 +1,5 @@
 use proc_macro2::{Ident, Span};
-use syn::{LitInt, Path};
+use syn::{LitInt, LitStr, Path};
 
 use self::attr::{RenameAll, VariantAttrs};
 
@@ -12,6 +12,7 @@ pub struct FixedCardinalityLabel {
     rename_all: RenameAll,
     ident: Ident,
     variants: Vec<FixedCardinalityLabelVariant>,
+    singleton: Option<LitStr>,
 }
 
 pub struct FixedCardinalityLabelVariant {

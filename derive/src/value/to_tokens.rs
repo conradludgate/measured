@@ -10,6 +10,7 @@ impl ToTokens for FixedCardinalityLabel {
             ident,
             rename_all,
             variants,
+            singleton
         } = self;
 
         let cardinality = variants.len();
@@ -30,6 +31,17 @@ impl ToTokens for FixedCardinalityLabel {
                 quote_spanned!(var.span => v.write_str(#name))
             };
             quote_spanned!(var.span => #ident :: #var_ident => #write,)
+        });
+
+        let singleton = singleton.as_ref().map(|s| {
+            quote!{
+                impl #krate::label::LabelGroup for #ident {
+                    fn visit_values(&self, v: &mut impl #krate::label::LabelGroupVisitor) {
+                        const NAME: &#krate::label::LabelName = #krate::label::LabelName::from_static(#s);
+                        v.write_value(NAME, self);
+                    }
+                }
+            }
         });
 
         tokens.extend(quote! {
@@ -61,6 +73,8 @@ impl ToTokens for FixedCardinalityLabel {
                     }
                 }
             }
+
+            #singleton
         });
     }
 }

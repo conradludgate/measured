@@ -13,6 +13,7 @@ pub struct ContainerAttrs {
     /// Optional `crate = $:path` arg
     pub krate: Option<Krate>,
     pub rename_all: Option<RenameAll>,
+    pub singleton: Option<LitStr>,
 }
 
 impl ContainerAttrs {
@@ -51,6 +52,12 @@ impl ContainerAttrs {
                             let _: Token![=] = input.parse()?;
                             if self.rename_all.replace(input.parse()?).is_some() {
                                 return Err(input.error("duplicate `rename_all` arg"));
+                            }
+                        }
+                        "singleton" => {
+                            let _: Token![=] = input.parse()?;
+                            if self.singleton.replace(input.parse()?).is_some() {
+                                return Err(input.error("duplicate `singleton` arg"));
                             }
                         }
                         _ => return Err(input.error("unknown argument found")),

@@ -101,6 +101,25 @@ impl ToTokens for Set<'_> {
             })
             .collect();
 
+        let all_static = sorted_fields
+            .iter()
+            .all(|x| matches!(x.attrs, LabelGroupFieldAttrs::Fixed));
+        let default = all_static.then(|| {
+            let defaults = sorted_fields.iter().map(|x| {
+                let name = &x.name;
+                quote_spanned!(x.span => #name: #krate::label::StaticLabelSet::new(),)
+            });
+            quote! {
+                impl ::core::default::Default for #set_ident {
+                    fn default() -> Self {
+                        Self {
+                            #(#defaults)*
+                        }
+                    }
+                }
+            }
+        });
+
         let cardinality_fns = if dynamics.is_empty() {
             quote!(
                 fn cardinality(&self) -> Option<usize> {
@@ -150,6 +169,8 @@ impl ToTokens for Set<'_> {
             #vis struct #set_ident {
                 #(#set_fields)*
             }
+
+            #default
 
             #[automatically_derived]
             impl #krate::label::LabelGroupSet for #set_ident {

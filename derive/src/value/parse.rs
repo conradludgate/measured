@@ -68,6 +68,7 @@ impl TryFrom<DeriveInput> for FixedCardinalityLabel {
             rename_all,
             ident,
             variants,
+            singleton: args.singleton,
         })
     }
 }

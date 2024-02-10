@@ -43,6 +43,18 @@ impl CounterMut<'_> {
     }
 }
 
+impl Default for Counter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<L: LabelGroupSet + Default> Default for CounterVec<L> {
+    fn default() -> Self {
+        Self::new(L::default())
+    }
+}
+
 impl<L: LabelGroupSet> CounterVec<L> {
     /// Create a new `CounterVec`, with label keys identified by the label_set argument.
     pub fn new(label_set: L) -> Self {

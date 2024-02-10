@@ -1,7 +1,15 @@
 use core::marker::PhantomData;
 
-#[derive(Default)]
+use crate::LabelGroup;
+
+use super::LabelGroupSet;
 pub struct StaticLabelSet<T>(PhantomData<T>);
+
+impl<T> Default for StaticLabelSet<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
 
 impl<T> StaticLabelSet<T> {
     pub const fn new() -> Self {
@@ -18,12 +26,45 @@ impl<T: FixedCardinalityLabel> FixedCardinalitySet for StaticLabelSet<T> {
 impl<T: FixedCardinalityLabel> LabelSet for StaticLabelSet<T> {
     type Value<'a> = T;
 
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        Some(T::cardinality())
+    }
+
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(value.encode())
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
         T::decode(value)
+    }
+}
+
+impl<T: LabelSet> LabelGroupSet for T
+where
+    for<'a> T::Value<'a>: LabelGroup,
+{
+    type Group<'a> = T::Value<'a>;
+
+    fn cardinality(&self) -> Option<usize> {
+        LabelSet::dynamic_cardinality(self)
+    }
+
+    fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
+        Some(value)
+    }
+
+    fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+        LabelSet::decode(self, value)
+    }
+
+    type Unique = usize;
+
+    fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        LabelSet::encode(self, value)
+    }
+
+    fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
+        LabelSet::decode(self, *value)
     }
 }
 
@@ -105,10 +146,12 @@ pub trait FixedCardinalitySet: LabelSet {
     ///
     /// # Details
     /// This number must never change due to some interior mutation, eg with an atomic or a mutex.
-    fn cardinality(&self) -> usize;
+    fn cardinality(&self) -> usize {
+        LabelSet::dynamic_cardinality(self).unwrap()
+    }
 }
 
-/// `DynamicLabelSet`  is a mutable [`LabelSet`] that has an unknown maximum size.
+/// `DynamicLabelSet` is a mutable [`LabelSet`] that has an unknown maximum size.
 ///
 /// This is not recommended to be used, but provided for completeness sake.
 /// [Prometheus recommends against high-cardinality metrics](https://grafana.com/blog/2022/02/15/what-are-cardinality-spikes-and-why-do-they-matter/)
@@ -132,6 +175,9 @@ pub trait LabelSet {
     /// The label value this set can encode
     type Value<'a>: LabelValue;
 
+    /// The maximum number of possible label values
+    fn dynamic_cardinality(&self) -> Option<usize>;
+
     /// Encode the label value into an integer. Returns `None` if the value is not in the set
     fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
 
@@ -140,4 +186,30 @@ pub trait LabelSet {
     /// If the integer is outside the range of this set, the behaviour is not defined.
     /// It would most likely panic.
     fn decode(&self, value: usize) -> Self::Value<'_>;
+}
+
+#[cfg(test)]
+mod tests {
+    use measured_derive::MetricGroup;
+
+    use crate::CounterVec;
+
+    use super::StaticLabelSet;
+
+    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
+    #[label(crate = crate)]
+    #[label(singleton = "kind")]
+    enum ErrorKind {
+        User,
+        Internal,
+        Network,
+    }
+
+    #[derive(MetricGroup, Default)]
+    #[metric(crate = crate)]
+    struct Metrics {
+        errors: CounterVec<StaticLabelSet<ErrorKind>>,
+    }
+
+    
 }

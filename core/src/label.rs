@@ -31,7 +31,7 @@ mod tests {
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
-    #[label(crate = crate, rename_all = "kebab-case")]
+    #[label(crate = crate, rename_all = "kebab-case", singleton = "kind")]
     enum ErrorKind {
         User,
         Internal,
