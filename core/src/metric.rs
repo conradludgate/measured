@@ -250,6 +250,14 @@ pub trait MetricFamilyEncoding<T> {
     fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T);
 }
 
+impl<M: MetricFamilyEncoding<T>, T> MetricFamilyEncoding<T> for Option<M> {
+    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
+        if let Some(this) = self {
+            this.collect_into(name, enc);
+        }
+    }
+}
+
 impl<M: MetricEncoding<T>, T> MetricFamilyEncoding<T> for Metric<M> {
     /// Collect this metric value into the given encoder with the given metric name
     fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {

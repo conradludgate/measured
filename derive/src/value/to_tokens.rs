@@ -10,7 +10,7 @@ impl ToTokens for FixedCardinalityLabel {
             ident,
             rename_all,
             variants,
-            singleton
+            singleton,
         } = self;
 
         let cardinality = variants.len();

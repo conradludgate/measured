@@ -1,4 +1,4 @@
-use syn::{parse::ParseStream, spanned::Spanned, Attribute, LitStr, Token};
+use syn::{parse::ParseStream, spanned::Spanned, Attribute, Expr, ExprLit, Lit, LitStr, Token};
 
 use crate::Krate;
 
@@ -47,7 +47,14 @@ impl ContainerAttrs {
 }
 
 #[derive(Clone)]
-pub enum MetricGroupFieldAttrs {
+pub struct MetricGroupFieldAttrs {
+    pub kind: MetricGroupFieldAttrsKind,
+    pub docs: Option<String>,
+    pub init: Option<Expr>,
+}
+
+#[derive(Clone)]
+pub enum MetricGroupFieldAttrsKind {
     Metric { rename: Option<LitStr> },
     Group { namespace: Option<LitStr> },
 }
@@ -55,48 +62,60 @@ pub enum MetricGroupFieldAttrs {
 impl MetricGroupFieldAttrs {
     pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut args = None;
+        let mut docs = None;
+        let mut init = None;
+
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
-                attr.parse_args_with(|input: ParseStream| {
-                    let mut first = true;
-                    while !input.is_empty() {
-                        if !first {
-                            input.parse::<Token![,]>()?;
-                        }
-                        first = false;
-
-                        let arg = match () {
-                            () if input.peek(syn::Ident) => {
-                                let name: syn::Ident = input.parse()?;
-                                match &*name.to_string() {
-                                    "rename" => {
-                                        let _: Token![=] = input.parse()?;
-
-                                        Self::Metric {
-                                            rename: Some(input.parse()?),
-                                        }
-                                    }
-                                    "namespace" => {
-                                        let _: Token![=] = input.parse()?;
-                                        Self::Group {
-                                            namespace: Some(input.parse()?),
-                                        }
-                                    }
-                                    "flatten" => Self::Group { namespace: None },
-                                    _ => return Err(input.error("unknown argument found")),
-                                }
+                attr.meta.require_list()?.parse_nested_meta(|meta| {
+                    match () {
+                        () if meta.path.is_ident("rename") => {
+                            let arg = MetricGroupFieldAttrsKind::Metric {
+                                rename: Some(meta.value()?.parse()?),
+                            };
+                            if args.replace(arg).is_some() {
+                                return Err(meta.error("duplicate `metric(rename)` attr"));
                             }
-                            () => return Err(input.error("unknown argument found")),
-                        };
-
-                        if args.replace(arg).is_some() {
-                            return Err(syn::Error::new(attr.span(), "duplicate `metric` attr"));
                         }
+                        () if meta.path.is_ident("namespace") => {
+                            let arg = MetricGroupFieldAttrsKind::Group {
+                                namespace: Some(meta.value()?.parse()?),
+                            };
+                            if args.replace(arg).is_some() {
+                                return Err(meta.error("duplicate `metric(namespace)` attr"));
+                            }
+                        }
+                        () if meta.path.is_ident("flatten") => {
+                            let arg = MetricGroupFieldAttrsKind::Group { namespace: None };
+                            if args.replace(arg).is_some() {
+                                return Err(meta.error("duplicate `metric(flatten)` attr"));
+                            }
+                        }
+                        () if meta.path.is_ident("init") => {
+                            if init.replace(meta.value()?.parse()?).is_some() {
+                                return Err(meta.error("duplicate `metric(init)` attr"));
+                            }
+                        }
+                        () => return Err(meta.error("unknown argument found")),
                     }
+
                     Ok(())
                 })?;
+            } else if attr.path().is_ident("doc") {
+                let expr = &attr.meta.require_name_value()?.value;
+                let s = match expr {
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(s), ..
+                    }) => s,
+                    _ => return Err(syn::Error::new(attr.span(), "invalid doc comment")),
+                };
+                docs.get_or_insert_with(String::new).push_str(&s.value());
             }
         }
-        Ok(args.unwrap_or(Self::Metric { rename: None }))
+        Ok(Self {
+            kind: args.unwrap_or(MetricGroupFieldAttrsKind::Metric { rename: None }),
+            docs,
+            init,
+        })
     }
 }

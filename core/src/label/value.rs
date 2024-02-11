@@ -210,6 +210,4 @@ mod tests {
     struct Metrics {
         errors: CounterVec<StaticLabelSet<ErrorKind>>,
     }
-
-    
 }

@@ -95,6 +95,7 @@ impl<M: MetricEncoding<E>, E> MetricEncoding<WithNamespace<E>> for M {
         )
     }
 }
+
 impl<'a, M: MetricEncoding<E>, E> MetricEncoding<&'a mut E> for M {
     fn write_type(name: impl MetricNameEncoder, enc: &mut &'a mut E) {
         M::write_type(name, *enc);
@@ -138,18 +139,23 @@ mod tests {
 
     #[derive(MetricGroup)]
     #[metric(crate = crate)]
+    // #[metric(new(route: RodeoReader))]
     struct MyHttpMetrics {
-        /// help text
+        /// more help wow
+        #[metric(init = CounterVec::new(route))]
         errors: CounterVec<ErrorsSet>,
     }
 
     #[derive(MetricGroup)]
     #[metric(crate = crate)]
+    // #[metric(new(route: RodeoReader))]
     struct MyMetrics {
+        // implici #[metric(default)]
         /// help text
         events_total: Counter,
 
         #[metric(namespace = "http_request")]
+        #[metric(init = MyHttpMetrics::new(route))]
         http: MyHttpMetrics,
     }
 
@@ -177,9 +183,11 @@ mod tests {
         group.collect_into(&mut text_encoder);
         assert_eq!(
             text_encoder.finish(),
-            r#"# TYPE events_total counter
+            r#"# HELP events_total help text
+# TYPE events_total counter
 events_total 0
 
+# HELP http_request_errors more help wow
 # TYPE http_request_errors counter
 http_request_errors{kind="user",route="/api/v1/users"} 0
 http_request_errors{kind="user",route="/api/v1/users/:id"} 0

@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{parse_quote, parse_quote_spanned};
 
-use super::{attr::MetricGroupFieldAttrs, MetricGroup, MetricGroupField};
+use super::{attr::MetricGroupFieldAttrsKind, MetricGroup, MetricGroupField};
 
 impl ToTokens for MetricGroup {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -26,14 +26,14 @@ impl ToTokens for MetricGroup {
         let wc = generics.make_where_clause();
         for field in fields {
             let MetricGroupField { ty, attrs, .. } = field;
-            match attrs {
-                MetricGroupFieldAttrs::Metric { .. } => {
+            match attrs.kind {
+                MetricGroupFieldAttrsKind::Metric { .. } => {
                     wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding<#enc> ));
                 }
-                MetricGroupFieldAttrs::Group { namespace: None } => {
+                MetricGroupFieldAttrsKind::Group { namespace: None } => {
                     wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::group::MetricGroup<#enc> ));
                 }
-                MetricGroupFieldAttrs::Group { namespace: Some(_) } => {
+                MetricGroupFieldAttrsKind::Group { namespace: Some(_) } => {
                     wc.predicates.push(parse_quote_spanned!(field.span =>
                         #ty: for<'__enc_tmp_lt> #krate::metric::group::MetricGroup<
                             #krate::metric::name::WithNamespace<&'__enc_tmp_lt mut #enc>,
@@ -47,22 +47,30 @@ impl ToTokens for MetricGroup {
 
         let visits = fields.iter().map(|x| {
             let MetricGroupField { name,ty, attrs, .. } = x;
-            match attrs {
-                MetricGroupFieldAttrs::Metric { rename } => {
+            match &attrs.kind {
+                MetricGroupFieldAttrsKind::Metric { rename } => {
                     let name_string = rename.as_ref().map_or_else(|| name.to_string(), |l| l.value());
                     let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
+
+                    let help = attrs.docs.as_deref().map(|doc|{
+                        let doc = doc.trim();
+                        quote_spanned!(x.span => {
+                            <#enc as #krate::metric::group::Encoding>::write_help(enc, #ident, #doc);
+                        })
+                    });
+
                     quote_spanned! { x.span =>
                         const #ident: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_static(#name_string);
-                        // enc.write_help(ERRORS, "help text");
+                        #help
                         <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_into(&self.#name, #ident, enc);
                     }
                 },
-                MetricGroupFieldAttrs::Group { namespace: None } => {
+                MetricGroupFieldAttrsKind::Group { namespace: None } => {
                     quote_spanned! { x.span =>
                         <#ty as #krate::metric::group::MetricGroup<#enc>>::collect_into(&self.#name, enc);
                     }
                 },
-                MetricGroupFieldAttrs::Group { namespace: Some(ns) } => {
+                MetricGroupFieldAttrsKind::Group { namespace: Some(ns) } => {
                     quote_spanned! { x.span =>
                         <#krate::metric::name::WithNamespace<&#ty> as #krate::metric::group::MetricGroup<#enc>>::collect_into(
                             &#krate::metric::name::WithNamespace::new(#ns, &self.#name),
