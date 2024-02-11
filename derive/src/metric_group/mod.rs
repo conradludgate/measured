@@ -1,5 +1,5 @@
 use proc_macro2::{Ident, Span};
-use syn::{Generics, Path, Type};
+use syn::{punctuated::Punctuated, FnArg, Generics, Path, Token, Type};
 
 mod attr;
 mod parse;
@@ -12,6 +12,7 @@ pub struct MetricGroup {
     ident: Ident,
     fields: Vec<MetricGroupField>,
     generics: Generics,
+    inputs: Option<Punctuated<FnArg, Token![,]>>
 }
 
 #[derive(Clone)]

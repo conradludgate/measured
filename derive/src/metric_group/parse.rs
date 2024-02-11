@@ -54,6 +54,7 @@ impl TryFrom<DeriveInput> for MetricGroup {
             ident,
             fields,
             generics,
+            inputs: args.inputs,
         })
     }
 }

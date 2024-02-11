@@ -15,14 +15,14 @@
 //!
 //! // Define a metric group, consisting of 1 or more metrics
 //! #[derive(MetricGroup)]
+//! #[metric(new())]
 //! struct MyMetricGroup {
+//!     /// counts things
 //!     my_first_counter: Counter,
 //! }
 //!
 //! // create the metrics
-//! let metrics = MyMetricGroup {
-//!     my_first_counter: Counter::new(),
-//! };
+//! let metrics = MyMetricGroup::new();
 //!
 //! // increment the counter value
 //! metrics.my_first_counter.inc();
@@ -34,7 +34,8 @@
 //!
 //! assert_eq!(
 //!     bytes,
-//!     r#"# TYPE my_first_counter counter
+//!     r#"# HELP my_first_counter counts things
+//! ## TYPE my_first_counter counter
 //! my_first_counter 1
 //! "#);
 //! ```
@@ -72,16 +73,14 @@
 //!
 //! // Define a metric group, consisting of 1 or more metrics
 //! #[derive(MetricGroup)]
+//! #[metric(new())]
 //! struct MyMetricGroup {
+//!     /// counts things
 //!     my_first_counter: CounterVec<MyLabelGroupSet>,
 //! }
 //!
 //! // create the metrics
-//! let metrics = MyMetricGroup {
-//!     my_first_counter: CounterVec::new(MyLabelGroupSet {
-//!         operation: StaticLabelSet::new(),
-//!     })
-//! };
+//! let metrics = MyMetricGroup::new();
 //!
 //! // increment the counter at a given label
 //! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Create });
@@ -94,7 +93,8 @@
 //!
 //! assert_eq!(
 //!     bytes,
-//!     r#"# TYPE my_first_counter counter
+//!     r#"# HELP my_first_counter counts things
+//! ## TYPE my_first_counter counter
 //! my_first_counter{operation="create"} 1
 //! my_first_counter{operation="update"} 0
 //! my_first_counter{operation="delete"} 1
@@ -128,20 +128,20 @@
 //!
 //! // Define a metric group, consisting of 1 or more metrics
 //! #[derive(MetricGroup)]
+//! #[metric(new(path: lasso::RodeoReader))]
 //! struct MyMetricGroup {
+//!     /// counts things
+//!     #[metric(init = CounterVec::new(MyLabelGroupSet { path }))]
 //!     my_first_counter: CounterVec<MyLabelGroupSet>,
 //! }
 //!
 //! // create the metrics
-//! let metrics = MyMetricGroup {
-//!     my_first_counter: CounterVec::new(MyLabelGroupSet {
-//!         path: lasso::Rodeo::from_iter([
-//!             "/api/v1/products",
-//!             "/api/v1/users",
-//!         ])
-//!         .into_reader(),
-//!     })
-//! };
+//! let paths = lasso::Rodeo::from_iter([
+//!     "/api/v1/products",
+//!     "/api/v1/users",
+//! ])
+//! .into_reader();
+//! let metrics = MyMetricGroup::new(paths);
 //!
 //! // increment the counter at a given label
 //! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
@@ -154,7 +154,8 @@
 //!
 //! assert_eq!(
 //!     bytes,
-//!     r#"# TYPE my_first_counter counter
+//!     r#"# HELP my_first_counter counts things
+//! ## TYPE my_first_counter counter
 //! my_first_counter{path="/api/v1/products"} 1
 //! my_first_counter{path="/api/v1/users"} 1
 //! "#);
@@ -182,16 +183,15 @@
 //!
 //! // Define a metric group, consisting of 1 or more metrics
 //! #[derive(MetricGroup)]
+//! #[metric(new())]
 //! struct MyMetricGroup {
+//!     /// counts things
+//!     #[metric(init = CounterVec::new(MyLabelGroupSet { path: lasso::ThreadedRodeo::new() }))]
 //!     my_first_counter: CounterVec<MyLabelGroupSet>,
 //! }
 //!
 //! // create the metrics
-//! let metrics = MyMetricGroup {
-//!     my_first_counter: CounterVec::new(MyLabelGroupSet {
-//!         path: lasso::ThreadedRodeo::new(),
-//!     })
-//! };
+//! let metrics = MyMetricGroup::new();
 //!
 //! // increment the counter at a given label
 //! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
@@ -204,7 +204,8 @@
 //!
 //! assert_eq!(
 //!     bytes,
-//!     r#"# TYPE my_first_counter counter
+//!     r#"# HELP my_first_counter counts things
+//! ## TYPE my_first_counter counter
 //! my_first_counter{path="/api/v1/products"} 1
 //! my_first_counter{path="/api/v1/users"} 1
 //! "#);

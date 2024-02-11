@@ -142,7 +142,7 @@ mod tests {
     #[metric(new(route: RodeoReader))]
     struct MyHttpMetrics {
         /// more help wow
-        #[metric(init = CounterVec::new(route))]
+        #[metric(init = CounterVec::new(ErrorsSet { kind: StaticLabelSet::new(), route }))]
         errors: CounterVec<ErrorsSet>,
     }
 
@@ -150,7 +150,6 @@ mod tests {
     #[metric(crate = crate)]
     #[metric(new(route: RodeoReader))]
     struct MyMetrics {
-        // implici #[metric(default)]
         /// help text
         events_total: Counter,
 
@@ -161,23 +160,16 @@ mod tests {
 
     #[test]
     fn http_errors() {
-        let group = MyMetrics {
-            events_total: Counter::new(),
-            http: MyHttpMetrics {
-                errors: CounterVec::new(ErrorsSet {
-                    kind: StaticLabelSet::new(),
-                    route: Rodeo::from_iter([
-                        "/api/v1/users",
-                        "/api/v1/users/:id",
-                        "/api/v1/products",
-                        "/api/v1/products/:id",
-                        "/api/v1/products/:id/owner",
-                        "/api/v1/products/:id/purchase",
-                    ])
-                    .into_reader(),
-                }),
-            },
-        };
+        let routes = Rodeo::from_iter([
+            "/api/v1/users",
+            "/api/v1/users/:id",
+            "/api/v1/products",
+            "/api/v1/products/:id",
+            "/api/v1/products/:id/owner",
+            "/api/v1/products/:id/purchase",
+        ])
+        .into_reader();
+        let group = MyMetrics::new(routes);
 
         let mut text_encoder = TextEncoder::new();
         group.collect_into(&mut text_encoder);

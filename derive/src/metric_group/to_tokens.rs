@@ -12,18 +12,18 @@ impl ToTokens for MetricGroup {
             ident,
             generics,
             fields,
-            ..
+            inputs,
         } = self;
 
         let enc = format_ident!("__MetricGroupEncodingT");
 
-        let (_, ty_generics, _) = generics.split_for_impl();
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-        let mut generics = generics.clone();
-        generics
+        let mut group_generics = generics.clone();
+        group_generics
             .params
             .push(parse_quote!(#enc: #krate::metric::group::Encoding));
-        let wc = generics.make_where_clause();
+        let wc = group_generics.make_where_clause();
         for field in fields {
             let MetricGroupField { ty, attrs, .. } = field;
             match attrs.kind {
@@ -43,7 +43,7 @@ impl ToTokens for MetricGroup {
             }
         }
 
-        let (impl_generics, _, where_clause) = generics.split_for_impl();
+        let (group_impl_generics, _, group_where_clause) = group_generics.split_for_impl();
 
         let visits = fields.iter().map(|x| {
             let MetricGroupField { name,ty, attrs, .. } = x;
@@ -83,11 +83,31 @@ impl ToTokens for MetricGroup {
 
         tokens.extend(quote! {
             #[automatically_derived]
-            impl #impl_generics #krate::metric::group::MetricGroup<#enc> for #ident #ty_generics #where_clause {
+            impl #group_impl_generics #krate::metric::group::MetricGroup<#enc> for #ident #ty_generics #group_where_clause {
                 fn collect_into(&self, enc: &mut #enc) {
                     #(#visits)*
                 }
             }
         });
+
+        if let Some(inputs) = inputs {
+            let inits = fields.iter().map(|x| {
+                let MetricGroupField { name,ty, attrs, .. } = x;
+                match &attrs.init {
+                    Some(init) => quote_spanned!(x.span => #name: #init,),
+                    None => quote_spanned!(x.span => #name: <#ty as ::core::default::Default>::default(),),
+                }
+            });
+
+            tokens.extend(quote! {
+                impl #impl_generics #ident #ty_generics #where_clause {
+                    pub fn new(#inputs) -> Self {
+                        Self {
+                            #(#inits)*
+                        }
+                    }
+                }
+            });
+        }
     }
 }
