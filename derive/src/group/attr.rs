@@ -1,5 +1,5 @@
 use proc_macro2::Ident;
-use syn::{parse::ParseStream, spanned::Spanned, Attribute, Path, Token};
+use syn::{Attribute, Path};
 
 use crate::Krate;
 
@@ -17,46 +17,26 @@ impl ContainerAttrs {
         let mut args = ContainerAttrs::default();
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
-                args = attr.parse_args_with(|input: ParseStream| args.parse(input))?;
+                attr.meta.require_list()?.parse_nested_meta(|meta| {
+                    match () {
+                        () if meta.path.is_ident("crate") => {
+                            if args.krate.replace(Krate(meta.value()?.parse()?)).is_some() {
+                                return Err(meta.error("duplicate `label(crate)` arg"));
+                            }
+                        }
+                        () if meta.path.is_ident("set") => {
+                            if args.set.replace(meta.value()?.parse()?).is_some() {
+                                return Err(meta.error("duplicate `label(set)` arg"));
+                            }
+                        }
+                        () => return Err(meta.error("unknown argument found")),
+                    }
+
+                    Ok(())
+                })?;
             }
         }
         Ok(args)
-    }
-}
-
-impl ContainerAttrs {
-    fn parse(mut self, input: ParseStream) -> syn::Result<Self> {
-        let mut first = true;
-        while !input.is_empty() {
-            if !first {
-                input.parse::<Token![,]>()?;
-            }
-            first = false;
-
-            match () {
-                () if input.peek(Token![crate]) => {
-                    let _: Token![crate] = input.parse()?;
-                    let _: Token![=] = input.parse()?;
-                    if self.krate.replace(Krate(input.parse()?)).is_some() {
-                        return Err(input.error("duplicate `crate` arg"));
-                    }
-                }
-                () if input.peek(syn::Ident) => {
-                    let name: syn::Ident = input.parse()?;
-                    match &*name.to_string() {
-                        "set" => {
-                            let _: Token![=] = input.parse()?;
-                            if self.set.replace(input.parse()?).is_some() {
-                                return Err(input.error("duplicate `set` arg"));
-                            }
-                        }
-                        _ => return Err(input.error("unknown argument found")),
-                    }
-                }
-                () => return Err(input.error("unknown argument found")),
-            }
-        }
-        Ok(self)
     }
 }
 
@@ -88,37 +68,32 @@ impl LabelGroupFieldAttrs {
         let mut args = None;
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
-                attr.parse_args_with(|input: ParseStream| {
-                    let mut first = true;
-                    while !input.is_empty() {
-                        if !first {
-                            input.parse::<Token![,]>()?;
-                        }
-                        first = false;
-
-                        let arg = match () {
-                            () if input.peek(syn::Ident) => {
-                                let name: syn::Ident = input.parse()?;
-                                match &*name.to_string() {
-                                    "fixed" => Self::Fixed,
-                                    "fixed_with" => {
-                                        let _: Token![=] = input.parse()?;
-                                        Self::FixedWith(input.parse()?)
-                                    }
-                                    "dynamic_with" => {
-                                        let _: Token![=] = input.parse()?;
-                                        Self::DynamicWith(input.parse()?)
-                                    }
-                                    _ => return Err(input.error("unknown argument found")),
-                                }
+                attr.meta.require_list()?.parse_nested_meta(|meta| {
+                    match () {
+                        () if meta.path.is_ident("fixed") => {
+                            if args.replace(Self::Fixed).is_some() {
+                                return Err(meta.error("duplicate `label(fixed)` arg"));
                             }
-                            () => return Err(input.error("unknown argument found")),
-                        };
-
-                        if args.replace(arg).is_some() {
-                            return Err(syn::Error::new(attr.span(), "duplicate `label` attr"));
                         }
+                        () if meta.path.is_ident("fixed_with") => {
+                            if args
+                                .replace(Self::FixedWith(meta.value()?.parse()?))
+                                .is_some()
+                            {
+                                return Err(meta.error("duplicate `label(fixed_with)` arg"));
+                            }
+                        }
+                        () if meta.path.is_ident("dynamic_with") => {
+                            if args
+                                .replace(Self::DynamicWith(meta.value()?.parse()?))
+                                .is_some()
+                            {
+                                return Err(meta.error("duplicate `label(dynamic_with)` arg"));
+                            }
+                        }
+                        () => return Err(meta.error("unknown argument found")),
                     }
+
                     Ok(())
                 })?;
             }

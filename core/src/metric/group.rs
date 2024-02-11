@@ -139,7 +139,7 @@ mod tests {
 
     #[derive(MetricGroup)]
     #[metric(crate = crate)]
-    // #[metric(new(route: RodeoReader))]
+    #[metric(new(route: RodeoReader))]
     struct MyHttpMetrics {
         /// more help wow
         #[metric(init = CounterVec::new(route))]
@@ -148,7 +148,7 @@ mod tests {
 
     #[derive(MetricGroup)]
     #[metric(crate = crate)]
-    // #[metric(new(route: RodeoReader))]
+    #[metric(new(route: RodeoReader))]
     struct MyMetrics {
         // implici #[metric(default)]
         /// help text

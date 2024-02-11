@@ -1,4 +1,7 @@
-use syn::{parse::ParseStream, spanned::Spanned, Attribute, Expr, ExprLit, Lit, LitStr, Token};
+use syn::{
+    parenthesized, punctuated::Punctuated, spanned::Spanned, Attribute, Expr, ExprLit, FnArg, Lit,
+    LitStr, Token,
+};
 
 use crate::Krate;
 
@@ -8,6 +11,7 @@ const LABEL_ATTR: &str = "metric";
 pub struct ContainerAttrs {
     /// Optional `crate = $:path` arg
     pub krate: Option<Krate>,
+    pub inputs: Option<Punctuated<FnArg, Token![,]>>,
 }
 
 impl ContainerAttrs {
@@ -15,34 +19,31 @@ impl ContainerAttrs {
         let mut args = ContainerAttrs::default();
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
-                args = attr.parse_args_with(|input: ParseStream| args.parse(input))?;
+                attr.meta.require_list()?.parse_nested_meta(|meta| {
+                    match () {
+                        () if meta.path.is_ident("crate") => {
+                            if args.krate.replace(Krate(meta.value()?.parse()?)).is_some() {
+                                return Err(meta.error("duplicate `metric(crate)` arg"));
+                            }
+                        }
+                        () if meta.path.is_ident("new") => {
+                            let content;
+                            parenthesized!(content in meta.input);
+                            let inputs =
+                                Punctuated::<FnArg, Token![,]>::parse_terminated(&content)?;
+
+                            if args.inputs.replace(inputs).is_some() {
+                                return Err(meta.error("duplicate `metric(new)` arg"));
+                            }
+                        }
+                        () => return Err(meta.error("unknown argument found")),
+                    }
+
+                    Ok(())
+                })?;
             }
         }
         Ok(args)
-    }
-}
-
-impl ContainerAttrs {
-    fn parse(mut self, input: ParseStream) -> syn::Result<Self> {
-        let mut first = true;
-        while !input.is_empty() {
-            if !first {
-                input.parse::<Token![,]>()?;
-            }
-            first = false;
-
-            match () {
-                () if input.peek(Token![crate]) => {
-                    let _: Token![crate] = input.parse()?;
-                    let _: Token![=] = input.parse()?;
-                    if self.krate.replace(Krate(input.parse()?)).is_some() {
-                        return Err(input.error("duplicate `crate` arg"));
-                    }
-                }
-                () => return Err(input.error("unknown argument found")),
-            }
-        }
-        Ok(self)
     }
 }
 
