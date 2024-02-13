@@ -63,6 +63,27 @@ mod fixed_cardinality {
     }
 
     #[divan::bench]
+    fn measured_flurry(bencher: Bencher) {
+        let error_set = ErrorsSet {
+            kind: StaticLabelSet::new(),
+            route: Rodeo::from_iter(routes()).into_reader(),
+        };
+        let h = measured::HistogramVec::new_flurry_metric_vec(
+            error_set,
+            Thresholds::<N>::exponential_buckets(0.001, 2.0),
+        );
+
+        thread_local! {
+            static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+        }
+
+        bencher.bench(|| {
+            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
+            h.observe(Error { kind, route }, latency);
+        });
+    }
+
+    #[divan::bench]
     fn prometheus(bencher: Bencher) {
         let registry = prometheus::Registry::new();
         let counter_vec = prometheus::register_histogram_vec_with_registry!(

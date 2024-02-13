@@ -2,9 +2,7 @@
 
 use core::hash::Hash;
 use std::{
-    borrow::Borrow,
-    default,
-    hash::{BuildHasher, BuildHasherDefault, Hasher},
+    hash::{BuildHasher, BuildHasherDefault},
     sync::OnceLock,
 };
 
@@ -124,6 +122,15 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         Self {
+            metrics: VecInner::Sparse(new_sparse()),
+            metadata,
+            label_set,
+        }
+    }
+
+    /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
+    pub fn new_flurry_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+        Self {
             // metrics: VecInner::Sparse(new_sparse()),
             metrics: VecInner::Flurry(flurry::HashMap::with_hasher(BuildHasherDefault::default())),
             metadata,
@@ -228,7 +235,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
 
                 MetricMut(v, &mut self.metadata)
             }
-            VecInner::Flurry(metrics) => {
+            VecInner::Flurry(_) => {
                 todo!()
             }
         }
