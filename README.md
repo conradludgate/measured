@@ -172,3 +172,12 @@ memory                fastest       │ slowest       │ median        │ mean
                         1           │ 2             │ 1             │ 1             │         │
                         17 B        │ 239 MB        │ 17 B          │ 112 B         │         │
 ```
+
+```
+Timer precision: 41 ns
+memory                fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ measured           58.88 ns      │ 14.49 µs      │ 228.8 ns      │ 252.1 ns      │ 50000   │ 5000000
+├─ metrics            376.7 ns      │ 994.9 µs      │ 582.6 ns      │ 919.6 ns      │ 50000   │ 5000000
+├─ prometheus         534.2 ns      │ 548.8 µs      │ 667.2 ns      │ 708.9 ns      │ 50000   │ 5000000
+╰─ prometheus_client  114.2 ns      │ 3.079 ms      │ 248 ns        │ 360.6 ns      │ 50000   │ 5000000
+```
