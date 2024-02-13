@@ -42,7 +42,7 @@ pub trait LabelGroupSet {
     fn decode_dense(&self, value: usize) -> Self::Group<'_>;
 
     /// A type that can uniquely represent all possible labels
-    type Unique: Copy + Hash + Eq;
+    type Unique: Copy + Hash + Eq + Ord + Sync + Send;
 
     /// Encode the label groups into the unique compressed representation
     fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique>;
@@ -58,7 +58,7 @@ impl LabelGroup for NoLabels {
 }
 
 /// `ComposedGroup` represents either a combine [`LabelGroup`] or a [`LabelGroupSet`]. See [`LabelGroup::compose_with`]
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct ComposedGroup<A, B>(pub A, pub B);
 
 impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {

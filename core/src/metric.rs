@@ -2,7 +2,9 @@
 
 use core::hash::Hash;
 use std::{
-    hash::{BuildHasher, BuildHasherDefault},
+    borrow::Borrow,
+    default,
+    hash::{BuildHasher, BuildHasherDefault, Hasher},
     sync::OnceLock,
 };
 
@@ -23,7 +25,7 @@ pub mod histogram;
 pub mod name;
 
 /// Defines a metric
-pub trait MetricType: Default {
+pub trait MetricType: Default + Sync + Send {
     /// Some metrics require additional metadata
     type Metadata: Sized;
 }
@@ -50,6 +52,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 enum VecInner<U: Hash + Eq, M: MetricType> {
     Dense(Box<[M]>),
     Sparse(DashMap<U, M>),
+    Flurry(flurry::HashMap<U, M, BuildHasherDefault<FxHasher>>),
 }
 
 impl<M: MetricType> Metric<M> {
@@ -107,7 +110,8 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 vec.resize_with(c, M::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
-            None => VecInner::Sparse(new_sparse()),
+            // None => VecInner::Sparse(new_sparse()),
+            None => VecInner::Flurry(flurry::HashMap::with_hasher(BuildHasherDefault::default())),
         };
 
         Self {
@@ -120,7 +124,8 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(new_sparse()),
+            // metrics: VecInner::Sparse(new_sparse()),
+            metrics: VecInner::Flurry(flurry::HashMap::with_hasher(BuildHasherDefault::default())),
             metadata,
             label_set,
         }
@@ -142,6 +147,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 index as u64
             }
             VecInner::Sparse(_) => BuildHasherDefault::<FxHasher>::default().hash_one(id),
+            VecInner::Flurry(_) => 0,
         };
 
         Some(LabelId { id, hash })
@@ -187,6 +193,17 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
 
                 f(MetricRef(v, &self.metadata))
             }
+            VecInner::Flurry(metrics) => {
+                let g = metrics.guard();
+                if let Some(v) = metrics.get(&id.id, &g) {
+                    return f(MetricRef(v, &self.metadata));
+                }
+
+                match metrics.try_insert(id.id, M::default(), &g) {
+                    Ok(v) => f(MetricRef(v, &self.metadata)),
+                    Err(v) => f(MetricRef(v.current, &self.metadata)),
+                }
+            }
         }
     }
 
@@ -211,6 +228,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
 
                 MetricMut(v, &mut self.metadata)
             }
+            VecInner::Flurry(metrics) => {
+                todo!()
+            }
         }
     }
 
@@ -225,6 +245,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                     .sum::<usize>(),
                 self.label_set.cardinality(),
             ),
+            VecInner::Flurry(x) => (x.len(), self.label_set.cardinality()),
         }
     }
 
@@ -297,6 +318,11 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T> MetricFamilyEncoding<T> for Metr
                     for (k, v) in shard.read().iter() {
                         v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc);
                     }
+                }
+            }
+            VecInner::Flurry(m) => {
+                for (k, v) in m.iter(&m.guard()) {
+                    v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc);
                 }
             }
         }
