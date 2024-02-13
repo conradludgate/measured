@@ -38,7 +38,7 @@ prometheus = { version = "0.13", default-features = false }
 metrics = "0.22"
 metrics-exporter-prometheus = { version = "0.13", default-features = false }
 prometheus-client = "0.22.1"
-rand = { version= "0.8", features = ["small_rng"] }
+rand = { version = "0.8", features = ["small_rng"] }
 phf = { version = "0.11", features = ["macros"] }
 
 [[bench]]
@@ -47,6 +47,10 @@ harness = false
 
 [[bench]]
 name = "histograms"
+harness = false
+
+[[bench]]
+name = "memory"
 harness = false
 
 # Properly document all features on docs.rs

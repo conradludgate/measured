@@ -1,21 +1,17 @@
-#[global_allocator]
-static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
-
 fn main() {
     divan::Divan::from_args().threads([0]).run_benches();
 }
 
-#[divan::bench_group(sample_size = 5, sample_count = 500)]
+#[divan::bench_group(sample_size = 100000, sample_count = 500)]
 mod fixed_cardinality {
-    use std::hash::{BuildHasher, BuildHasherDefault};
+    use std::{
+        cell::RefCell,
+        hash::{BuildHasher, BuildHasherDefault},
+    };
 
-    use bytes::Bytes;
     use divan::{black_box, Bencher};
     use lasso::{Rodeo, RodeoReader, Spur};
-    use measured::{
-        label::StaticLabelSet,
-        metric::{group::Encoding, histogram::Thresholds, MetricFamilyEncoding},
-    };
+    use measured::{label::StaticLabelSet, metric::histogram::Thresholds};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
@@ -23,23 +19,6 @@ mod fixed_cardinality {
     use rustc_hash::FxHasher;
 
     const N: usize = 8;
-
-    #[inline(never)]
-    fn measured_inner(
-        encoder: &mut measured::text::TextEncoder,
-        h: &measured::HistogramVec<ErrorsSet, N>,
-    ) -> Bytes {
-        use measured::metric::name::MetricName;
-
-        for (kind, route, latency) in iter() {
-            h.observe(Error { kind, route }, latency);
-        }
-
-        const NAME: &MetricName = MetricName::from_static("http_request_errors");
-        encoder.write_help(NAME, "help text");
-        h.collect_into(NAME, encoder);
-        encoder.finish()
-    }
 
     #[divan::bench]
     fn measured(bencher: Bencher) {
@@ -52,9 +31,14 @@ mod fixed_cardinality {
             Thresholds::<N>::exponential_buckets(0.001, 2.0),
         );
 
-        bencher
-            .with_inputs(measured::text::TextEncoder::new)
-            .bench_refs(|encoder| measured_inner(encoder, &h));
+        thread_local! {
+            static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+        }
+
+        bencher.bench(|| {
+            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
+            h.observe(Error { kind, route }, latency);
+        });
     }
 
     #[divan::bench]
@@ -67,9 +51,15 @@ mod fixed_cardinality {
             error_set,
             Thresholds::<N>::exponential_buckets(0.001, 2.0),
         );
-        bencher
-            .with_inputs(measured::text::TextEncoder::new)
-            .bench_refs(|encoder| measured_inner(encoder, &h));
+
+        thread_local! {
+            static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+        }
+
+        bencher.bench(|| {
+            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
+            h.observe(Error { kind, route }, latency);
+        });
     }
 
     #[divan::bench]
@@ -84,17 +74,15 @@ mod fixed_cardinality {
         )
         .unwrap();
 
-        bencher.with_inputs(String::new).bench_refs(|string| {
-            for (kind, route, latency) in iter() {
-                counter_vec
-                    .with_label_values(&[kind.to_str(), route])
-                    .observe(latency);
-            }
+        thread_local! {
+            static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+        }
 
-            string.clear();
-            prometheus::TextEncoder
-                .encode_utf8(&registry.gather(), string)
-                .unwrap();
+        bencher.bench(|| {
+            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
+            counter_vec
+                .with_label_values(&[kind.to_str(), route])
+                .observe(latency);
         });
     }
 
@@ -112,21 +100,21 @@ mod fixed_cardinality {
             metrics::describe_histogram!("http_request_errors", "help text");
         });
 
+        thread_local! {
+            static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+        }
+
         bencher.bench(|| {
             metrics::with_local_recorder(&recorder, || {
-                for (kind, route, latency) in iter() {
-                    let labels = [("kind", kind.to_str()), ("route", route)];
-                    metrics::histogram!("http_request_errors", &labels).record(latency);
-                }
+                let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
+                let labels = [("kind", kind.to_str()), ("route", route)];
+                metrics::histogram!("http_request_errors", &labels).record(latency);
             });
-
-            recorder.handle().render()
         });
     }
 
     #[divan::bench]
     fn prometheus_client(bencher: Bencher) {
-        use prometheus_client::encoding::text::encode;
         use prometheus_client::metrics::family::Family;
         use prometheus_client::metrics::histogram::exponential_buckets;
         use prometheus_client::metrics::histogram::Histogram;
@@ -147,14 +135,14 @@ mod fixed_cardinality {
             h.clone(),
         );
 
-        bencher.with_inputs(String::new).bench_refs(|string| {
-            for (kind, route, latency) in iter() {
-                h.get_or_create(&ErrorStatic { kind, route })
-                    .observe(latency);
-            }
+        thread_local! {
+            static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+        }
 
-            string.clear();
-            encode(string, &registry).unwrap();
+        bencher.bench(|| {
+            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
+            h.get_or_create(&ErrorStatic { kind, route })
+                .observe(latency);
         });
     }
 
@@ -164,14 +152,10 @@ mod fixed_cardinality {
         )
     }
 
-    fn iter() -> impl Iterator<Item = (ErrorKind, &'static str, f64)> {
-        let mut rng = thread_rng();
-        std::iter::from_fn(move || {
-            let route = rng.gen_range(0..routes().len());
-            let error = rng.gen_range(0..errors().len());
-            Some((errors()[error], routes()[route], rng.gen()))
-        })
-        .take(20000)
+    fn get(rng: &mut impl Rng) -> (ErrorKind, &'static str, f64) {
+        let route = rng.gen_range(0..routes().len());
+        let error = rng.gen_range(0..errors().len());
+        (errors()[error], routes()[route], rng.gen())
     }
 
     fn routes() -> &'static [&'static str] {
@@ -221,42 +205,21 @@ mod fixed_cardinality {
     }
 }
 
-#[divan::bench_group(sample_size = 5, sample_count = 500)]
+#[divan::bench_group(sample_size = 100000, sample_count = 500)]
 mod no_cardinality {
     use std::time::Instant;
 
-    use bytes::Bytes;
-    use divan::{black_box, Bencher};
-    use measured::metric::{group::Encoding, histogram::Thresholds, MetricFamilyEncoding};
+    use divan::Bencher;
+    use measured::metric::histogram::Thresholds;
     use prometheus::exponential_buckets;
 
-    const LOOPS: usize = 20000;
     const N: usize = 8;
-
-    #[inline(never)]
-    fn measured_inner(
-        encoder: &mut measured::text::TextEncoder,
-        h: &measured::Histogram<N>,
-    ) -> Bytes {
-        use measured::metric::name::MetricName;
-
-        for _ in 0..black_box(LOOPS) {
-            h.start_timer();
-        }
-
-        const NAME: &MetricName = MetricName::from_static("http_request_errors");
-        encoder.write_help(NAME, "help text");
-        h.collect_into(NAME, encoder);
-        encoder.finish()
-    }
 
     #[divan::bench]
     fn measured(bencher: Bencher) {
         let h = measured::Histogram::new_metric(Thresholds::<N>::exponential_buckets(0.00001, 2.0));
 
-        bencher
-            .with_inputs(measured::text::TextEncoder::new)
-            .bench_refs(|encoder| measured_inner(encoder, &h));
+        bencher.bench(|| drop(h.start_timer()));
     }
 
     #[divan::bench]
@@ -270,17 +233,7 @@ mod no_cardinality {
         )
         .unwrap();
 
-        bencher.with_inputs(String::new).bench_refs(|string| {
-            for _ in 0..black_box(LOOPS) {
-                let timer = h.start_timer();
-                timer.stop_and_record();
-            }
-
-            string.clear();
-            prometheus::TextEncoder
-                .encode_utf8(&registry.gather(), string)
-                .unwrap();
-        });
+        bencher.bench(|| h.start_timer().stop_and_record());
     }
 
     #[divan::bench]
@@ -299,20 +252,14 @@ mod no_cardinality {
 
         bencher.bench(|| {
             metrics::with_local_recorder(&recorder, || {
-                for _ in 0..black_box(LOOPS) {
-                    let start = Instant::now();
-                    metrics::histogram!("http_request_errors")
-                        .record(start.elapsed().as_secs_f64());
-                }
+                let start = Instant::now();
+                metrics::histogram!("http_request_errors").record(start.elapsed().as_secs_f64());
             });
-
-            recorder.handle().render()
         });
     }
 
     #[divan::bench]
     fn prometheus_client(bencher: Bencher) {
-        use prometheus_client::encoding::text::encode;
         use prometheus_client::metrics::histogram::exponential_buckets;
         use prometheus_client::metrics::histogram::Histogram;
         use prometheus_client::registry::Registry;
@@ -330,14 +277,9 @@ mod no_cardinality {
             h.clone(),
         );
 
-        bencher.with_inputs(String::new).bench_refs(|string| {
-            for _ in 0..black_box(LOOPS) {
-                let start = Instant::now();
-                h.observe(start.elapsed().as_secs_f64());
-            }
-
-            string.clear();
-            encode(string, &registry).unwrap();
+        bencher.bench(|| {
+            let start = Instant::now();
+            h.observe(start.elapsed().as_secs_f64());
         });
     }
 }

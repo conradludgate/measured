@@ -17,7 +17,7 @@ impl<E: Encoding> Encoding for &mut E {
 }
 
 pub trait MetricGroup<Enc: Encoding> {
-    fn collect_into(&self, enc: &mut Enc);
+    fn collect_group_into(&self, enc: &mut Enc);
 }
 
 impl<G, E> MetricGroup<E> for &G
@@ -25,8 +25,8 @@ where
     G: MetricGroup<E>,
     E: Encoding,
 {
-    fn collect_into(&self, enc: &mut E) {
-        G::collect_into(self, enc);
+    fn collect_group_into(&self, enc: &mut E) {
+        G::collect_group_into(self, enc);
     }
 }
 
@@ -36,9 +36,9 @@ where
     B: MetricGroup<E>,
     E: Encoding,
 {
-    fn collect_into(&self, enc: &mut E) {
-        self.0.collect_into(enc);
-        self.1.collect_into(enc);
+    fn collect_group_into(&self, enc: &mut E) {
+        self.0.collect_group_into(enc);
+        self.1.collect_group_into(enc);
     }
 }
 
@@ -47,8 +47,8 @@ where
     G: for<'a> MetricGroup<WithNamespace<&'a mut E>>,
     E: Encoding,
 {
-    fn collect_into(&self, enc: &mut E) {
-        self.inner.collect_into(&mut WithNamespace {
+    fn collect_group_into(&self, enc: &mut E) {
+        self.inner.collect_group_into(&mut WithNamespace {
             namespace: self.namespace,
             inner: enc,
         });
@@ -172,7 +172,7 @@ mod tests {
         let group = MyMetrics::new(routes);
 
         let mut text_encoder = TextEncoder::new();
-        group.collect_into(&mut text_encoder);
+        group.collect_group_into(&mut text_encoder);
         assert_eq!(
             text_encoder.finish(),
             r#"# HELP events_total help text

@@ -6,12 +6,15 @@ use std::{
     sync::OnceLock,
 };
 
-use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
+use crate::{
+    label::{LabelGroup, LabelGroupSet, NoLabels},
+    MetricGroup,
+};
 use hashbrown::HashMap;
 use parking_lot::RwLockWriteGuard;
 use rustc_hash::FxHasher;
 
-use self::name::MetricNameEncoder;
+use self::{group::Encoding, name::MetricNameEncoder};
 
 pub mod counter;
 pub mod gauge;
@@ -254,6 +257,14 @@ impl<M: MetricFamilyEncoding<T>, T> MetricFamilyEncoding<T> for Option<M> {
     fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
         if let Some(this) = self {
             this.collect_into(name, enc);
+        }
+    }
+}
+
+impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Option<M> {
+    fn collect_group_into(&self, enc: &mut T) {
+        if let Some(this) = self {
+            this.collect_group_into(enc);
         }
     }
 }

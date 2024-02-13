@@ -1,36 +1,32 @@
 use lasso::{Rodeo, RodeoReader};
-use measured::{
-    label::StaticLabelSet,
-    metric::{group::Encoding, MetricFamilyEncoding},
-};
-use measured_derive::{FixedCardinalityLabel, LabelGroup};
+use measured::{label::StaticLabelSet, CounterVec, FixedCardinalityLabel, LabelGroup, MetricGroup};
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 
 const LOOPS: usize = 2000;
 
 #[test]
 fn measured() {
-    use measured::metric::name::{MetricName, Total};
+    #[derive(MetricGroup)]
+    #[metric(new(route: lasso::RodeoReader))]
+    struct Metrics {
+        /// help text
+        #[metric(init = CounterVec::new(ErrorsSet{ kind: StaticLabelSet::new(), route }))]
+        http_request_errors_total: CounterVec<ErrorsSet>,
+    }
 
-    let error_set = ErrorsSet {
-        kind: StaticLabelSet::new(),
-        route: Rodeo::from_iter(routes()).into_reader(),
-    };
-    let counter_vec = measured::CounterVec::new(error_set);
+    let metrics = Metrics::new(Rodeo::from_iter(routes()).into_reader());
 
     let mut encoder = measured::text::TextEncoder::new();
 
     for _ in 0..LOOPS {
         for &kind in errors() {
             for route in routes() {
-                counter_vec.inc(Error { kind, route });
+                metrics.http_request_errors_total.inc(Error { kind, route });
             }
         }
     }
 
-    let metric = MetricName::from_static("http_request_errors").with_suffix(Total);
-    encoder.write_help(&metric, "help text");
-    counter_vec.collect_into(&metric, &mut encoder);
+    metrics.collect_group_into(&mut encoder);
     assert_eq!(
         encoder.finish(),
         r#"# HELP http_request_errors_total help text

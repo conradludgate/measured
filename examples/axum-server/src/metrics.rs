@@ -98,7 +98,7 @@ pub async fn handler(s: State<AppState>) -> Response {
     let AppMetricsEncoder { encoder, metrics } = &*s.0.metrics;
 
     let mut encoder = encoder.lock().await;
-    metrics.collect_into(&mut *encoder);
+    metrics.collect_group_into(&mut *encoder);
     Response::new(encoder.finish().into())
 }
 

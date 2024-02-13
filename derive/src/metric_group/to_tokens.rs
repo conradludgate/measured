@@ -67,12 +67,12 @@ impl ToTokens for MetricGroup {
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {
                     quote_spanned! { x.span =>
-                        <#ty as #krate::metric::group::MetricGroup<#enc>>::collect_into(&self.#name, enc);
+                        <#ty as #krate::metric::group::MetricGroup<#enc>>::collect_group_into(&self.#name, enc);
                     }
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: Some(ns) } => {
                     quote_spanned! { x.span =>
-                        <#krate::metric::name::WithNamespace<&#ty> as #krate::metric::group::MetricGroup<#enc>>::collect_into(
+                        <#krate::metric::name::WithNamespace<&#ty> as #krate::metric::group::MetricGroup<#enc>>::collect_group_into(
                             &#krate::metric::name::WithNamespace::new(#ns, &self.#name),
                             enc,
                         );
@@ -84,7 +84,7 @@ impl ToTokens for MetricGroup {
         tokens.extend(quote! {
             #[automatically_derived]
             impl #group_impl_generics #krate::metric::group::MetricGroup<#enc> for #ident #ty_generics #group_where_clause {
-                fn collect_into(&self, enc: &mut #enc) {
+                fn collect_group_into(&self, enc: &mut #enc) {
                     #(#visits)*
                 }
             }

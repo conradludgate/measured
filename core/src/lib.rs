@@ -29,7 +29,7 @@
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! metrics.collect_into(&mut text_encoder);
+//! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
 //! assert_eq!(
@@ -88,7 +88,7 @@
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! metrics.collect_into(&mut text_encoder);
+//! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
 //! assert_eq!(
@@ -149,7 +149,7 @@
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! metrics.collect_into(&mut text_encoder);
+//! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
 //! assert_eq!(
@@ -199,7 +199,7 @@
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = TextEncoder::new();
-//! metrics.collect_into(&mut text_encoder);
+//! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
 //! assert_eq!(
