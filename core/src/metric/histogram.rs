@@ -171,8 +171,8 @@ impl<L: LabelGroupSet + Default, const N: usize> HistogramVec<L, N> {
         Self::new_metric_vec(L::default(), t)
     }
 
-    pub fn new_sparse(t: Thresholds<N>) -> Self {
-        Self::new_sparse_metric_vec(L::default(), t)
+    pub fn with_capacity_and_thresholds(capacity: usize, t: Thresholds<N>) -> Self {
+        Self::with_capacity_and_metadata(L::default(), capacity, t)
     }
 }
 

@@ -41,20 +41,27 @@ impl AppMetrics {
     pub fn new(paths: lasso::RodeoReader) -> Self {
         let path = Arc::new(paths);
         Self {
-            http_requests: CounterVec::new_sparse(HttpRequestsSet {
-                method: StaticLabelSet::new(),
-                path: path.clone(),
-            }),
-            http_responses: CounterVec::new_sparse(HttpResponsesSet {
-                method: StaticLabelSet::new(),
-                status: StaticLabelSet::new(),
-                path: path.clone(),
-            }),
-            http_request_duration: HistogramVec::new_sparse_metric_vec(
+            http_requests: CounterVec::with_capacity(
                 HttpRequestsSet {
                     method: StaticLabelSet::new(),
                     path: path.clone(),
                 },
+                0,
+            ),
+            http_responses: CounterVec::with_capacity(
+                HttpResponsesSet {
+                    method: StaticLabelSet::new(),
+                    status: StaticLabelSet::new(),
+                    path: path.clone(),
+                },
+                0,
+            ),
+            http_request_duration: HistogramVec::with_capacity_and_metadata(
+                HttpRequestsSet {
+                    method: StaticLabelSet::new(),
+                    path: path.clone(),
+                },
+                0,
                 Thresholds::exponential_buckets(0.1, 2.0),
             ),
         }

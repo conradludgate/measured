@@ -65,8 +65,8 @@ impl<L: LabelGroupSet> CounterVec<L> {
     ///
     /// Sparse vecs are recommended if your max cardinality is quite high but the expected cardinality is low.
     /// The trade-off is that sparse vecs are not lock-free, although effort has been made to keep lock contention to a minimum.
-    pub fn new_sparse(label_set: L) -> Self {
-        Self::new_sparse_metric_vec(label_set, ())
+    pub fn with_capacity(label_set: L, capacity: usize) -> Self {
+        Self::with_capacity_and_metadata(label_set, capacity, ())
     }
 
     /// Increment the counter value by 1, keyed by the label group

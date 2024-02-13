@@ -45,7 +45,7 @@ fn measured_sparse(bencher: Bencher) {
         kind: StaticLabelSet::new(),
         route: Rodeo::from_iter(routes()).into_reader(),
     };
-    let counter_vec = measured::CounterVec::new_sparse(error_set);
+    let counter_vec = measured::CounterVec::with_capacity(error_set, 18);
 
     thread_local! {
         static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());

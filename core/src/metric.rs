@@ -86,11 +86,15 @@ struct DashMap<K, V> {
     shift: u32,
 }
 
-fn new_sparse<U: Hash + Eq, M: MetricType>() -> DashMap<U, M> {
+fn new_sparse<U: Hash + Eq, M: MetricType>(capacity: usize) -> DashMap<U, M> {
     let shards = default_shard_amount();
+    let cap = (capacity + shards - 1) / shards;
     let mut vec = Vec::with_capacity(shards);
     vec.resize_with(shards, || {
-        parking_lot::RwLock::new(HashMap::with_hasher(BuildHasherDefault::default()))
+        parking_lot::RwLock::new(HashMap::with_capacity_and_hasher(
+            cap,
+            BuildHasherDefault::default(),
+        ))
     });
     DashMap {
         shards: vec.into_boxed_slice(),
@@ -107,7 +111,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 vec.resize_with(c, M::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
-            None => VecInner::Sparse(new_sparse()),
+            None => VecInner::Sparse(new_sparse(0)),
         };
 
         Self {
@@ -117,10 +121,10 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         }
     }
 
-    /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
-    pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+    /// Create a new sparse metric vec with the given capacity
+    pub fn with_capacity_and_metadata(label_set: L, capacity: usize, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(new_sparse()),
+            metrics: VecInner::Sparse(new_sparse(capacity)),
             metadata,
             label_set,
         }

@@ -350,10 +350,13 @@ This is on a new line"#,
 
     #[test]
     fn text_encoding() {
-        let requests = CounterVec::new_sparse(RequestLabelSet {
-            code: StaticLabelSet::new(),
-            method: StaticLabelSet::new(),
-        });
+        let requests = CounterVec::with_capacity(
+            RequestLabelSet {
+                code: StaticLabelSet::new(),
+                method: StaticLabelSet::new(),
+            },
+            2,
+        );
 
         let labels = RequestLabels {
             method: Method::Post,
