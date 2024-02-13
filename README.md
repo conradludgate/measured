@@ -27,11 +27,11 @@ counters              fastest       │ slowest       │ median        │ mean
 ```
 Timer precision: 41 ns
 counters              fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ measured           697 ns        │ 814.7 ns      │ 807.4 ns      │ 803.8 ns      │ 504     │ 50400000
-├─ measured_sparse    177 ns        │ 449.8 ns      │ 414.4 ns      │ 408.6 ns      │ 504     │ 50400000
-├─ metrics            881.8 ns      │ 1.067 µs      │ 999.9 ns      │ 995.9 ns      │ 504     │ 50400000
-├─ prometheus         3.883 µs      │ 4.137 µs      │ 4.099 µs      │ 4.087 µs      │ 504     │ 50400000
-╰─ prometheus_client  3.179 µs      │ 3.854 µs      │ 3.818 µs      │ 3.793 µs      │ 504     │ 50400000
+├─ measured           29.99 ns      │ 805.1 ns      │ 791.5 ns      │ 777.8 ns      │ 504     │ 50400000
+├─ measured_sparse    322.3 ns      │ 451.5 ns      │ 408.4 ns      │ 405.5 ns      │ 504     │ 50400000
+├─ metrics            887.6 ns      │ 1.079 µs      │ 1.005 µs      │ 1 µs          │ 504     │ 50400000
+├─ prometheus         3.37 µs       │ 4.222 µs      │ 4.156 µs      │ 4.126 µs      │ 504     │ 50400000
+╰─ prometheus_client  2.872 µs      │ 3.916 µs      │ 3.86 µs       │ 3.843 µs      │ 504     │ 50400000
 ```
 
 ### Histograms
@@ -63,16 +63,16 @@ histograms               fastest       │ slowest       │ median        │ m
 Timer precision: 41 ns
 histograms               fastest       │ slowest       │ median        │ mean          │ samples │ iters
 ├─ fixed_cardinality                   │               │               │               │         │
-│  ├─ measured           442 ns        │ 552.6 ns      │ 542.9 ns      │ 539.3 ns      │ 504     │ 50400000
-│  ├─ measured_sparse    415 ns        │ 535.4 ns      │ 489.2 ns      │ 485.6 ns      │ 504     │ 50400000
-│  ├─ metrics            747.1 ns      │ 1.353 µs      │ 1.216 µs      │ 1.212 µs      │ 504     │ 50400000
-│  ├─ prometheus         3.115 µs      │ 3.702 µs      │ 3.611 µs      │ 3.597 µs      │ 504     │ 50400000
-│  ╰─ prometheus_client  2.152 µs      │ 3.752 µs      │ 3.692 µs      │ 3.669 µs      │ 504     │ 50400000
+│  ├─ measured           444.7 ns      │ 556.9 ns      │ 546 ns        │ 542.7 ns      │ 504     │ 50400000
+│  ├─ measured_sparse    403.7 ns      │ 514.4 ns      │ 482.9 ns      │ 479.3 ns      │ 504     │ 50400000
+│  ├─ metrics            998.4 ns      │ 1.46 µs       │ 1.133 µs      │ 1.136 µs      │ 504     │ 50400000
+│  ├─ prometheus         2.873 µs      │ 3.754 µs      │ 3.61 µs       │ 3.568 µs      │ 504     │ 50400000
+│  ╰─ prometheus_client  2.372 µs      │ 3.98 µs       │ 3.842 µs      │ 3.735 µs      │ 504     │ 50400000
 ╰─ no_cardinality                      │               │               │               │         │
-   ├─ measured           3.897 µs      │ 4.541 µs      │ 4.426 µs      │ 4.396 µs      │ 504     │ 50400000
-   ├─ metrics            3.172 µs      │ 7.499 µs      │ 6.905 µs      │ 6.832 µs      │ 504     │ 50400000
-   ├─ prometheus         3.179 µs      │ 4.129 µs      │ 3.889 µs      │ 3.881 µs      │ 504     │ 50400000
-   ╰─ prometheus_client  1.407 µs      │ 1.628 µs      │ 1.583 µs      │ 1.574 µs      │ 504     │ 50400000
+   ├─ measured           4.151 µs      │ 4.598 µs      │ 4.524 µs      │ 4.493 µs      │ 504     │ 50400000
+   ├─ metrics            4.921 µs      │ 6.678 µs      │ 5.915 µs      │ 5.938 µs      │ 504     │ 50400000
+   ├─ prometheus         2.279 µs      │ 4.347 µs      │ 4.154 µs      │ 4.088 µs      │ 504     │ 50400000
+   ╰─ prometheus_client  1.399 µs      │ 1.64 µs       │ 1.587 µs      │ 1.572 µs      │ 504     │ 50400000
 ```
 
 ### Memory
@@ -140,44 +140,44 @@ memory                fastest       │ slowest       │ median        │ mean
 ```
 Timer precision: 41 ns
 memory                fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ measured           0 ns          │ 743.4 µs      │ 290.7 ns      │ 316.1 ns      │ 5000000 │ 5000000
+├─ measured           0 ns          │ 326.7 µs      │ 291.7 ns      │ 329.1 ns      │ 5000000 │ 5000000
 │                     alloc:        │               │               │               │         │
 │                       0           │ 1             │ 0             │ 0             │         │
-│                       0 B         │ 3.276 MB      │ 0 B           │ 132.5 B       │         │
+│                       0 B         │ 819.2 KB      │ 0 B           │ 48.64 B       │         │
 │                     dealloc:      │               │               │               │         │
 │                       0           │ 1             │ 0             │ 0             │         │
-│                       0 B         │ 1.638 MB      │ 0 B           │ 62.91 B       │         │
-├─ metrics            208.7 ns      │ 58.94 ms      │ 499.7 ns      │ 919.3 ns      │ 5000000 │ 5000000
+│                       0 B         │ 409.6 KB      │ 0 B           │ 20.97 B       │         │
+├─ metrics            207.7 ns      │ 55.37 ms      │ 540.7 ns      │ 930.8 ns      │ 5000000 │ 5000000
 │                     alloc:        │               │               │               │         │
-│                       3           │ 8             │ 7             │ 6.635         │         │
-│                       188 B       │ 42.46 MB      │ 398 B         │ 648.1 B       │         │
+│                       3           │ 8             │ 5             │ 6.635         │         │
+│                       183 B       │ 42.46 MB      │ 290 B         │ 648.1 B       │         │
 │                     dealloc:      │               │               │               │         │
 │                       4           │ 5             │ 4             │ 4             │         │
-│                       204 B       │ 21.23 MB      │ 209 B         │ 341.8 B       │         │
-├─ prometheus         40.7 ns       │ 54.41 ms      │ 666.7 ns      │ 793.3 ns      │ 5000000 │ 5000000
+│                       191 B       │ 21.23 MB      │ 204 B         │ 341.8 B       │         │
+├─ prometheus         82.7 ns       │ 58.11 ms      │ 707.7 ns      │ 802.6 ns      │ 5000000 │ 5000000
 │                     alloc:        │               │               │               │         │
 │                       0           │ 21            │ 20            │ 18.17         │         │
-│                       0 B         │ 142.6 MB      │ 828 B         │ 810.5 B       │         │
+│                       0 B         │ 142.6 MB      │ 832 B         │ 810.5 B       │         │
 │                     dealloc:      │               │               │               │         │
 │                       0           │ 7             │ 6             │ 5.453         │         │
 │                       0 B         │ 71.3 MB       │ 355 B         │ 351.1 B       │         │
 │                     grow:         │               │               │               │         │
 │                       0           │ 3             │ 3             │ 2.726         │         │
 │                       0 B         │ 20 B          │ 20 B          │ 18.17 B       │         │
-╰─ prometheus_client  40.7 ns       │ 323.5 ms      │ 249.7 ns      │ 383 ns        │ 5000000 │ 5000000
+╰─ prometheus_client  41.7 ns       │ 326.9 ms      │ 249.7 ns      │ 398 ns        │ 5000000 │ 5000000
                       alloc:        │               │               │               │         │
                         0           │ 3             │ 2             │ 1.817         │         │
                         0 B         │ 478.1 MB      │ 36 B          │ 225.3 B       │         │
                       dealloc:      │               │               │               │         │
                         1           │ 2             │ 1             │ 1             │         │
-                        17 B        │ 239 MB        │ 17 B          │ 112 B         │         │
+                        16 B        │ 239 MB        │ 16 B          │ 112 B         │         │
 ```
 
 ```
 Timer precision: 41 ns
 memory                fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ measured           58.88 ns      │ 14.49 µs      │ 228.8 ns      │ 252.1 ns      │ 50000   │ 5000000
-├─ metrics            376.7 ns      │ 994.9 µs      │ 582.6 ns      │ 919.6 ns      │ 50000   │ 5000000
-├─ prometheus         534.2 ns      │ 548.8 µs      │ 667.2 ns      │ 708.9 ns      │ 50000   │ 5000000
-╰─ prometheus_client  114.2 ns      │ 3.079 ms      │ 248 ns        │ 360.6 ns      │ 50000   │ 5000000
+├─ measured           162.6 ns      │ 18.38 µs      │ 204.2 ns      │ 225.2 ns      │ 50000   │ 5000000
+├─ metrics            391.3 ns      │ 974.9 µs      │ 564.7 ns      │ 882 ns        │ 50000   │ 5000000
+├─ prometheus         551.3 ns      │ 545.4 µs      │ 670.9 ns      │ 715.4 ns      │ 50000   │ 5000000
+╰─ prometheus_client  115.1 ns      │ 3.121 ms      │ 256.7 ns      │ 374.7 ns      │ 50000   │ 5000000
 ```
