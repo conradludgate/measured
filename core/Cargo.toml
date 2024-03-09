@@ -53,6 +53,10 @@ harness = false
 name = "memory"
 harness = false
 
+[[bench]]
+name = "encoding"
+harness = false
+
 # Properly document all features on docs.rs
 [package.metadata.docs.rs]
 all-features = true

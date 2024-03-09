@@ -181,3 +181,34 @@ memory                fastest       │ slowest       │ median        │ mean
 ├─ prometheus         534.2 ns      │ 548.8 µs      │ 667.2 ns      │ 708.9 ns      │ 50000   │ 5000000
 ╰─ prometheus_client  114.2 ns      │ 3.079 ms      │ 248 ns        │ 360.6 ns      │ 50000   │ 5000000
 ```
+
+### Encoding
+
+Encode a counter family into a prometheus text format. With the extra dimension of number of counters in the counter family.
+
+#### Macbook Pro M2 Max
+
+```
+Timer precision: 41 ns
+encoding              fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ measured                         │               │               │               │         │
+│  ├─ 100             3.582 µs      │ 5.728 µs      │ 3.645 µs      │ 3.742 µs      │ 100     │ 1000
+│  ├─ 1000            36.79 µs      │ 46.49 µs      │ 38.23 µs      │ 38.65 µs      │ 100     │ 1000
+│  ├─ 10000           357 µs        │ 412.5 µs      │ 366.8 µs      │ 367.4 µs      │ 100     │ 1000
+│  ╰─ 100000          3.758 ms      │ 4.097 ms      │ 3.868 ms      │ 3.89 ms       │ 100     │ 1000
+├─ metrics                          │               │               │               │         │
+│  ├─ 100             65.81 µs      │ 72.24 µs      │ 66.48 µs      │ 66.74 µs      │ 100     │ 1000
+│  ├─ 1000            762.1 µs      │ 905.8 µs      │ 774.7 µs      │ 795.2 µs      │ 100     │ 1000
+│  ├─ 10000           7.736 ms      │ 8.829 ms      │ 7.822 ms      │ 7.867 ms      │ 100     │ 1000
+│  ╰─ 100000          185.1 ms      │ 241.1 ms      │ 222.6 ms      │ 220.4 ms      │ 100     │ 1000
+├─ prometheus                       │               │               │               │         │
+│  ├─ 100             27.82 µs      │ 29.99 µs      │ 28.89 µs      │ 28.84 µs      │ 100     │ 1000
+│  ├─ 1000            455.2 µs      │ 698.2 µs      │ 496.2 µs      │ 498.9 µs      │ 100     │ 1000
+│  ├─ 10000           4.645 ms      │ 5.095 ms      │ 4.74 ms       │ 4.755 ms      │ 100     │ 1000
+│  ╰─ 100000          81.43 ms      │ 101 ms        │ 93.82 ms      │ 92.88 ms      │ 100     │ 1000
+╰─ prometheus_client                │               │               │               │         │
+   ├─ 100             7.195 µs      │ 10.6 µs       │ 7.245 µs      │ 7.453 µs      │ 100     │ 1000
+   ├─ 1000            73.99 µs      │ 87.81 µs      │ 76.66 µs      │ 77.47 µs      │ 100     │ 1000
+   ├─ 10000           744 µs        │ 789.1 µs      │ 765.1 µs      │ 764.3 µs      │ 100     │ 1000
+   ╰─ 100000          7.531 ms      │ 8.1 ms        │ 7.714 ms      │ 7.74 ms       │ 100     │ 1000
+```
