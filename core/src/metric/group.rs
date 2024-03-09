@@ -5,6 +5,7 @@ use super::{
     MetricEncoding,
 };
 
+/// Base trait of a metric encoder.
 pub trait Encoding {
     /// Write the help text for a metric
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str);
@@ -16,7 +17,9 @@ impl<E: Encoding> Encoding for &mut E {
     }
 }
 
+/// A `MetricGroup` defines a group of [`MetricFamilyEncoding`s](super::MetricFamilyEncoding)
 pub trait MetricGroup<Enc: Encoding> {
+    /// Collect the group of metric families into the encoder
     fn collect_group_into(&self, enc: &mut Enc);
 }
 

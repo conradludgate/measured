@@ -12,7 +12,7 @@ pub struct MetricGroup {
     ident: Ident,
     fields: Vec<MetricGroupField>,
     generics: Generics,
-    inputs: Option<Punctuated<FnArg, Token![,]>>
+    inputs: Option<Punctuated<FnArg, Token![,]>>,
 }
 
 #[derive(Clone)]

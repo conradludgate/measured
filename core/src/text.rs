@@ -117,7 +117,7 @@ impl TextEncoder {
         }
         impl LabelVisitor for Visitor<'_> {
             type Output = ();
-            fn write_int(self, x: u64) {
+            fn write_int(self, x: i64) {
                 self.write_str(itoa::Buffer::new().format(x))
             }
 
@@ -206,7 +206,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
 
         impl LabelGroup for HistogramLabelLe {
             fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
-                const LE: &LabelName = LabelName::from_static("le");
+                const LE: &LabelName = LabelName::from_str("le");
                 v.write_value(LE, &F64(self.le));
             }
         }
@@ -278,7 +278,7 @@ impl MetricEncoding<TextEncoder> for GaugeState {
         enc.write_metric(
             &name,
             labels,
-            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
+            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed)),
         );
     }
 }
@@ -369,9 +369,9 @@ This is on a new line"#,
 
         let mut encoder = TextEncoder::default();
 
-        let name = MetricName::from_static("http_request").with_suffix(Total);
+        let name = MetricName::from_str("http_request").with_suffix(Total);
         encoder.write_help(&name, "The total number of HTTP requests.");
-        requests.collect_into(name, &mut encoder);
+        requests.collect_family_into(name, &mut encoder);
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
@@ -396,9 +396,9 @@ http_request_total{method="get",code="400"} 3
 
         let mut encoder = TextEncoder::default();
 
-        let name = MetricName::from_static("http_request_duration_seconds");
+        let name = MetricName::from_str("http_request_duration_seconds");
         encoder.write_help(name, "A histogram of the request duration.");
-        histogram.collect_into(name, &mut encoder);
+        histogram.collect_family_into(name, &mut encoder);
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(

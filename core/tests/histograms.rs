@@ -13,9 +13,9 @@ fn measured() {
         h.observe(*l)
     }
 
-    let metric = MetricName::from_static("http_request_errors");
+    let metric = MetricName::from_str("http_request_errors");
     encoder.write_help(metric, "help text");
-    h.collect_into(metric, &mut encoder);
+    h.collect_family_into(metric, &mut encoder);
     assert_eq!(
         encoder.finish(),
         r#"# HELP http_request_errors help text

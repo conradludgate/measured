@@ -10,7 +10,7 @@ use crate::{
     label::{LabelGroup, LabelGroupSet, NoLabels},
     MetricGroup,
 };
-use hashbrown::HashMap;
+use hashbrown::{hash_map::RawEntryMut, HashMap};
 use parking_lot::RwLockWriteGuard;
 use rustc_hash::FxHasher;
 
@@ -80,9 +80,8 @@ fn default_shard_amount() -> usize {
     })
 }
 
-type FxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 struct DashMap<K, V> {
-    shards: Box<[parking_lot::RwLock<FxHashMap<K, V>>]>,
+    shards: Box<[parking_lot::RwLock<hashbrown::HashMap<K, V, ()>>]>,
     shift: u32,
 }
 
@@ -90,7 +89,7 @@ fn new_sparse<U: Hash + Eq, M: MetricType>() -> DashMap<U, M> {
     let shards = default_shard_amount();
     let mut vec = Vec::with_capacity(shards);
     vec.resize_with(shards, || {
-        parking_lot::RwLock::new(HashMap::with_hasher(BuildHasherDefault::default()))
+        parking_lot::RwLock::new(HashMap::with_hasher(()))
     });
     DashMap {
         shards: vec.into_boxed_slice(),
@@ -172,9 +171,12 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                     let mut shard = shard.write();
                     let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
                     match entry {
-                        hashbrown::hash_map::RawEntryMut::Occupied(_) => {}
-                        hashbrown::hash_map::RawEntryMut::Vacant(v) => {
-                            v.insert_hashed_nocheck(id.hash, id.id, M::default());
+                        RawEntryMut::Occupied(_) => {}
+                        RawEntryMut::Vacant(v) => {
+                            let hasher = BuildHasherDefault::<FxHasher>::default();
+                            v.insert_with_hasher(id.hash, id.id, M::default(), |k| {
+                                hasher.hash_one(k)
+                            });
                         }
                     }
                     RwLockWriteGuard::downgrade(shard)
@@ -203,11 +205,17 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
             VecInner::Sparse(metrics) => {
                 let shard = &mut metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
 
-                let (_, v) = shard
+                let entry = shard
                     .get_mut()
                     .raw_entry_mut()
-                    .from_hash(id.hash, |k| *k == id.id)
-                    .or_insert_with(|| (id.id, M::default()));
+                    .from_hash(id.hash, |k| *k == id.id);
+                let (_, v) = match entry {
+                    RawEntryMut::Occupied(o) => o.into_key_value(),
+                    RawEntryMut::Vacant(v) => {
+                        let hasher = BuildHasherDefault::<FxHasher>::default();
+                        v.insert_with_hasher(id.hash, id.id, M::default(), |k| hasher.hash_one(k))
+                    }
+                };
 
                 MetricMut(v, &mut self.metadata)
             }
@@ -250,13 +258,13 @@ pub trait MetricEncoding<T>: MetricType {
 
 pub trait MetricFamilyEncoding<T> {
     /// Collect these metric values into the given encoder with the given metric name
-    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T);
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T);
 }
 
 impl<M: MetricFamilyEncoding<T>, T> MetricFamilyEncoding<T> for Option<M> {
-    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
         if let Some(this) = self {
-            this.collect_into(name, enc);
+            this.collect_family_into(name, enc);
         }
     }
 }
@@ -271,7 +279,7 @@ impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Option<M> {
 
 impl<M: MetricEncoding<T>, T> MetricFamilyEncoding<T> for Metric<M> {
     /// Collect this metric value into the given encoder with the given metric name
-    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
         M::write_type(&name, enc);
         self.metric
             .collect_into(&self.metadata, NoLabels, name, enc);
@@ -279,7 +287,7 @@ impl<M: MetricEncoding<T>, T> MetricFamilyEncoding<T> for Metric<M> {
 }
 
 impl<M: MetricEncoding<T>, L: LabelGroupSet, T> MetricFamilyEncoding<T> for MetricVec<M, L> {
-    fn collect_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
         M::write_type(&name, enc);
         match &self.metrics {
             VecInner::Dense(m) => {

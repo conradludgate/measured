@@ -144,7 +144,7 @@ struct StatusCode(axum::http::StatusCode);
 
 impl LabelValue for StatusCode {
     fn visit<V: label::LabelVisitor>(&self, v: V) -> V::Output {
-        v.write_int(self.0.as_u16() as u64)
+        v.write_int(self.0.as_u16() as i64)
     }
 }
 

@@ -27,8 +27,11 @@ pub trait MetricNameEncoder {
 /// Error returned by [`MetricName::try_from`]
 #[derive(Debug)]
 pub enum InvalidMetricName {
+    /// The metric name contained invalid characters
     InvalidChars,
+    /// The metric name was empty
     Empty,
+    /// The metric name started with a number
     StartsWithNumber,
 }
 
@@ -46,12 +49,12 @@ impl core::fmt::Display for InvalidMetricName {
 
 impl std::error::Error for InvalidMetricName {}
 
-/// Represents a string-based [`MetricName`]
+/// Represents a string-based [`MetricNameEncoder`]
+///
+/// Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex `[a-zA-Z_:][a-zA-Z0-9_:]*`.
 pub struct MetricName(str);
 
-pub(crate) const fn assert_metric_name(name: &'static str) {
-    // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
-
+const fn assert_metric_name(name: &str) {
     assert!(!name.is_empty(), "string should not be empty");
 
     let mut i = 0;
@@ -70,12 +73,12 @@ pub(crate) const fn assert_metric_name(name: &'static str) {
 }
 
 impl MetricName {
-    /// Construct a [`MetricNameEncoder`] from a static string, can be used in const expressions.
+    /// Construct a [`MetricName`] from a string, can be used in const expressions.
     ///
     /// # Panics
     /// Will panic if the string contains invalid characters
     #[must_use]
-    pub const fn from_static(value: &'static str) -> &'static Self {
+    pub const fn from_str(value: &str) -> &Self {
         assert_metric_name(value);
 
         // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
@@ -87,7 +90,7 @@ impl MetricName {
     #[must_use]
     pub const fn in_namespace(&self, ns: &'static str) -> WithNamespace<&'_ Self> {
         WithNamespace {
-            namespace: MetricName::from_static(ns),
+            namespace: MetricName::from_str(ns),
             inner: self,
         }
     }
@@ -158,7 +161,7 @@ pub struct WithNamespace<T: ?Sized> {
 impl<T> WithNamespace<T> {
     pub const fn new(ns: &'static str, inner: T) -> Self {
         Self {
-            namespace: MetricName::from_static(ns),
+            namespace: MetricName::from_str(ns),
             inner,
         }
     }

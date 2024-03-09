@@ -464,8 +464,8 @@ pub use metric::group::MetricGroup;
 ///
 /// // sample the histogram and encode the value to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = MetricName::from_static("my_first_histogram");
-/// histogram.collect_into(name, &mut text_encoder);
+/// let name = MetricName::from_str("my_first_histogram");
+/// histogram.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
 pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
@@ -510,8 +510,8 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 ///
 /// // sample the histograms and encode the values to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = MetricName::from_static("my_first_histogram");
-/// histograms.collect_into(name, &mut text_encoder);
+/// let name = MetricName::from_str("my_first_histogram");
+/// histograms.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
 pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
@@ -531,8 +531,8 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 ///
 /// // sample the counter and encode the value to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = MetricName::from_static("my_first_counter");
-/// counter.collect_into(name, &mut text_encoder);
+/// let name = MetricName::from_str("my_first_counter");
+/// counter.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
 pub type Counter = Metric<CounterState>;
@@ -573,8 +573,8 @@ pub type Counter = Metric<CounterState>;
 ///
 /// // sample the counters and encode the values to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = MetricName::from_static("my_first_counter");
-/// counters.collect_into(name, &mut text_encoder);
+/// let name = MetricName::from_str("my_first_counter");
+/// counters.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
 pub type CounterVec<L> = MetricVec<CounterState, L>;
@@ -594,8 +594,8 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 ///
 /// // sample the gauge and encode the value to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = MetricName::from_static("my_first_gauge");
-/// gauge.collect_into(name, &mut text_encoder);
+/// let name = MetricName::from_str("my_first_gauge");
+/// gauge.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
 pub type Gauge = Metric<GaugeState>;
@@ -636,8 +636,8 @@ pub type Gauge = Metric<GaugeState>;
 ///
 /// // sample the gauges and encode the values to a textual format.
 /// let mut text_encoder = TextEncoder::new();
-/// let name = MetricName::from_static("my_first_gauge");
-/// gauges.collect_into(name, &mut text_encoder);
+/// let name = MetricName::from_str("my_first_gauge");
+/// gauges.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
 /// ```
 pub type GaugeVec<L> = MetricVec<GaugeState, L>;

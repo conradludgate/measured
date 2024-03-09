@@ -60,9 +60,9 @@ impl ToTokens for MetricGroup {
                     });
 
                     quote_spanned! { x.span =>
-                        const #ident: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_static(#name_string);
+                        const #ident: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
                         #help
-                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_into(&self.#name, #ident, enc);
+                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_family_into(&self.#name, #ident, enc);
                     }
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {

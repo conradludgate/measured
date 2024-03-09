@@ -31,6 +31,7 @@ pub trait LabelGroup {
 /// The `LabelGroup` pairs might need some extra data in order to encode/decode the values into their
 /// compressed integer form.
 pub trait LabelGroupSet {
+    /// The [`LabelGroup`] that this set is able to encode/decode
     type Group<'a>: LabelGroup;
 
     /// The number of possible label-pairs the associated group can represent

@@ -3,6 +3,8 @@ use core::marker::PhantomData;
 use crate::LabelGroup;
 
 use super::LabelGroupSet;
+
+/// `StaticLabelSet` is a [`LabelSet`] for a [`FixedCardinalityLabel`]
 pub struct StaticLabelSet<T>(PhantomData<T>);
 
 impl<T> Default for StaticLabelSet<T> {
@@ -12,6 +14,7 @@ impl<T> Default for StaticLabelSet<T> {
 }
 
 impl<T> StaticLabelSet<T> {
+    /// Create a new `StaticLabelSet`
     pub const fn new() -> Self {
         Self(PhantomData)
     }
@@ -74,7 +77,7 @@ pub struct LabelTestVisitor;
 
 impl LabelVisitor for LabelTestVisitor {
     type Output = String;
-    fn write_int(self, x: u64) -> String {
+    fn write_int(self, x: i64) -> String {
         self.write_str(itoa::Buffer::new().format(x))
     }
 
@@ -99,14 +102,20 @@ impl LabelVisitor for LabelTestVisitor {
 
 /// A trait for visiting the value of a label
 pub trait LabelVisitor {
+    /// Output of this visitor
     type Output;
-    fn write_int(self, x: u64) -> Self::Output;
+
+    /// Write an integer value to this visitor
+    fn write_int(self, x: i64) -> Self::Output;
+    /// Write a floating point value to this visitor
     fn write_float(self, x: f64) -> Self::Output;
+    /// Write a string value to this visitor
     fn write_str(self, x: &str) -> Self::Output;
 }
 
 /// A type that contains a label value
 pub trait LabelValue {
+    /// Visit this value
     fn visit<V: LabelVisitor>(&self, v: V) -> V::Output;
 }
 

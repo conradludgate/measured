@@ -1,4 +1,4 @@
-use core::sync::atomic::AtomicU64;
+use core::sync::atomic::AtomicI64;
 
 use crate::{label::LabelGroupSet, Gauge, GaugeVec};
 
@@ -7,7 +7,7 @@ use super::{MetricRef, MetricType};
 #[derive(Default)]
 /// The internal state that is used by [`Gauge`] and [`GaugeVec`]
 pub struct GaugeState {
-    pub count: AtomicU64,
+    pub count: AtomicI64,
 }
 
 /// A reference to a specific gauge.
@@ -22,7 +22,7 @@ impl GaugeRef<'_> {
     }
 
     /// Increment the gauge value by `x`
-    pub fn inc_by(self, x: u64) {
+    pub fn inc_by(self, x: i64) {
         self.0
             .count
             .fetch_add(x, core::sync::atomic::Ordering::Relaxed);
@@ -36,14 +36,14 @@ impl GaugeRef<'_> {
     }
 
     /// Decrement the gauge value by `x`
-    pub fn dec_by(self, x: u64) {
+    pub fn dec_by(self, x: i64) {
         self.0
             .count
             .fetch_sub(x, core::sync::atomic::Ordering::Relaxed);
     }
 
     /// Set the gauge value to `x`
-    pub fn set(self, x: u64) {
+    pub fn set(self, x: i64) {
         self.0.count.store(x, core::sync::atomic::Ordering::Relaxed);
     }
 }
@@ -84,7 +84,7 @@ impl<L: LabelGroupSet> GaugeVec<L> {
     }
 
     /// Increment the gauge value by `y`, keyed by the label group
-    pub fn inc_by(&self, label: L::Group<'_>, y: u64) {
+    pub fn inc_by(&self, label: L::Group<'_>, y: i64) {
         self.get_metric(
             self.with_labels(label)
                 .expect("label group should be in the set"),
@@ -102,7 +102,7 @@ impl<L: LabelGroupSet> GaugeVec<L> {
     }
 
     /// Decrement the gauge value by `y`, keyed by the label group
-    pub fn dec_by(&self, label: L::Group<'_>, y: u64) {
+    pub fn dec_by(&self, label: L::Group<'_>, y: i64) {
         self.get_metric(
             self.with_labels(label)
                 .expect("label group should be in the set"),
@@ -111,7 +111,7 @@ impl<L: LabelGroupSet> GaugeVec<L> {
     }
 
     /// Set the gauge value to `y`, keyed by the label group
-    pub fn set(&self, label: L::Group<'_>, y: u64) {
+    pub fn set(&self, label: L::Group<'_>, y: i64) {
         self.get_metric(
             self.with_labels(label)
                 .expect("label group should be in the set"),
@@ -127,7 +127,7 @@ impl Gauge {
         Self {
             metadata: (),
             metric: GaugeState {
-                count: AtomicU64::new(0),
+                count: AtomicI64::new(0),
             },
         }
     }

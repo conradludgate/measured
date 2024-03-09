@@ -37,7 +37,7 @@ impl ToTokens for FixedCardinalityLabel {
             quote!{
                 impl #krate::label::LabelGroup for #ident {
                     fn visit_values(&self, v: &mut impl #krate::label::LabelGroupVisitor) {
-                        const NAME: &#krate::label::LabelName = #krate::label::LabelName::from_static(#s);
+                        const NAME: &#krate::label::LabelName = #krate::label::LabelName::from_str(#s);
                         v.write_value(NAME, self);
                     }
                 }

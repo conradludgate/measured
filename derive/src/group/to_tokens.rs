@@ -22,7 +22,7 @@ impl ToTokens for LabelGroup {
             let name_string = name.to_string();
             let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
             quote_spanned! { x.span =>
-                const #ident: &#krate::label::LabelName = #krate::label::LabelName::from_static(#name_string);
+                const #ident: &#krate::label::LabelName = #krate::label::LabelName::from_str(#name_string);
                 #krate::label::LabelGroupVisitor::write_value(v, #ident, &self.#name);
             }
         });
