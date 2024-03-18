@@ -1,11 +1,11 @@
-use bytes::BytesMut;
+use std::io::Write;
 
 /// `MetricName` represents a type that can be encoded into the name of a metric when collected.
 pub trait MetricNameEncoder {
     /// Encoded this name into the given bytes buffer according to the Prometheus metric name encoding specification.
     ///
     /// See <https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels>
-    fn encode_text(&self, b: &mut BytesMut);
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()>;
 
     /// Adds a semantic suffix to this metric name.
     fn with_suffix<S: Suffix>(self, suffix: S) -> WithSuffix<S, Self>
@@ -130,8 +130,8 @@ impl<'a> TryFrom<&'a str> for &'a MetricName {
 }
 
 impl MetricNameEncoder for MetricName {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(self.0.as_bytes());
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(self.0.as_bytes())
     }
 }
 
@@ -143,12 +143,12 @@ impl MetricNameEncoder for MetricName {
 /// * [`Sum`] - Used internally for histograms
 /// * [`Bucket`] - Used internally for histograms
 pub trait Suffix {
-    fn encode_text(&self, b: &mut BytesMut);
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()>;
 }
 
 impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for &T {
-    fn encode_text(&self, b: &mut BytesMut) {
-        T::encode_text(self, b);
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        T::encode_text(self, b)
     }
 }
 
@@ -176,10 +176,10 @@ impl<T> WithNamespace<T> {
 }
 
 impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithNamespace<T> {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(self.namespace.0.as_bytes());
-        b.extend_from_slice(b"_");
-        self.inner.encode_text(b);
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(self.namespace.0.as_bytes())?;
+        b.write_all(b"_")?;
+        self.inner.encode_text(b)
     }
 }
 
@@ -189,9 +189,9 @@ pub struct WithSuffix<S, T: ?Sized> {
 }
 
 impl<S: Suffix, T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithSuffix<S, T> {
-    fn encode_text(&self, b: &mut BytesMut) {
-        self.metric_name.encode_text(b);
-        self.suffix.encode_text(b);
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        self.metric_name.encode_text(b)?;
+        self.suffix.encode_text(b)
     }
 }
 
@@ -205,25 +205,25 @@ pub struct Sum;
 pub struct Bucket;
 
 impl Suffix for Total {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_total");
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_total")
     }
 }
 
 impl Suffix for Count {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_count");
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_count")
     }
 }
 
 impl Suffix for Sum {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_sum");
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_sum")
     }
 }
 
 impl Suffix for Bucket {
-    fn encode_text(&self, b: &mut BytesMut) {
-        b.extend_from_slice(b"_bucket");
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_bucket")
     }
 }

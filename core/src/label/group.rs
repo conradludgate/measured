@@ -3,8 +3,11 @@ use std::sync::Arc;
 
 /// A trait for the label names and values in a label set
 pub trait LabelGroupVisitor {
+    /// Output of this visitor
+    type Output;
+
     /// Write a label name and label value to the visitor
-    fn write_value(&mut self, name: &super::LabelName, x: &impl super::LabelValue);
+    fn write_value(&mut self, name: &super::LabelName, x: &impl super::LabelValue) -> Self::Output;
 }
 
 /// `LabelGroup` represents a group of label-pairs

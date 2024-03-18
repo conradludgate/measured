@@ -1,6 +1,9 @@
 //! Prometheus Text based exporter
 
-use std::convert::Infallible;
+use std::{
+    convert::Infallible,
+    io::{self, Write},
+};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use memchr::memchr3_iter;
@@ -18,9 +21,9 @@ use crate::{
 };
 
 /// The prometheus text encoder helper
-pub struct BufferedTextEncoder {
+pub struct TextEncoder<W> {
     state: State,
-    b: BytesMut,
+    pub writer: W,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -39,27 +42,25 @@ pub enum MetricType {
     Untyped,
 }
 
-impl Default for BufferedTextEncoder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Encoding for BufferedTextEncoder {
-    type Err = Infallible;
+impl<W: Write> Encoding for TextEncoder<W> {
+    type Err = std::io::Error;
 
     /// Write the help line for a metric
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {
+    fn write_help(
+        &mut self,
+        name: impl MetricNameEncoder,
+        help: &str,
+    ) -> Result<(), std::io::Error> {
         if self.state == State::Metrics {
-            self.write_line();
+            self.write_line()?;
         }
         self.state = State::Info;
 
-        self.b.extend_from_slice(b"# HELP ");
-        name.encode_text(&mut self.b);
-        self.b.extend_from_slice(b" ");
-        self.b.extend_from_slice(help.as_bytes());
-        self.b.extend_from_slice(b"\n");
+        self.writer.write_all(b"# HELP ")?;
+        name.encode_text(&mut self.writer)?;
+        self.writer.write_all(b" ")?;
+        self.writer.write_all(help.as_bytes())?;
+        self.writer.write_all(b"\n")?;
         Ok(())
     }
 
@@ -69,17 +70,17 @@ impl Encoding for BufferedTextEncoder {
         name: impl MetricNameEncoder,
         labels: impl LabelGroup,
         value: MetricValue,
-    ) -> Result<(), Infallible> {
-        struct Visitor<'a> {
-            b: &'a mut BytesMut,
+    ) -> Result<(), std::io::Error> {
+        struct Visitor<'a, W> {
+            writer: &'a mut W,
         }
-        impl LabelVisitor for Visitor<'_> {
-            type Output = ();
-            fn write_int(self, x: i64) {
+        impl<W: Write> LabelVisitor for Visitor<'_, W> {
+            type Output = Result<(), std::io::Error>;
+            fn write_int(self, x: i64) -> Result<(), std::io::Error> {
                 self.write_str(itoa::Buffer::new().format(x))
             }
 
-            fn write_float(self, x: f64) {
+            fn write_float(self, x: f64) -> Result<(), std::io::Error> {
                 if x.is_infinite() {
                     if x.is_sign_positive() {
                         self.write_str("+Inf")
@@ -93,107 +94,121 @@ impl Encoding for BufferedTextEncoder {
                 }
             }
 
-            fn write_str(self, x: &str) {
-                self.b.extend_from_slice(b"=\"");
-                write_label_str_value(x, &mut *self.b);
-                self.b.extend_from_slice(b"\"");
+            fn write_str(self, x: &str) -> Result<(), std::io::Error> {
+                self.writer.write_all(b"=\"")?;
+                write_label_str_value(x, &mut *self.writer)?;
+                self.writer.write_all(b"\"")?;
+                Ok(())
             }
         }
 
-        struct GroupVisitor<'a> {
+        struct GroupVisitor<'a, W> {
             first: bool,
-            b: &'a mut BytesMut,
+            writer: &'a mut W,
         }
-        impl LabelGroupVisitor for GroupVisitor<'_> {
-            fn write_value(&mut self, name: &LabelName, x: &impl LabelValue) {
+        impl<W: Write> LabelGroupVisitor for GroupVisitor<'_, W> {
+            type Output = Result<(), std::io::Error>;
+            fn write_value(
+                &mut self,
+                name: &LabelName,
+                x: &impl LabelValue,
+            ) -> Result<(), std::io::Error> {
                 if self.first {
                     self.first = false;
-                    self.b.extend_from_slice(b"{");
+                    self.writer.write_all(b"{")?;
                 } else {
-                    self.b.extend_from_slice(b",");
+                    self.writer.write_all(b",")?;
                 }
-                self.b.extend_from_slice(name.as_str().as_bytes());
-                x.visit(Visitor { b: self.b });
+                self.writer.write_all(name.as_str().as_bytes())?;
+                x.visit(Visitor {
+                    writer: self.writer,
+                })
             }
         }
 
         self.state = State::Metrics;
-        name.encode_text(&mut self.b);
+        name.encode_text(&mut self.writer)?;
 
         let mut visitor = GroupVisitor {
             first: true,
-            b: &mut self.b,
+            writer: &mut self.writer,
         };
         labels.visit_values(&mut visitor);
         if !visitor.first {
-            self.b.extend_from_slice(b"}");
+            self.writer.write_all(b"}")?;
         }
-        self.b.extend_from_slice(b" ");
+        self.writer.write_all(b" ")?;
         match value {
             MetricValue::Int(x) => self
-                .b
-                .extend_from_slice(itoa::Buffer::new().format(x).as_bytes()),
+                .writer
+                .write_all(itoa::Buffer::new().format(x).as_bytes())?,
             MetricValue::Float(x) => self
-                .b
-                .extend_from_slice(ryu::Buffer::new().format(x).as_bytes()),
+                .writer
+                .write_all(ryu::Buffer::new().format(x).as_bytes())?,
         }
-        self.b.extend_from_slice(b"\n");
+        self.writer.write_all(b"\n")?;
         Ok(())
     }
 }
 
-impl BufferedTextEncoder {
+impl<W: Write> TextEncoder<W> {
     /// Create a new text encoder.
     ///
     /// This should ideally be cached and re-used between collections to reduce re-allocating
-    pub fn new() -> Self {
+    pub fn new(w: W) -> Self {
         Self {
             state: State::Info,
-            b: BytesMut::new(),
+            writer: w,
         }
     }
 
     /// Finish the text encoding and extract the bytes to send in a HTTP response.
-    pub fn finish(&mut self) -> Bytes {
+    pub fn flush(&mut self) -> std::io::Result<()> {
         self.state = State::Info;
-        self.b.split().freeze()
+        self.writer.flush()
     }
 
-    fn write_line(&mut self) {
-        self.b.put_u8(b'\n');
+    fn write_line(&mut self) -> std::io::Result<()> {
+        self.writer.write_all(b"\n")
     }
 
     /// Write the type line for a metric
-    pub fn write_type(&mut self, name: &impl MetricNameEncoder, typ: MetricType) {
+    pub fn write_type(
+        &mut self,
+        name: &impl MetricNameEncoder,
+        typ: MetricType,
+    ) -> Result<(), std::io::Error> {
         if self.state == State::Metrics {
-            self.write_line();
+            self.write_line()?;
         }
         self.state = State::Info;
 
-        self.b.extend_from_slice(b"# TYPE ");
-        name.encode_text(&mut self.b);
+        self.writer.write_all(b"# TYPE ")?;
+        name.encode_text(&mut self.writer)?;
         match typ {
-            MetricType::Counter => self.b.extend_from_slice(b" counter\n"),
-            MetricType::Histogram => self.b.extend_from_slice(b" histogram\n"),
-            MetricType::Gauge => self.b.extend_from_slice(b" gauge\n"),
-            MetricType::Summary => self.b.extend_from_slice(b" summary\n"),
-            MetricType::Untyped => self.b.extend_from_slice(b" untyped\n"),
+            MetricType::Counter => self.writer.write_all(b" counter\n"),
+            MetricType::Histogram => self.writer.write_all(b" histogram\n"),
+            MetricType::Gauge => self.writer.write_all(b" gauge\n"),
+            MetricType::Summary => self.writer.write_all(b" summary\n"),
+            MetricType::Untyped => self.writer.write_all(b" untyped\n"),
         }
     }
 }
 
-impl<const N: usize> MetricEncoding<BufferedTextEncoder> for HistogramState<N> {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
-        enc.write_type(&name, MetricType::Histogram);
-        Ok(())
+impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState<N> {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.write_type(&name, MetricType::Histogram)
     }
     fn collect_into(
         &self,
         metadata: &Thresholds<N>,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
         struct F64(f64);
         impl LabelValue for F64 {
             fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
@@ -247,18 +262,20 @@ impl<const N: usize> MetricEncoding<BufferedTextEncoder> for HistogramState<N> {
     }
 }
 
-impl MetricEncoding<BufferedTextEncoder> for CounterState {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
-        enc.write_type(&name, MetricType::Counter);
-        Ok(())
+impl<W: Write> MetricEncoding<TextEncoder<W>> for CounterState {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.write_type(&name, MetricType::Counter)
     }
     fn collect_into(
         &self,
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
         enc.write_metric_value(
             &name,
             labels,
@@ -267,18 +284,20 @@ impl MetricEncoding<BufferedTextEncoder> for CounterState {
     }
 }
 
-impl MetricEncoding<BufferedTextEncoder> for GaugeState {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
-        enc.write_type(&name, MetricType::Gauge);
-        Ok(())
+impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.write_type(&name, MetricType::Gauge)
     }
     fn collect_into(
         &self,
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
         enc.write_metric_value(
             &name,
             labels,
@@ -287,24 +306,168 @@ impl MetricEncoding<BufferedTextEncoder> for GaugeState {
     }
 }
 
-pub(crate) fn write_label_str_value(s: &str, b: &mut BytesMut) {
+/// The prometheus text encoder helper
+pub struct BufferedTextEncoder {
+    inner: TextEncoder<BytesWriter>,
+}
+
+impl Default for BufferedTextEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+trait Unreachable<T> {
+    fn unreachable(self) -> Result<T, Infallible>;
+}
+
+impl<T, E: std::fmt::Debug> Unreachable<T> for Result<T, E> {
+    fn unreachable(self) -> Result<T, Infallible> {
+        match self {
+            Ok(t) => Ok(t),
+            Err(e) => unreachable!("{e:?}"),
+        }
+    }
+}
+
+impl Encoding for BufferedTextEncoder {
+    type Err = Infallible;
+
+    /// Write the help line for a metric
+    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {
+        self.inner.write_help(name, help).unreachable()
+    }
+
+    /// Write the metric data
+    fn write_metric_value(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: MetricValue,
+    ) -> Result<(), Infallible> {
+        self.inner
+            .write_metric_value(name, labels, value)
+            .unreachable()
+    }
+}
+
+impl BufferedTextEncoder {
+    /// Create a new text encoder.
+    ///
+    /// This should ideally be cached and re-used between collections to reduce re-allocating
+    pub fn new() -> Self {
+        Self {
+            inner: TextEncoder::new(BytesWriter {
+                buf: BytesMut::new(),
+            }),
+        }
+    }
+
+    /// Finish the text encoding and extract the bytes to send in a HTTP response.
+    pub fn finish(&mut self) -> Bytes {
+        self.inner.flush().unreachable().unwrap();
+        self.inner.writer.buf.split().freeze()
+    }
+}
+
+impl<const N: usize> MetricEncoding<BufferedTextEncoder> for HistogramState<N> {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut BufferedTextEncoder,
+    ) -> Result<(), Infallible> {
+        Self::write_type(name, &mut enc.inner).unreachable()
+    }
+    fn collect_into(
+        &self,
+        metadata: &Thresholds<N>,
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut BufferedTextEncoder,
+    ) -> Result<(), Infallible> {
+        self.collect_into(metadata, labels, name, &mut enc.inner)
+            .unreachable()
+    }
+}
+
+impl MetricEncoding<BufferedTextEncoder> for CounterState {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut BufferedTextEncoder,
+    ) -> Result<(), Infallible> {
+        Self::write_type(name, &mut enc.inner).unreachable()
+    }
+    fn collect_into(
+        &self,
+        metadata: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut BufferedTextEncoder,
+    ) -> Result<(), Infallible> {
+        self.collect_into(metadata, labels, name, &mut enc.inner)
+            .unreachable()
+    }
+}
+
+impl MetricEncoding<BufferedTextEncoder> for GaugeState {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut BufferedTextEncoder,
+    ) -> Result<(), Infallible> {
+        Self::write_type(name, &mut enc.inner).unreachable()
+    }
+    fn collect_into(
+        &self,
+        metadata: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut BufferedTextEncoder,
+    ) -> Result<(), Infallible> {
+        self.collect_into(metadata, labels, name, &mut enc.inner)
+            .unreachable()
+    }
+}
+
+pub(crate) fn write_label_str_value(s: &str, b: &mut impl Write) -> io::Result<()> {
     let mut i = 0;
     for j in memchr3_iter(b'\\', b'"', b'\n', s.as_bytes()) {
-        b.extend_from_slice(&s.as_bytes()[i..j]);
+        b.write_all(&s.as_bytes()[i..j])?;
         match s.as_bytes()[j] {
-            b'\\' => b.extend_from_slice(b"\\\\"),
-            b'"' => b.extend_from_slice(b"\\\""),
-            b'\n' => b.extend_from_slice(b"\\n"),
+            b'\\' => b.write_all(b"\\\\")?,
+            b'"' => b.write_all(b"\\\"")?,
+            b'\n' => b.write_all(b"\\n")?,
             _ => unreachable!(),
         }
         i = j + 1;
     }
-    b.extend_from_slice(&s.as_bytes()[i..]);
+    b.write_all(&s.as_bytes()[i..])
+}
+
+struct BytesWriter {
+    buf: BytesMut,
+}
+
+impl Write for BytesWriter {
+    #[inline]
+    fn write(&mut self, src: &[u8]) -> io::Result<usize> {
+        self.write_all(src)?;
+        Ok(src.len())
+    }
+
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.buf.put(buf);
+        Ok(())
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bytes::BytesMut;
+    use bytes::{BufMut, BytesMut};
 
     use crate::{
         label::StaticLabelSet,
@@ -321,14 +484,18 @@ mod tests {
 
     #[test]
     fn write_encoded_str() {
-        let mut b = BytesMut::new();
+        let mut b = BytesMut::new().writer();
         write_label_str_value(
             r#"Hello \ "World"
 This is on a new line"#,
             &mut b,
-        );
+        )
+        .unwrap();
 
-        assert_eq!(b, r#"Hello \\ \"World\"\nThis is on a new line"#);
+        assert_eq!(
+            b.into_inner(),
+            r#"Hello \\ \"World\"\nThis is on a new line"#
+        );
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
