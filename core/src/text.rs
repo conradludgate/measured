@@ -8,7 +8,7 @@ use crate::{
     metric::{
         counter::CounterState,
         gauge::GaugeState,
-        group::Encoding,
+        group::{Encoding, MetricValue},
         histogram::{HistogramState, Thresholds},
         name::{Bucket, Count, MetricNameEncoder, Sum},
         MetricEncoding,
@@ -37,13 +37,6 @@ pub enum MetricType {
     Untyped,
 }
 
-/// Values that prometheus supports in the text format
-#[derive(Clone, Copy, Debug)]
-pub enum MetricValue {
-    Int(i64),
-    Float(f64),
-}
-
 impl Default for TextEncoder {
     fn default() -> Self {
         Self::new()
@@ -64,52 +57,12 @@ impl Encoding for TextEncoder {
         self.b.extend_from_slice(help.as_bytes());
         self.b.extend_from_slice(b"\n");
     }
-}
-
-impl TextEncoder {
-    /// Create a new text encoder.
-    ///
-    /// This should ideally be cached and re-used between collections to reduce re-allocating
-    pub fn new() -> Self {
-        Self {
-            state: State::Info,
-            b: BytesMut::new(),
-        }
-    }
-
-    /// Finish the text encoding and extract the bytes to send in a HTTP response.
-    pub fn finish(&mut self) -> Bytes {
-        self.state = State::Info;
-        self.b.split().freeze()
-    }
-
-    fn write_line(&mut self) {
-        self.b.put_u8(b'\n');
-    }
-
-    /// Write the type line for a metric
-    pub fn write_type(&mut self, name: &impl MetricNameEncoder, typ: MetricType) {
-        if self.state == State::Metrics {
-            self.write_line();
-        }
-        self.state = State::Info;
-
-        self.b.extend_from_slice(b"# TYPE ");
-        name.encode_text(&mut self.b);
-        match typ {
-            MetricType::Counter => self.b.extend_from_slice(b" counter\n"),
-            MetricType::Histogram => self.b.extend_from_slice(b" histogram\n"),
-            MetricType::Gauge => self.b.extend_from_slice(b" gauge\n"),
-            MetricType::Summary => self.b.extend_from_slice(b" summary\n"),
-            MetricType::Untyped => self.b.extend_from_slice(b" untyped\n"),
-        }
-    }
 
     /// Write the metric data
-    pub fn write_metric<L: LabelGroup>(
+    fn write_metric_value(
         &mut self,
         name: impl MetricNameEncoder,
-        labels: L,
+        labels: impl LabelGroup,
         value: MetricValue,
     ) {
         struct Visitor<'a> {
@@ -182,6 +135,46 @@ impl TextEncoder {
     }
 }
 
+impl TextEncoder {
+    /// Create a new text encoder.
+    ///
+    /// This should ideally be cached and re-used between collections to reduce re-allocating
+    pub fn new() -> Self {
+        Self {
+            state: State::Info,
+            b: BytesMut::new(),
+        }
+    }
+
+    /// Finish the text encoding and extract the bytes to send in a HTTP response.
+    pub fn finish(&mut self) -> Bytes {
+        self.state = State::Info;
+        self.b.split().freeze()
+    }
+
+    fn write_line(&mut self) {
+        self.b.put_u8(b'\n');
+    }
+
+    /// Write the type line for a metric
+    pub fn write_type(&mut self, name: &impl MetricNameEncoder, typ: MetricType) {
+        if self.state == State::Metrics {
+            self.write_line();
+        }
+        self.state = State::Info;
+
+        self.b.extend_from_slice(b"# TYPE ");
+        name.encode_text(&mut self.b);
+        match typ {
+            MetricType::Counter => self.b.extend_from_slice(b" counter\n"),
+            MetricType::Histogram => self.b.extend_from_slice(b" histogram\n"),
+            MetricType::Gauge => self.b.extend_from_slice(b" gauge\n"),
+            MetricType::Summary => self.b.extend_from_slice(b" summary\n"),
+            MetricType::Untyped => self.b.extend_from_slice(b" untyped\n"),
+        }
+    }
+}
+
 impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
     fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
         enc.write_type(&name, MetricType::Histogram);
@@ -218,26 +211,26 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         for i in 0..N {
             let le = metadata.get()[i];
             val += buckets[i];
-            enc.write_metric(
+            enc.write_metric_value(
                 &name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
                 MetricValue::Int(val as i64),
             );
         }
         let count = val + inf;
-        enc.write_metric(
+        enc.write_metric_value(
             &name.by_ref().with_suffix(Bucket),
             labels
                 .by_ref()
                 .compose_with(HistogramLabelLe { le: f64::INFINITY }),
             MetricValue::Int(count as i64),
         );
-        enc.write_metric(
+        enc.write_metric_value(
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
             MetricValue::Float(sum),
         );
-        enc.write_metric(
+        enc.write_metric_value(
             &name.by_ref().with_suffix(Count),
             labels,
             MetricValue::Int(count as i64),
@@ -256,7 +249,7 @@ impl MetricEncoding<TextEncoder> for CounterState {
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
     ) {
-        enc.write_metric(
+        enc.write_metric_value(
             &name,
             labels,
             MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
@@ -275,7 +268,7 @@ impl MetricEncoding<TextEncoder> for GaugeState {
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
     ) {
-        enc.write_metric(
+        enc.write_metric_value(
             &name,
             labels,
             MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed)),

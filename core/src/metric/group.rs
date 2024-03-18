@@ -1,19 +1,43 @@
-pub use crate::label::ComposedGroup;
+pub use crate::label::{ComposedGroup, LabelGroup};
 
 use super::{
     name::{MetricNameEncoder, WithNamespace},
     MetricEncoding,
 };
 
+/// Values that prometheus supports in the text format
+#[derive(Clone, Copy, Debug)]
+pub enum MetricValue {
+    Int(i64),
+    Float(f64),
+}
+
 /// Base trait of a metric encoder.
 pub trait Encoding {
     /// Write the help text for a metric
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str);
+
+    /// Write the metric data
+    fn write_metric_value(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: MetricValue,
+    );
 }
 
 impl<E: Encoding> Encoding for &mut E {
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) {
         E::write_help(self, name, help);
+    }
+
+    fn write_metric_value(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: MetricValue,
+    ) {
+        E::write_metric_value(self, name, labels, value)
     }
 }
 
@@ -67,6 +91,15 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
             },
             help,
         )
+    }
+
+    fn write_metric_value(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: MetricValue,
+    ) {
+        E::write_metric_value(&mut self.inner, name, labels, value)
     }
 }
 
