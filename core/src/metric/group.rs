@@ -158,7 +158,7 @@ mod tests {
     use measured_derive::{FixedCardinalityLabel, LabelGroup, MetricGroup};
     use prometheus_client::encoding::EncodeLabelValue;
 
-    use crate::{label::StaticLabelSet, text::TextEncoder, Counter, CounterVec};
+    use crate::{label::StaticLabelSet, text::BufferedTextEncoder, Counter, CounterVec};
 
     use super::MetricGroup;
 
@@ -212,7 +212,7 @@ mod tests {
         .into_reader();
         let group = MyMetrics::new(routes);
 
-        let mut text_encoder = TextEncoder::new();
+        let mut text_encoder = BufferedTextEncoder::new();
         group.collect_group_into(&mut text_encoder).unwrap();
         assert_eq!(
             text_encoder.finish(),

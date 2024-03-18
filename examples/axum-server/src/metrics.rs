@@ -9,7 +9,7 @@ use axum::{
 use measured::{
     label::{self, LabelValue, StaticLabelSet},
     metric::histogram::Thresholds,
-    text::TextEncoder,
+    text::BufferedTextEncoder,
     CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup,
 };
 use tokio::{sync::Mutex, time::Instant};
@@ -17,7 +17,7 @@ use tokio::{sync::Mutex, time::Instant};
 use crate::AppState;
 
 pub struct AppMetricsEncoder {
-    encoder: Mutex<TextEncoder>,
+    encoder: Mutex<BufferedTextEncoder>,
     pub metrics: AppMetrics,
 }
 

@@ -3,7 +3,7 @@ use std::hash::BuildHasherDefault;
 use divan::black_box;
 use divan::Bencher;
 use lasso::{Spur, ThreadedRodeo};
-use measured::text::TextEncoder;
+use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, LabelGroup, MetricGroup};
 use prometheus_client::encoding::EncodeLabelSet;
 use rustc_hash::FxHasher;
@@ -33,7 +33,7 @@ fn measured<const N: usize>(bencher: Bencher) {
         });
     }
 
-    let mut enc = TextEncoder::new();
+    let mut enc = BufferedTextEncoder::new();
 
     bencher.bench_local(|| {
         metrics.collect_group_into(&mut enc).unwrap();

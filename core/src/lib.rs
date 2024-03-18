@@ -11,7 +11,7 @@
 //! use measured::{Counter, MetricGroup};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::TextEncoder;
+//! use measured::text::BufferedTextEncoder;
 //!
 //! // Define a metric group, consisting of 1 or more metrics
 //! #[derive(MetricGroup)]
@@ -28,7 +28,7 @@
 //! metrics.my_first_counter.inc();
 //!
 //! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = TextEncoder::new();
+//! let mut text_encoder = BufferedTextEncoder::new();
 //! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
@@ -52,7 +52,7 @@
 //! use measured::label::StaticLabelSet;
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::TextEncoder;
+//! use measured::text::BufferedTextEncoder;
 //!
 //! // Define a fixed cardinality label
 //!
@@ -87,7 +87,7 @@
 //! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Delete });
 //!
 //! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = TextEncoder::new();
+//! let mut text_encoder = BufferedTextEncoder::new();
 //! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
@@ -115,7 +115,7 @@
 //! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::TextEncoder;
+//! use measured::text::BufferedTextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!
@@ -148,7 +148,7 @@
 //! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
 //!
 //! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = TextEncoder::new();
+//! let mut text_encoder = BufferedTextEncoder::new();
 //! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
@@ -170,7 +170,7 @@
 //! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::TextEncoder;
+//! use measured::text::BufferedTextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!
@@ -198,7 +198,7 @@
 //! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
 //!
 //! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = TextEncoder::new();
+//! let mut text_encoder = BufferedTextEncoder::new();
 //! metrics.collect_group_into(&mut text_encoder);
 //! let bytes = text_encoder.finish();
 //!
@@ -455,7 +455,7 @@ pub use metric::group::MetricGroup;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
-/// use measured::text::TextEncoder;
+/// use measured::text::BufferedTextEncoder;
 ///
 /// // create a histogram with 8 buckets starting at 0.01, increasing by 2x each time up to 2.56
 /// let histogram = Histogram::new_metric(Thresholds::<8>::exponential_buckets(0.01, 2.0));
@@ -463,7 +463,7 @@ pub use metric::group::MetricGroup;
 /// histogram.get_metric().observe(1.0);
 ///
 /// // sample the histogram and encode the value to a textual format.
-/// let mut text_encoder = TextEncoder::new();
+/// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_histogram");
 /// histogram.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
@@ -478,7 +478,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
-/// use measured::text::TextEncoder;
+/// use measured::text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
 ///
@@ -509,7 +509,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// histograms.observe(MyLabelGroup { operation: Operation::Delete }, 2.0);
 ///
 /// // sample the histograms and encode the values to a textual format.
-/// let mut text_encoder = TextEncoder::new();
+/// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_histogram");
 /// histograms.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
@@ -522,7 +522,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 /// use measured::Counter;
 /// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
-/// use measured::text::TextEncoder;
+/// use measured::text::BufferedTextEncoder;
 ///
 /// // create a counter
 /// let counter = Counter::new();
@@ -530,7 +530,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 /// counter.inc();
 ///
 /// // sample the counter and encode the value to a textual format.
-/// let mut text_encoder = TextEncoder::new();
+/// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_counter");
 /// counter.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
@@ -544,7 +544,7 @@ pub type Counter = Metric<CounterState>;
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
-/// use measured::text::TextEncoder;
+/// use measured::text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
 ///
@@ -572,7 +572,7 @@ pub type Counter = Metric<CounterState>;
 /// counters.inc(MyLabelGroup { operation: Operation::Delete });
 ///
 /// // sample the counters and encode the values to a textual format.
-/// let mut text_encoder = TextEncoder::new();
+/// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_counter");
 /// counters.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
@@ -585,7 +585,7 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 /// use measured::Gauge;
 /// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
-/// use measured::text::TextEncoder;
+/// use measured::text::BufferedTextEncoder;
 ///
 /// // create a gauge
 /// let gauge = Gauge::new();
@@ -593,7 +593,7 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 /// gauge.get_metric().inc();
 ///
 /// // sample the gauge and encode the value to a textual format.
-/// let mut text_encoder = TextEncoder::new();
+/// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_gauge");
 /// gauge.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();
@@ -607,7 +607,7 @@ pub type Gauge = Metric<GaugeState>;
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
-/// use measured::text::TextEncoder;
+/// use measured::text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
 ///
@@ -635,7 +635,7 @@ pub type Gauge = Metric<GaugeState>;
 /// gauges.inc(MyLabelGroup { operation: Operation::Delete });
 ///
 /// // sample the gauges and encode the values to a textual format.
-/// let mut text_encoder = TextEncoder::new();
+/// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_gauge");
 /// gauges.collect_family_into(name, &mut text_encoder);
 /// let bytes = text_encoder.finish();

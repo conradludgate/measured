@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// The prometheus text encoder helper
-pub struct TextEncoder {
+pub struct BufferedTextEncoder {
     state: State,
     b: BytesMut,
 }
@@ -39,13 +39,13 @@ pub enum MetricType {
     Untyped,
 }
 
-impl Default for TextEncoder {
+impl Default for BufferedTextEncoder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Encoding for TextEncoder {
+impl Encoding for BufferedTextEncoder {
     type Err = Infallible;
 
     /// Write the help line for a metric
@@ -142,7 +142,7 @@ impl Encoding for TextEncoder {
     }
 }
 
-impl TextEncoder {
+impl BufferedTextEncoder {
     /// Create a new text encoder.
     ///
     /// This should ideally be cached and re-used between collections to reduce re-allocating
@@ -182,8 +182,8 @@ impl TextEncoder {
     }
 }
 
-impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) -> Result<(), Infallible> {
+impl<const N: usize> MetricEncoding<BufferedTextEncoder> for HistogramState<N> {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
         enc.write_type(&name, MetricType::Histogram);
         Ok(())
     }
@@ -192,7 +192,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         metadata: &Thresholds<N>,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut TextEncoder,
+        enc: &mut BufferedTextEncoder,
     ) -> Result<(), Infallible> {
         struct F64(f64);
         impl LabelValue for F64 {
@@ -247,8 +247,8 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
     }
 }
 
-impl MetricEncoding<TextEncoder> for CounterState {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) -> Result<(), Infallible> {
+impl MetricEncoding<BufferedTextEncoder> for CounterState {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
         enc.write_type(&name, MetricType::Counter);
         Ok(())
     }
@@ -257,7 +257,7 @@ impl MetricEncoding<TextEncoder> for CounterState {
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut TextEncoder,
+        enc: &mut BufferedTextEncoder,
     ) -> Result<(), Infallible> {
         enc.write_metric_value(
             &name,
@@ -267,8 +267,8 @@ impl MetricEncoding<TextEncoder> for CounterState {
     }
 }
 
-impl MetricEncoding<TextEncoder> for GaugeState {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) -> Result<(), Infallible> {
+impl MetricEncoding<BufferedTextEncoder> for GaugeState {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
         enc.write_type(&name, MetricType::Gauge);
         Ok(())
     }
@@ -277,7 +277,7 @@ impl MetricEncoding<TextEncoder> for GaugeState {
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut TextEncoder,
+        enc: &mut BufferedTextEncoder,
     ) -> Result<(), Infallible> {
         enc.write_metric_value(
             &name,
@@ -317,7 +317,7 @@ mod tests {
         CounterVec, Histogram,
     };
 
-    use super::{write_label_str_value, TextEncoder};
+    use super::{write_label_str_value, BufferedTextEncoder};
 
     #[test]
     fn write_encoded_str() {
@@ -371,7 +371,7 @@ This is on a new line"#,
         };
         requests.inc_by(labels, 3);
 
-        let mut encoder = TextEncoder::default();
+        let mut encoder = BufferedTextEncoder::default();
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
         encoder
@@ -400,7 +400,7 @@ http_request_total{method="get",code="400"} 3
         histogram.get_metric().observe(1.2);
         histogram.get_metric().observe(8.0);
 
-        let mut encoder = TextEncoder::default();
+        let mut encoder = BufferedTextEncoder::default();
 
         let name = MetricName::from_str("http_request_duration_seconds");
         encoder

@@ -7,7 +7,7 @@ fn measured() {
 
     let h = measured::Histogram::new_metric(Thresholds::<8>::exponential_buckets(0.1, 2.0));
 
-    let mut encoder = measured::text::TextEncoder::new();
+    let mut encoder = measured::text::BufferedTextEncoder::new();
 
     for l in latencies() {
         h.observe(*l)

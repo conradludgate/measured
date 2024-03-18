@@ -16,7 +16,7 @@ fn measured() {
 
     let metrics = Metrics::new(Rodeo::from_iter(routes()).into_reader());
 
-    let mut encoder = measured::text::TextEncoder::new();
+    let mut encoder = measured::text::BufferedTextEncoder::new();
 
     for _ in 0..LOOPS {
         for &kind in errors() {
