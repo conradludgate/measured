@@ -36,7 +36,7 @@ fn measured<const N: usize>(bencher: Bencher) {
     let mut enc = TextEncoder::new();
 
     bencher.bench_local(|| {
-        metrics.collect_group_into(&mut enc);
+        metrics.collect_group_into(&mut enc).unwrap();
         enc.finish()
     });
 }

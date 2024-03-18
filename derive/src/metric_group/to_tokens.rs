@@ -55,19 +55,19 @@ impl ToTokens for MetricGroup {
                     let help = attrs.docs.as_deref().map(|doc|{
                         let doc = doc.trim();
                         quote_spanned!(x.span => {
-                            <#enc as #krate::metric::group::Encoding>::write_help(enc, #ident, #doc);
+                            <#enc as #krate::metric::group::Encoding>::write_help(enc, #ident, #doc)?;
                         })
                     });
 
                     quote_spanned! { x.span =>
                         const #ident: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
                         #help
-                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_family_into(&self.#name, #ident, enc);
+                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_family_into(&self.#name, #ident, enc)?;
                     }
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {
                     quote_spanned! { x.span =>
-                        <#ty as #krate::metric::group::MetricGroup<#enc>>::collect_group_into(&self.#name, enc);
+                        <#ty as #krate::metric::group::MetricGroup<#enc>>::collect_group_into(&self.#name, enc)?;
                     }
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: Some(ns) } => {
@@ -75,7 +75,7 @@ impl ToTokens for MetricGroup {
                         <#krate::metric::name::WithNamespace<&#ty> as #krate::metric::group::MetricGroup<#enc>>::collect_group_into(
                             &#krate::metric::name::WithNamespace::new(#ns, &self.#name),
                             enc,
-                        );
+                        )?;
                     }
                 },
             }
@@ -84,8 +84,9 @@ impl ToTokens for MetricGroup {
         tokens.extend(quote! {
             #[automatically_derived]
             impl #group_impl_generics #krate::metric::group::MetricGroup<#enc> for #ident #ty_generics #group_where_clause {
-                fn collect_group_into(&self, enc: &mut #enc) {
+                fn collect_group_into(&self, enc: &mut #enc) -> Result<(), #enc::Err>{
                     #(#visits)*
+                    Ok(())
                 }
             }
         });

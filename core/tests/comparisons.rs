@@ -26,7 +26,7 @@ fn measured() {
         }
     }
 
-    metrics.collect_group_into(&mut encoder);
+    metrics.collect_group_into(&mut encoder).unwrap();
     assert_eq!(
         encoder.finish(),
         r#"# HELP http_request_errors_total help text

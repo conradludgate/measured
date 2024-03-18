@@ -14,8 +14,10 @@ pub enum MetricValue {
 
 /// Base trait of a metric encoder.
 pub trait Encoding {
+    type Err;
+
     /// Write the help text for a metric
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str);
+    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err>;
 
     /// Write the metric data
     fn write_metric_value(
@@ -23,12 +25,13 @@ pub trait Encoding {
         name: impl MetricNameEncoder,
         labels: impl LabelGroup,
         value: MetricValue,
-    );
+    ) -> Result<(), Self::Err>;
 }
 
 impl<E: Encoding> Encoding for &mut E {
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) {
-        E::write_help(self, name, help);
+    type Err = E::Err;
+    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
+        E::write_help(self, name, help)
     }
 
     fn write_metric_value(
@@ -36,7 +39,7 @@ impl<E: Encoding> Encoding for &mut E {
         name: impl MetricNameEncoder,
         labels: impl LabelGroup,
         value: MetricValue,
-    ) {
+    ) -> Result<(), Self::Err> {
         E::write_metric_value(self, name, labels, value)
     }
 }
@@ -44,7 +47,7 @@ impl<E: Encoding> Encoding for &mut E {
 /// A `MetricGroup` defines a group of [`MetricFamilyEncoding`s](super::MetricFamilyEncoding)
 pub trait MetricGroup<Enc: Encoding> {
     /// Collect the group of metric families into the encoder
-    fn collect_group_into(&self, enc: &mut Enc);
+    fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err>;
 }
 
 impl<G, E> MetricGroup<E> for &G
@@ -52,8 +55,8 @@ where
     G: MetricGroup<E>,
     E: Encoding,
 {
-    fn collect_group_into(&self, enc: &mut E) {
-        G::collect_group_into(self, enc);
+    fn collect_group_into(&self, enc: &mut E) -> Result<(), E::Err> {
+        G::collect_group_into(self, enc)
     }
 }
 
@@ -63,9 +66,10 @@ where
     B: MetricGroup<E>,
     E: Encoding,
 {
-    fn collect_group_into(&self, enc: &mut E) {
-        self.0.collect_group_into(enc);
-        self.1.collect_group_into(enc);
+    fn collect_group_into(&self, enc: &mut E) -> Result<(), E::Err> {
+        self.0.collect_group_into(enc)?;
+        self.1.collect_group_into(enc)?;
+        Ok(())
     }
 }
 
@@ -74,16 +78,17 @@ where
     G: for<'a> MetricGroup<WithNamespace<&'a mut E>>,
     E: Encoding,
 {
-    fn collect_group_into(&self, enc: &mut E) {
+    fn collect_group_into(&self, enc: &mut E) -> Result<(), E::Err> {
         self.inner.collect_group_into(&mut WithNamespace {
             namespace: self.namespace,
             inner: enc,
-        });
+        })
     }
 }
 
 impl<E: Encoding> Encoding for WithNamespace<E> {
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) {
+    type Err = E::Err;
+    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
         self.inner.write_help(
             WithNamespace {
                 namespace: self.namespace,
@@ -98,20 +103,20 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
         name: impl MetricNameEncoder,
         labels: impl LabelGroup,
         value: MetricValue,
-    ) {
+    ) -> Result<(), Self::Err> {
         E::write_metric_value(&mut self.inner, name, labels, value)
     }
 }
 
-impl<M: MetricEncoding<E>, E> MetricEncoding<WithNamespace<E>> for M {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut WithNamespace<E>) {
+impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut WithNamespace<E>) -> Result<(), E::Err> {
         M::write_type(
             WithNamespace {
                 namespace: enc.namespace,
                 inner: name,
             },
             &mut enc.inner,
-        );
+        )
     }
     fn collect_into(
         &self,
@@ -119,7 +124,7 @@ impl<M: MetricEncoding<E>, E> MetricEncoding<WithNamespace<E>> for M {
         labels: impl crate::label::LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut WithNamespace<E>,
-    ) {
+    ) -> Result<(), E::Err> {
         self.collect_into(
             metadata,
             labels,
@@ -132,9 +137,9 @@ impl<M: MetricEncoding<E>, E> MetricEncoding<WithNamespace<E>> for M {
     }
 }
 
-impl<'a, M: MetricEncoding<E>, E> MetricEncoding<&'a mut E> for M {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut &'a mut E) {
-        M::write_type(name, *enc);
+impl<'a, M: MetricEncoding<E>, E: Encoding> MetricEncoding<&'a mut E> for M {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut &'a mut E) -> Result<(), E::Err> {
+        M::write_type(name, *enc)
     }
     fn collect_into(
         &self,
@@ -142,7 +147,7 @@ impl<'a, M: MetricEncoding<E>, E> MetricEncoding<&'a mut E> for M {
         labels: impl crate::label::LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut &'a mut E,
-    ) {
+    ) -> Result<(), E::Err> {
         self.collect_into(metadata, labels, name, *enc)
     }
 }
@@ -208,7 +213,7 @@ mod tests {
         let group = MyMetrics::new(routes);
 
         let mut text_encoder = TextEncoder::new();
-        group.collect_group_into(&mut text_encoder);
+        group.collect_group_into(&mut text_encoder).unwrap();
         assert_eq!(
             text_encoder.finish(),
             r#"# HELP events_total help text

@@ -243,9 +243,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
 }
 
 /// Defines the encoding of a metric
-pub trait MetricEncoding<T>: MetricType {
+pub trait MetricEncoding<T: Encoding>: MetricType {
     /// Write the type information for this metric into the encoder
-    fn write_type(name: impl MetricNameEncoder, enc: &mut T);
+    fn write_type(name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
     /// Sample this metric into the encoder
     fn collect_into(
         &self,
@@ -253,42 +253,46 @@ pub trait MetricEncoding<T>: MetricType {
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut T,
-    );
+    ) -> Result<(), T::Err>;
 }
 
-pub trait MetricFamilyEncoding<T> {
+pub trait MetricFamilyEncoding<T: Encoding> {
     /// Collect these metric values into the given encoder with the given metric name
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T);
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
 }
 
-impl<M: MetricFamilyEncoding<T>, T> MetricFamilyEncoding<T> for Option<M> {
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
+impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Option<M> {
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
         if let Some(this) = self {
-            this.collect_family_into(name, enc);
+            this.collect_family_into(name, enc)?;
         }
+        Ok(())
     }
 }
 
 impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Option<M> {
-    fn collect_group_into(&self, enc: &mut T) {
+    fn collect_group_into(&self, enc: &mut T) -> Result<(), T::Err> {
         if let Some(this) = self {
-            this.collect_group_into(enc);
+            this.collect_group_into(enc)?;
         }
+        Ok(())
     }
 }
 
-impl<M: MetricEncoding<T>, T> MetricFamilyEncoding<T> for Metric<M> {
+impl<M: MetricEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Metric<M> {
     /// Collect this metric value into the given encoder with the given metric name
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
-        M::write_type(&name, enc);
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
+        M::write_type(&name, enc)?;
         self.metric
-            .collect_into(&self.metadata, NoLabels, name, enc);
+            .collect_into(&self.metadata, NoLabels, name, enc)
     }
 }
 
-impl<M: MetricEncoding<T>, L: LabelGroupSet, T> MetricFamilyEncoding<T> for MetricVec<M, L> {
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) {
-        M::write_type(&name, enc);
+impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T>
+    for MetricVec<M, L>
+{
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
+        M::write_type(&name, enc)?;
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {
@@ -297,17 +301,18 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T> MetricFamilyEncoding<T> for Metr
                         self.label_set.decode_dense(index),
                         &name,
                         enc,
-                    );
+                    )?;
                 }
             }
             VecInner::Sparse(m) => {
                 for shard in m.shards.iter() {
                     for (k, v) in shard.read().iter() {
-                        v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc);
+                        v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc)?;
                     }
                 }
             }
         }
+        Ok(())
     }
 }
 

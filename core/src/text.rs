@@ -1,5 +1,7 @@
 //! Prometheus Text based exporter
 
+use std::convert::Infallible;
+
 use bytes::{BufMut, Bytes, BytesMut};
 use memchr::memchr3_iter;
 
@@ -44,8 +46,10 @@ impl Default for TextEncoder {
 }
 
 impl Encoding for TextEncoder {
+    type Err = Infallible;
+
     /// Write the help line for a metric
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) {
+    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {
         if self.state == State::Metrics {
             self.write_line();
         }
@@ -56,6 +60,7 @@ impl Encoding for TextEncoder {
         self.b.extend_from_slice(b" ");
         self.b.extend_from_slice(help.as_bytes());
         self.b.extend_from_slice(b"\n");
+        Ok(())
     }
 
     /// Write the metric data
@@ -64,7 +69,7 @@ impl Encoding for TextEncoder {
         name: impl MetricNameEncoder,
         labels: impl LabelGroup,
         value: MetricValue,
-    ) {
+    ) -> Result<(), Infallible> {
         struct Visitor<'a> {
             b: &'a mut BytesMut,
         }
@@ -94,6 +99,7 @@ impl Encoding for TextEncoder {
                 self.b.extend_from_slice(b"\"");
             }
         }
+
         struct GroupVisitor<'a> {
             first: bool,
             b: &'a mut BytesMut,
@@ -132,6 +138,7 @@ impl Encoding for TextEncoder {
                 .extend_from_slice(ryu::Buffer::new().format(x).as_bytes()),
         }
         self.b.extend_from_slice(b"\n");
+        Ok(())
     }
 }
 
@@ -176,8 +183,9 @@ impl TextEncoder {
 }
 
 impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) -> Result<(), Infallible> {
         enc.write_type(&name, MetricType::Histogram);
+        Ok(())
     }
     fn collect_into(
         &self,
@@ -185,7 +193,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
-    ) {
+    ) -> Result<(), Infallible> {
         struct F64(f64);
         impl LabelValue for F64 {
             fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
@@ -215,7 +223,7 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
                 &name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
                 MetricValue::Int(val as i64),
-            );
+            )?;
         }
         let count = val + inf;
         enc.write_metric_value(
@@ -224,23 +232,25 @@ impl<const N: usize> MetricEncoding<TextEncoder> for HistogramState<N> {
                 .by_ref()
                 .compose_with(HistogramLabelLe { le: f64::INFINITY }),
             MetricValue::Int(count as i64),
-        );
+        )?;
         enc.write_metric_value(
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
             MetricValue::Float(sum),
-        );
+        )?;
         enc.write_metric_value(
             &name.by_ref().with_suffix(Count),
             labels,
             MetricValue::Int(count as i64),
-        );
+        )?;
+        Ok(())
     }
 }
 
 impl MetricEncoding<TextEncoder> for CounterState {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) -> Result<(), Infallible> {
         enc.write_type(&name, MetricType::Counter);
+        Ok(())
     }
     fn collect_into(
         &self,
@@ -248,18 +258,19 @@ impl MetricEncoding<TextEncoder> for CounterState {
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
-    ) {
+    ) -> Result<(), Infallible> {
         enc.write_metric_value(
             &name,
             labels,
             MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
-        );
+        )
     }
 }
 
 impl MetricEncoding<TextEncoder> for GaugeState {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut TextEncoder) -> Result<(), Infallible> {
         enc.write_type(&name, MetricType::Gauge);
+        Ok(())
     }
     fn collect_into(
         &self,
@@ -267,12 +278,12 @@ impl MetricEncoding<TextEncoder> for GaugeState {
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder,
-    ) {
+    ) -> Result<(), Infallible> {
         enc.write_metric_value(
             &name,
             labels,
             MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed)),
-        );
+        )
     }
 }
 
@@ -363,8 +374,10 @@ This is on a new line"#,
         let mut encoder = TextEncoder::default();
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
-        encoder.write_help(&name, "The total number of HTTP requests.");
-        requests.collect_family_into(name, &mut encoder);
+        encoder
+            .write_help(&name, "The total number of HTTP requests.")
+            .unwrap();
+        requests.collect_family_into(name, &mut encoder).unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
@@ -390,8 +403,10 @@ http_request_total{method="get",code="400"} 3
         let mut encoder = TextEncoder::default();
 
         let name = MetricName::from_str("http_request_duration_seconds");
-        encoder.write_help(name, "A histogram of the request duration.");
-        histogram.collect_family_into(name, &mut encoder);
+        encoder
+            .write_help(name, "A histogram of the request duration.")
+            .unwrap();
+        histogram.collect_family_into(name, &mut encoder).unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
