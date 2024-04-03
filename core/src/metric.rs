@@ -98,20 +98,38 @@ fn new_sparse<U: Hash + Eq, M: MetricType>() -> DashMap<U, M> {
     }
 }
 
+fn new_dense<M: MetricType>(c: usize) -> Box<[CachePadded<OnceLock<M>>]> {
+    let mut vec = Vec::with_capacity(c);
+    vec.resize_with(c, CachePadded::<OnceLock<M>>::default);
+    vec.into_boxed_slice()
+}
+
+// if cardinality is greater than this, then metric vecs are allocated sparsely by default.
+const DEFAULT_MAX_DENSE: usize = 1024;
+
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new metric vec with the given label set and metric metadata
     pub fn new_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
         let metrics = match label_set.cardinality() {
-            Some(c) => {
-                let mut vec = Vec::with_capacity(c);
-                vec.resize_with(c, CachePadded::<OnceLock<M>>::default);
-                VecInner::Dense(vec.into_boxed_slice())
-            }
-            None => VecInner::Sparse(new_sparse()),
+            Some(c) if c <= DEFAULT_MAX_DENSE => VecInner::Dense(new_dense(c)),
+            _ => VecInner::Sparse(new_sparse()),
         };
 
         Self {
             metrics,
+            metadata,
+            label_set,
+        }
+    }
+
+    /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
+    pub fn new_dense_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+        let c = label_set
+            .cardinality()
+            .expect("Label group does not have a fixed cardinality.");
+
+        Self {
+            metrics: VecInner::Dense(new_dense(c)),
             metadata,
             label_set,
         }
