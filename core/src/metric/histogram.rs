@@ -5,7 +5,7 @@ use std::{
 
 use parking_lot::RwLock;
 
-use super::{MetricRef, MetricType};
+use super::{MetricMut, MetricRef, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 
 pub struct HistogramStateInner<const N: usize> {
@@ -30,6 +30,18 @@ impl<const N: usize> HistogramStateInner<N> {
             .unwrap();
     }
 
+    /// Add a single observation to the [`Histogram`].
+    pub fn observe_mut(&mut self, bucket: usize, x: f64) {
+        assert!(bucket <= N);
+        if bucket < N {
+            *self.buckets[bucket].get_mut() += 1;
+        } else {
+            *self.inf.get_mut() += 1;
+        }
+        let v = *self.sum.get_mut();
+        *self.sum.get_mut() = f64::to_bits(f64::from_bits(v) + x);
+    }
+
     pub(crate) fn sample(&mut self) -> ([u64; N], u64, f64) {
         let mut output = [0; N];
         #[allow(clippy::needless_range_loop)]
@@ -49,6 +61,7 @@ pub struct HistogramState<const N: usize> {
 }
 
 pub type HistogramRef<'a, const N: usize> = MetricRef<'a, HistogramState<N>>;
+pub type HistogramMut<'a, const N: usize> = MetricMut<'a, HistogramState<N>>;
 
 impl<const N: usize> Default for HistogramState<N> {
     fn default() -> Self {
@@ -131,11 +144,31 @@ impl<const N: usize> Thresholds<N> {
     }
 }
 
-impl<const N: usize> MetricRef<'_, HistogramState<N>> {
+impl<const N: usize> HistogramRef<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
         let bucket = self.1.le.partition_point(|le| x > *le);
         self.0.inner.read().observe(bucket, x);
+    }
+
+    /// Observe the duration in seconds
+    pub fn observe_duration(self, duration: std::time::Duration) {
+        self.observe(duration.as_secs_f64());
+    }
+
+    /// Observe the duration in seconds since the given instant
+    pub fn observe_duration_since(self, since: std::time::Instant) -> std::time::Duration {
+        let d = since.elapsed();
+        self.observe_duration(d);
+        d
+    }
+}
+
+impl<const N: usize> HistogramMut<'_, N> {
+    /// Add a single observation to the [`Histogram`].
+    pub fn observe(self, x: f64) {
+        let bucket = self.1.le.partition_point(|le| x > *le);
+        self.0.inner.get_mut().observe(bucket, x);
     }
 
     /// Observe the duration in seconds

@@ -2,7 +2,7 @@ use core::sync::atomic::AtomicI64;
 
 use crate::{label::LabelGroupSet, Gauge, GaugeVec};
 
-use super::{MetricRef, MetricType};
+use super::{MetricMut, MetricRef, MetricType};
 
 #[derive(Default)]
 /// The internal state that is used by [`Gauge`] and [`GaugeVec`]
@@ -12,6 +12,9 @@ pub struct GaugeState {
 
 /// A reference to a specific gauge.
 pub type GaugeRef<'a> = MetricRef<'a, GaugeState>;
+
+/// A mut reference to a specific gauge.
+pub type GaugeMut<'a> = MetricMut<'a, GaugeState>;
 
 impl GaugeRef<'_> {
     /// Increment the gauge value by 1
@@ -45,6 +48,33 @@ impl GaugeRef<'_> {
     /// Set the gauge value to `x`
     pub fn set(self, x: i64) {
         self.0.count.store(x, core::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl GaugeMut<'_> {
+    /// Increment the gauge value by 1
+    pub fn inc(self) {
+        *self.0.count.get_mut() += 1;
+    }
+
+    /// Increment the gauge value by `x`
+    pub fn inc_by(self, x: i64) {
+        *self.0.count.get_mut() += x;
+    }
+
+    /// Decrement the gauge value by 1
+    pub fn dec(self) {
+        *self.0.count.get_mut() -= 1;
+    }
+
+    /// Decrement the gauge value by `x`
+    pub fn dec_by(self, x: i64) {
+        *self.0.count.get_mut() -= x;
+    }
+
+    /// Set the gauge value to `x`
+    pub fn set(self, x: i64) {
+        *self.0.count.get_mut() = x;
     }
 }
 
