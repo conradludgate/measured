@@ -24,6 +24,7 @@ itoa = "1"
 rustc-hash = "1"
 hashbrown = { version = "0.14", features = ["raw"] }
 parking_lot = "0.12"
+crossbeam-utils = "0.8.19"
 
 measured-derive = { path = "../derive", version = "0.0.14" }
 

@@ -781,6 +781,7 @@ name = "measured"
 version = "0.0.14"
 dependencies = [
  "bytes",
+ "crossbeam-utils",
  "divan",
  "fake",
  "hashbrown 0.14.3",

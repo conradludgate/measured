@@ -10,6 +10,7 @@ use crate::{
     label::{LabelGroup, LabelGroupSet, NoLabels},
     MetricGroup,
 };
+use crossbeam_utils::CachePadded;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use parking_lot::RwLockWriteGuard;
 use rustc_hash::FxHasher;
@@ -48,7 +49,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 }
 
 enum VecInner<U: Hash + Eq, M: MetricType> {
-    Dense(Box<[M]>),
+    Dense(Box<[CachePadded<M>]>),
     Sparse(DashMap<U, M>),
 }
 
@@ -103,7 +104,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         let metrics = match label_set.cardinality() {
             Some(c) => {
                 let mut vec = Vec::with_capacity(c);
-                vec.resize_with(c, M::default);
+                vec.resize_with(c, CachePadded::<M>::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
             None => VecInner::Sparse(new_sparse()),
@@ -296,6 +297,7 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {
+                    let value: &M = value;
                     value.collect_into(
                         &self.metadata,
                         self.label_set.decode_dense(index),
