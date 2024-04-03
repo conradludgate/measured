@@ -49,7 +49,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 }
 
 enum VecInner<U: Hash + Eq, M: MetricType> {
-    Dense(Box<[CachePadded<M>]>),
+    Dense(Box<[CachePadded<OnceLock<M>>]>),
     Sparse(DashMap<U, M>),
 }
 
@@ -104,7 +104,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         let metrics = match label_set.cardinality() {
             Some(c) => {
                 let mut vec = Vec::with_capacity(c);
-                vec.resize_with(c, CachePadded::<M>::default);
+                vec.resize_with(c, CachePadded::<OnceLock<M>>::default);
                 VecInner::Dense(vec.into_boxed_slice())
             }
             None => VecInner::Sparse(new_sparse()),
@@ -158,7 +158,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     ) -> R {
         match &self.metrics {
             VecInner::Dense(metrics) => {
-                let m = &metrics[id.hash as usize];
+                let m = metrics[id.hash as usize].get_or_init(M::default);
                 f(MetricRef(m, &self.metadata))
             }
             VecInner::Sparse(metrics) => {
@@ -201,7 +201,11 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         match &mut self.metrics {
             VecInner::Dense(metrics) => {
                 let m = &mut metrics[id.hash as usize];
-                MetricMut(m, &mut self.metadata)
+                if m.get_mut().is_none() {
+                    *m = CachePadded::new(OnceLock::from(M::default()));
+                }
+
+                MetricMut(m.get_mut().unwrap(), &mut self.metadata)
             }
             VecInner::Sparse(metrics) => {
                 let shard = &mut metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
@@ -297,13 +301,14 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {
-                    let value: &M = value;
-                    value.collect_into(
-                        &self.metadata,
-                        self.label_set.decode_dense(index),
-                        &name,
-                        enc,
-                    )?;
+                    if let Some(value) = value.get() {
+                        value.collect_into(
+                            &self.metadata,
+                            self.label_set.decode_dense(index),
+                            &name,
+                            enc,
+                        )?;
+                    }
                 }
             }
             VecInner::Sparse(m) => {
