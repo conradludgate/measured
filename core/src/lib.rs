@@ -96,7 +96,6 @@
 //!     r#"# HELP my_first_counter counts things
 //! ## TYPE my_first_counter counter
 //! my_first_counter{operation="create"} 1
-//! my_first_counter{operation="update"} 0
 //! my_first_counter{operation="delete"} 1
 //! "#);
 //! ```

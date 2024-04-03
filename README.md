@@ -127,12 +127,12 @@ memory                fastest       │ slowest       │ median        │ mean
 ```
 
 ```
-Timer precision: 2.35 µs
+Timer precision: 2.26 µs
 memory                fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ measured           79.24 ns      │ 20.43 µs      │ 302.2 ns      │ 343.4 ns      │ 50000   │ 5000000
-├─ metrics            215.7 ns      │ 180.9 µs      │ 433.3 ns      │ 658.5 ns      │ 50000   │ 5000000
-├─ prometheus         465.6 ns      │ 422.2 µs      │ 719.2 ns      │ 693 ns        │ 50000   │ 5000000
-╰─ prometheus_client  119.9 ns      │ 4.27 ms       │ 259.8 ns      │ 412.9 ns      │ 50000   │ 5000000
+├─ measured           81.44 ns      │ 20.1 µs       │ 271.6 ns      │ 305.1 ns      │ 50000   │ 5000000
+├─ metrics            226.2 ns      │ 177 µs        │ 416.4 ns      │ 635.6 ns      │ 50000   │ 5000000
+├─ prometheus         445.8 ns      │ 427.5 µs      │ 724.5 ns      │ 688.4 ns      │ 50000   │ 5000000
+╰─ prometheus_client  113.1 ns      │ 4.231 ms      │ 260.4 ns      │ 416.8 ns      │ 50000   │ 5000000
 ```
 
 #### Macbook Pro M2 Max (12 Threads)

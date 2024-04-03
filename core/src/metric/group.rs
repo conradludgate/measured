@@ -201,16 +201,29 @@ mod tests {
 
     #[test]
     fn http_errors() {
-        let routes = Rodeo::from_iter([
+        let route_array = [
             "/api/v1/users",
             "/api/v1/users/:id",
             "/api/v1/products",
             "/api/v1/products/:id",
             "/api/v1/products/:id/owner",
             "/api/v1/products/:id/purchase",
-        ])
-        .into_reader();
+        ];
+        let routes = Rodeo::from_iter(route_array).into_reader();
         let group = MyMetrics::new(routes);
+
+        for kind in [ErrorKind::Internal, ErrorKind::Network, ErrorKind::User] {
+            for route in route_array {
+                group.http.errors.get_metric(
+                    group
+                        .http
+                        .errors
+                        .with_labels(Error { kind, route })
+                        .unwrap(),
+                    |_| {},
+                )
+            }
+        }
 
         let mut text_encoder = BufferedTextEncoder::new();
         group.collect_group_into(&mut text_encoder).unwrap();
