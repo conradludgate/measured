@@ -10,7 +10,7 @@ fn measured() {
     #[metric(new(route: lasso::RodeoReader))]
     struct Metrics {
         /// help text
-        #[metric(init = CounterVec::with_label_set(ErrorsSet{ kind: StaticLabelSet::new(), route }))]
+        #[metric(label_set = ErrorsSet{ kind: StaticLabelSet::new(), route })]
         http_request_errors_total: CounterVec<ErrorsSet>,
     }
 

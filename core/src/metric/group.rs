@@ -183,7 +183,7 @@ mod tests {
     #[metric(new(route: RodeoReader))]
     struct MyHttpMetrics {
         /// more help wow
-        #[metric(init = CounterVec::with_label_set(ErrorsSet { kind: StaticLabelSet::new(), route }))]
+        #[metric(label_set = ErrorsSet { kind: StaticLabelSet::new(), route })]
         errors: CounterVec<ErrorsSet>,
     }
 

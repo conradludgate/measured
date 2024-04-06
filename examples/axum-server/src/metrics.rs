@@ -22,9 +22,26 @@ pub struct AppMetricsEncoder {
 }
 
 #[derive(MetricGroup)]
+#[metric(new(paths: Arc<lasso::RodeoReader>))]
 pub struct AppMetrics {
+    #[metric(label_set = HttpRequestsSet {
+        method: StaticLabelSet::new(),
+        path: paths.clone(),
+    })]
     pub http_requests: CounterVec<HttpRequestsSet>,
+
+    #[metric(label_set = HttpResponsesSet {
+        method: StaticLabelSet::new(),
+        status: StaticLabelSet::new(),
+        path: paths.clone(),
+    })]
     pub http_responses: CounterVec<HttpResponsesSet>,
+
+    #[metric(label_set = HttpRequestsSet {
+        method: StaticLabelSet::new(),
+        path: paths.clone(),
+    })]
+    #[metric(metadata = Thresholds::exponential_buckets(0.1, 2.0))]
     pub http_request_duration: HistogramVec<HttpRequestsSet, 6>,
 }
 
@@ -33,30 +50,6 @@ impl AppMetricsEncoder {
         Self {
             encoder: Mutex::default(),
             metrics,
-        }
-    }
-}
-
-impl AppMetrics {
-    pub fn new(paths: lasso::RodeoReader) -> Self {
-        let path = Arc::new(paths);
-        Self {
-            http_requests: CounterVec::sparse_with_label_set(HttpRequestsSet {
-                method: StaticLabelSet::new(),
-                path: path.clone(),
-            }),
-            http_responses: CounterVec::sparse_with_label_set(HttpResponsesSet {
-                method: StaticLabelSet::new(),
-                status: StaticLabelSet::new(),
-                path: path.clone(),
-            }),
-            http_request_duration: HistogramVec::sparse_with_label_set_and_metadata(
-                HttpRequestsSet {
-                    method: StaticLabelSet::new(),
-                    path: path.clone(),
-                },
-                Thresholds::exponential_buckets(0.1, 2.0),
-            ),
         }
     }
 }

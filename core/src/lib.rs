@@ -130,7 +130,7 @@
 //! #[metric(new(path: lasso::RodeoReader))]
 //! struct MyMetricGroup {
 //!     /// counts things
-//!     #[metric(init = CounterVec::with_label_set(MyLabelGroupSet { path }))]
+//!     #[metric(label_set = MyLabelGroupSet { path })]
 //!     my_first_counter: CounterVec<MyLabelGroupSet>,
 //! }
 //!
@@ -185,7 +185,7 @@
 //! #[metric(new())]
 //! struct MyMetricGroup {
 //!     /// counts things
-//!     #[metric(init = CounterVec::with_label_set(MyLabelGroupSet { path: lasso::ThreadedRodeo::new() }))]
+//!     #[metric(label_set = MyLabelGroupSet { path: lasso::ThreadedRodeo::new() })]
 //!     my_first_counter: CounterVec<MyLabelGroupSet>,
 //! }
 //!

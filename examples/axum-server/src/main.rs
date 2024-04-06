@@ -37,7 +37,7 @@ async fn main() {
 
     // Using the routes captured in the OpenApi object, we build the app metrics
     let state = AppState {
-        metrics: Arc::new(AppMetricsEncoder::new(AppMetrics::new(paths))),
+        metrics: Arc::new(AppMetricsEncoder::new(AppMetrics::new(Arc::new(paths)))),
     };
 
     let app = app

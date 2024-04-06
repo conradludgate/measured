@@ -3,7 +3,10 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{parse_quote, parse_quote_spanned};
 
-use super::{attr::MetricGroupFieldAttrsKind, MetricGroup, MetricGroupField};
+use super::{
+    attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind},
+    MetricGroup, MetricGroupField,
+};
 
 impl ToTokens for MetricGroup {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -95,7 +98,13 @@ impl ToTokens for MetricGroup {
             let inits = fields.iter().map(|x| {
                 let MetricGroupField { name,ty, attrs, .. } = x;
                 match &attrs.init {
-                    Some(init) => quote_spanned!(x.span => #name: #init,),
+                    Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: #init,),
+                    Some(MetricGroupFieldAttrsInit::MetricVec{ metadata, label_set }) => {
+                        let default: syn::Expr = parse_quote!{::core::default::Default::default()};
+                        let metadata = metadata.as_ref().unwrap_or(&default);
+                        let label_set = label_set.as_ref().unwrap_or(&default);
+                        quote_spanned!(x.span => #name: #krate::metric::MetricVec::with_label_set_and_metadata(#label_set, #metadata),)
+                    }
                     None => quote_spanned!(x.span => #name: <#ty as ::core::default::Default>::default(),),
                 }
             });

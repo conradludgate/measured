@@ -51,13 +51,22 @@ impl ContainerAttrs {
 pub struct MetricGroupFieldAttrs {
     pub kind: MetricGroupFieldAttrsKind,
     pub docs: Option<String>,
-    pub init: Option<Expr>,
+    pub init: Option<MetricGroupFieldAttrsInit>,
 }
 
 #[derive(Clone)]
 pub enum MetricGroupFieldAttrsKind {
     Metric { rename: Option<LitStr> },
     Group { namespace: Option<LitStr> },
+}
+
+#[derive(Clone)]
+pub enum MetricGroupFieldAttrsInit {
+    Raw(Expr),
+    MetricVec {
+        metadata: Option<Expr>,
+        label_set: Option<Expr>,
+    },
 }
 
 impl MetricGroupFieldAttrs {
@@ -93,8 +102,57 @@ impl MetricGroupFieldAttrs {
                             }
                         }
                         () if meta.path.is_ident("init") => {
-                            if init.replace(meta.value()?.parse()?).is_some() {
+                            if init
+                                .replace(MetricGroupFieldAttrsInit::Raw(meta.value()?.parse()?))
+                                .is_some()
+                            {
                                 return Err(meta.error("duplicate `metric(init)` attr"));
+                            }
+                        }
+                        () if meta.path.is_ident("metadata") => {
+                            const DEFAULT: MetricGroupFieldAttrsInit =
+                                MetricGroupFieldAttrsInit::MetricVec {
+                                    metadata: None,
+                                    label_set: None,
+                                };
+                            match init.get_or_insert(DEFAULT) {
+                                MetricGroupFieldAttrsInit::MetricVec {
+                                    metadata: metadata @ None,
+                                    ..
+                                } => {
+                                    *metadata = Some(meta.value()?.parse()?);
+                                }
+                                MetricGroupFieldAttrsInit::MetricVec {
+                                    metadata: Some(_), ..
+                                } => {
+                                    return Err(meta.error("duplicate `metric(metadata)` attr"));
+                                }
+                                MetricGroupFieldAttrsInit::Raw(_) => {
+                                    return Err(meta.error("`metric(metadata)` and `metric(init)` attributes are not compatible"));
+                                }
+                            }
+                        }
+                        () if meta.path.is_ident("label_set") => {
+                            const DEFAULT: MetricGroupFieldAttrsInit =
+                                MetricGroupFieldAttrsInit::MetricVec {
+                                    metadata: None,
+                                    label_set: None,
+                                };
+                            match init.get_or_insert(DEFAULT) {
+                                MetricGroupFieldAttrsInit::MetricVec {
+                                    label_set: label_set @ None,
+                                    ..
+                                } => {
+                                    *label_set = Some(meta.value()?.parse()?);
+                                }
+                                MetricGroupFieldAttrsInit::MetricVec {
+                                    label_set: Some(_), ..
+                                } => {
+                                    return Err(meta.error("duplicate `metric(label_set)` attr"));
+                                }
+                                MetricGroupFieldAttrsInit::Raw(_) => {
+                                    return Err(meta.error("`metric(label_set)` and `metric(init)` attributes are not compatible"));
+                                }
                             }
                         }
                         () => return Err(meta.error("unknown argument found")),
