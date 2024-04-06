@@ -76,7 +76,7 @@ fn measured(bencher: Bencher) {
         route: Rodeo::from_iter(routes()).into_reader(),
         user_name: ThreadedRodeo::with_hasher(Default::default()),
     };
-    let counter_vec = measured::CounterVec::new(error_set);
+    let counter_vec = measured::CounterVec::with_label_set(error_set);
 
     thread_local! {
         static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());

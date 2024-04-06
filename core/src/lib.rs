@@ -130,7 +130,7 @@
 //! #[metric(new(path: lasso::RodeoReader))]
 //! struct MyMetricGroup {
 //!     /// counts things
-//!     #[metric(init = CounterVec::new(MyLabelGroupSet { path }))]
+//!     #[metric(init = CounterVec::with_label_set(MyLabelGroupSet { path }))]
 //!     my_first_counter: CounterVec<MyLabelGroupSet>,
 //! }
 //!
@@ -185,7 +185,7 @@
 //! #[metric(new())]
 //! struct MyMetricGroup {
 //!     /// counts things
-//!     #[metric(init = CounterVec::new(MyLabelGroupSet { path: lasso::ThreadedRodeo::new() }))]
+//!     #[metric(init = CounterVec::with_label_set(MyLabelGroupSet { path: lasso::ThreadedRodeo::new() }))]
 //!     my_first_counter: CounterVec<MyLabelGroupSet>,
 //! }
 //!
@@ -457,7 +457,7 @@ pub use metric::group::MetricGroup;
 /// use measured::text::BufferedTextEncoder;
 ///
 /// // create a histogram with 8 buckets starting at 0.01, increasing by 2x each time up to 2.56
-/// let histogram = Histogram::new_metric(Thresholds::<8>::exponential_buckets(0.01, 2.0));
+/// let histogram = Histogram::with_metadata(Thresholds::<8>::exponential_buckets(0.01, 2.0));
 /// // observe a value
 /// histogram.get_metric().observe(1.0);
 ///
@@ -563,7 +563,7 @@ pub type Counter = Metric<CounterState>;
 /// }
 ///
 /// // create a counter vec
-/// let counters = CounterVec::new(MyLabelGroupSet {
+/// let counters = CounterVec::with_label_set(MyLabelGroupSet {
 ///     operation: StaticLabelSet::new(),
 /// });
 /// // increment the counter at a given label
@@ -626,7 +626,7 @@ pub type Gauge = Metric<GaugeState>;
 /// }
 ///
 /// // create a gauge vec
-/// let gauges = GaugeVec::new(MyLabelGroupSet {
+/// let gauges = GaugeVec::with_label_set(MyLabelGroupSet {
 ///     operation: StaticLabelSet::new(),
 /// });
 /// // increment the gauge at a given label

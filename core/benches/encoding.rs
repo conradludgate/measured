@@ -21,7 +21,7 @@ const SIZES: &[usize] = &[100, 1000, 10000, 100000];
 #[divan::bench(consts = SIZES)]
 fn measured<const N: usize>(bencher: Bencher) {
     let metrics = Metrics {
-        counters: measured::CounterVec::new(GroupSet {
+        counters: measured::CounterVec::with_label_set(GroupSet {
             kind: ThreadedRodeo::with_hasher(BuildHasherDefault::default()),
         }),
     };

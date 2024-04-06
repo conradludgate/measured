@@ -217,7 +217,8 @@ mod no_cardinality {
 
     #[divan::bench]
     fn measured(bencher: Bencher) {
-        let h = measured::Histogram::new_metric(Thresholds::<N>::exponential_buckets(0.00001, 2.0));
+        let h =
+            measured::Histogram::with_metadata(Thresholds::<N>::exponential_buckets(0.00001, 2.0));
 
         bencher.bench(|| drop(h.start_timer()));
     }

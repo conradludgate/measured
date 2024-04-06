@@ -5,7 +5,7 @@ use prometheus::exponential_buckets;
 fn measured() {
     use measured::metric::name::MetricName;
 
-    let h = measured::Histogram::new_metric(Thresholds::<8>::exponential_buckets(0.1, 2.0));
+    let h = measured::Histogram::with_metadata(Thresholds::<8>::exponential_buckets(0.1, 2.0));
 
     let mut encoder = measured::text::BufferedTextEncoder::new();
 

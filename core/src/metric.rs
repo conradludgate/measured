@@ -53,9 +53,19 @@ enum VecInner<U: Hash + Eq, M: MetricType> {
     Sparse(DashMap<U, M>),
 }
 
+impl<M: MetricType> Metric<M>
+where
+    M::Metadata: Default,
+{
+    /// Create a new metric
+    pub fn new() -> Self {
+        Self::with_metadata(<M::Metadata>::default())
+    }
+}
+
 impl<M: MetricType> Metric<M> {
     /// Create a new metric with the given metadata
-    pub fn new_metric(metadata: M::Metadata) -> Self {
+    pub fn with_metadata(metadata: M::Metadata) -> Self {
         Self {
             metric: M::default(),
             metadata,
@@ -106,6 +116,81 @@ fn new_dense<M: MetricType>(c: usize) -> Box<[CachePadded<OnceLock<M>>]> {
 
 // if cardinality is greater than this, then metric vecs are allocated sparsely by default.
 const DEFAULT_MAX_DENSE: usize = 1024;
+
+impl<M: MetricType, L: LabelGroupSet + Default> MetricVec<M, L> {
+    /// Create a new metric vec with the given label set and metric metadata
+    pub fn with_metadata(metadata: M::Metadata) -> Self {
+        Self::with_label_set_and_metadata(L::default(), metadata)
+    }
+
+    /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
+    pub fn dense_with_metadata(metadata: M::Metadata) -> Self {
+        Self::dense_with_label_set_and_metadata(L::default(), metadata)
+    }
+
+    /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
+    pub fn sparse_with_metadata(metadata: M::Metadata) -> Self {
+        Self::dense_with_label_set_and_metadata(L::default(), metadata)
+    }
+}
+
+impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L>
+where
+    M::Metadata: Default,
+{
+    /// Create a new metric vec with the given label set and metric metadata
+    pub fn with_label_set(label_set: L) -> Self {
+        Self::with_label_set_and_metadata(label_set, <M::Metadata>::default())
+    }
+
+    /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
+    pub fn dense_with_label_set(label_set: L) -> Self {
+        Self::dense_with_label_set_and_metadata(label_set, <M::Metadata>::default())
+    }
+
+    /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
+    pub fn sparse_with_label_set(label_set: L) -> Self {
+        Self::dense_with_label_set_and_metadata(label_set, <M::Metadata>::default())
+    }
+}
+
+impl<M: MetricType, L: LabelGroupSet + Default> MetricVec<M, L>
+where
+    M::Metadata: Default,
+{
+    /// Create a new metric vec with the given label set and metric metadata
+    pub fn new() -> Self {
+        Self::with_label_set_and_metadata(L::default(), <M::Metadata>::default())
+    }
+
+    /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
+    pub fn dense() -> Self {
+        Self::dense_with_label_set_and_metadata(L::default(), <M::Metadata>::default())
+    }
+
+    /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
+    pub fn sparse() -> Self {
+        Self::dense_with_label_set_and_metadata(L::default(), <M::Metadata>::default())
+    }
+}
+
+impl<M: MetricType, L: LabelGroupSet + Default> Default for MetricVec<M, L>
+where
+    M::Metadata: Default,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<M: MetricType> Default for Metric<M>
+where
+    M::Metadata: Default,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new metric vec with the given label set and metric metadata

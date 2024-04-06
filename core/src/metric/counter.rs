@@ -43,32 +43,7 @@ impl CounterMut<'_> {
     }
 }
 
-impl Default for Counter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<L: LabelGroupSet + Default> Default for CounterVec<L> {
-    fn default() -> Self {
-        Self::new(L::default())
-    }
-}
-
 impl<L: LabelGroupSet> CounterVec<L> {
-    /// Create a new `CounterVec`, with label keys identified by the label_set argument.
-    pub fn new(label_set: L) -> Self {
-        Self::with_label_set_and_metadata(label_set, ())
-    }
-
-    /// Create a new sparse `CounterVec`, with label keys identified by the label_set argument.
-    ///
-    /// Sparse vecs are recommended if your max cardinality is quite high but the expected cardinality is low.
-    /// The trade-off is that sparse vecs are not lock-free, although effort has been made to keep lock contention to a minimum.
-    pub fn new_sparse(label_set: L) -> Self {
-        Self::sparse_with_label_set_and_metadata(label_set, ())
-    }
-
     /// Increment the counter value by 1, keyed by the label group
     pub fn inc(&self, label: L::Group<'_>) {
         self.get_metric(
@@ -107,17 +82,6 @@ impl<L: LabelGroupSet> CounterVec<L> {
 }
 
 impl Counter {
-    /// Create a new `Counter` metric.
-    #[allow(clippy::new_without_default)]
-    pub const fn new() -> Self {
-        Self {
-            metadata: (),
-            metric: CounterState {
-                count: AtomicU64::new(0),
-            },
-        }
-    }
-
     /// Increment the counter value by 1
     pub fn inc(&self) {
         self.get_metric().inc()

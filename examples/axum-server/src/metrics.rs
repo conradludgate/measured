@@ -41,11 +41,11 @@ impl AppMetrics {
     pub fn new(paths: lasso::RodeoReader) -> Self {
         let path = Arc::new(paths);
         Self {
-            http_requests: CounterVec::new_sparse(HttpRequestsSet {
+            http_requests: CounterVec::sparse_with_label_set(HttpRequestsSet {
                 method: StaticLabelSet::new(),
                 path: path.clone(),
             }),
-            http_responses: CounterVec::new_sparse(HttpResponsesSet {
+            http_responses: CounterVec::sparse_with_label_set(HttpResponsesSet {
                 method: StaticLabelSet::new(),
                 status: StaticLabelSet::new(),
                 path: path.clone(),

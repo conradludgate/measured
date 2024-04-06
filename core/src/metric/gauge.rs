@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicI64;
 
-use crate::{label::LabelGroupSet, Gauge, GaugeVec};
+use crate::{label::LabelGroupSet, GaugeVec};
 
 use super::{MetricMut, MetricRef, MetricType};
 
@@ -78,32 +78,7 @@ impl GaugeMut<'_> {
     }
 }
 
-impl Default for Gauge {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<L: LabelGroupSet + Default> Default for GaugeVec<L> {
-    fn default() -> Self {
-        Self::new(L::default())
-    }
-}
-
 impl<L: LabelGroupSet> GaugeVec<L> {
-    /// Create a new `GaugeVec`, with label keys identified by the label_set argument.
-    pub fn new(label_set: L) -> Self {
-        Self::with_label_set_and_metadata(label_set, ())
-    }
-
-    /// Create a new sparse `GaugeVec`, with label keys identified by the label_set argument.
-    ///
-    /// Sparse vecs are recommended if your max cardinality is quite high but the expected cardinality is low.
-    /// The trade-off is that sparse vecs are not lock-free, although effort has been made to keep lock contention to a minimum.
-    pub fn new_sparse(label_set: L) -> Self {
-        Self::sparse_with_label_set_and_metadata(label_set, ())
-    }
-
     /// Increment the gauge value by 1, keyed by the label group
     pub fn inc(&self, label: L::Group<'_>) {
         self.get_metric(
@@ -147,19 +122,6 @@ impl<L: LabelGroupSet> GaugeVec<L> {
                 .expect("label group should be in the set"),
             |x| x.set(y),
         );
-    }
-}
-
-impl Gauge {
-    /// Create a new `Gauge` metric.
-    #[allow(clippy::new_without_default)]
-    pub const fn new() -> Self {
-        Self {
-            metadata: (),
-            metric: GaugeState {
-                count: AtomicI64::new(0),
-            },
-        }
     }
 }
 

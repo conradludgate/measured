@@ -521,7 +521,7 @@ This is on a new line"#,
 
     #[test]
     fn text_encoding() {
-        let requests = CounterVec::new_sparse(RequestLabelSet {
+        let requests = CounterVec::with_label_set(RequestLabelSet {
             code: StaticLabelSet::new(),
             method: StaticLabelSet::new(),
         });
@@ -560,7 +560,7 @@ http_request_total{method="get",code="400"} 3
     #[test]
     fn text_histogram() {
         let thresholds = Thresholds::<8>::exponential_buckets(0.1, 2.0);
-        let histogram = Histogram::new_metric(thresholds);
+        let histogram = Histogram::with_metadata(thresholds);
 
         histogram.get_metric().observe(0.7);
         histogram.get_metric().observe(2.5);

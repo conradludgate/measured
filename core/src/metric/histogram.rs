@@ -199,16 +199,6 @@ impl<const N: usize> Histogram<N> {
     }
 }
 
-impl<L: LabelGroupSet + Default, const N: usize> HistogramVec<L, N> {
-    pub fn new(t: Thresholds<N>) -> Self {
-        Self::with_label_set_and_metadata(L::default(), t)
-    }
-
-    pub fn new_sparse(t: Thresholds<N>) -> Self {
-        Self::sparse_with_label_set_and_metadata(L::default(), t)
-    }
-}
-
 impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
     /// Add a single observation to the [`Histogram`], keyed by the label group.
     pub fn observe(&self, label: L::Group<'_>, y: f64) {
