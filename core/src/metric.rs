@@ -33,7 +33,7 @@ pub trait MetricType: Default {
 pub struct MetricRef<'a, M: MetricType>(&'a M, &'a M::Metadata);
 
 /// A unique ref to an individual metric value
-pub struct MetricMut<'a, M: MetricType>(&'a mut M, &'a mut M::Metadata);
+pub struct MetricMut<'a, M: MetricType>(&'a mut M, &'a M::Metadata);
 
 /// A single metric value.
 pub struct Metric<M: MetricType> {
@@ -69,7 +69,7 @@ impl<M: MetricType> Metric<M> {
 
     /// Get a mut ref to the metric
     pub fn get_metric_mut(&mut self) -> MetricMut<'_, M> {
-        MetricMut(&mut self.metric, &mut self.metadata)
+        MetricMut(&mut self.metric, &self.metadata)
     }
 }
 
