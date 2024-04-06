@@ -37,11 +37,13 @@ pub struct AppMetrics {
     })]
     pub http_responses: CounterVec<HttpResponsesSet>,
 
-    #[metric(label_set = HttpRequestsSet {
-        method: StaticLabelSet::new(),
-        path: paths.clone(),
-    })]
-    #[metric(metadata = Thresholds::exponential_buckets(0.1, 2.0))]
+    #[metric(
+        label_set = HttpRequestsSet {
+            method: StaticLabelSet::new(),
+            path: paths.clone(),
+        },
+        metadata = Thresholds::exponential_buckets(0.1, 2.0),
+    )]
     pub http_request_duration: HistogramVec<HttpRequestsSet, 6>,
 }
 
