@@ -158,7 +158,7 @@ mod tests {
     use measured_derive::{FixedCardinalityLabel, LabelGroup, MetricGroup};
     use prometheus_client::encoding::EncodeLabelValue;
 
-    use crate::{label::StaticLabelSet, text::BufferedTextEncoder, Counter, CounterVec};
+    use crate::{label::StaticLabelSet, metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Histogram};
 
     use super::MetricGroup;
 
@@ -194,6 +194,10 @@ mod tests {
         /// help text
         events_total: Counter,
 
+        /// help text
+        #[metric(metadata = Thresholds::exponential_buckets(1.0, 2.0))]
+        latency: Histogram<8>,
+
         #[metric(namespace = "http_request")]
         #[metric(init = MyHttpMetrics::new(route))]
         http: MyHttpMetrics,
@@ -225,13 +229,30 @@ mod tests {
             }
         }
 
+        group.events_total.inc();
+        group.latency.observe(4.0);
+
         let mut text_encoder = BufferedTextEncoder::new();
         group.collect_group_into(&mut text_encoder).unwrap();
         assert_eq!(
             text_encoder.finish(),
             r#"# HELP events_total help text
 # TYPE events_total counter
-events_total 0
+events_total 1
+
+# HELP latency help text
+# TYPE latency histogram
+latency_bucket{le="1.0"} 0
+latency_bucket{le="2.0"} 0
+latency_bucket{le="4.0"} 1
+latency_bucket{le="8.0"} 1
+latency_bucket{le="16.0"} 1
+latency_bucket{le="32.0"} 1
+latency_bucket{le="64.0"} 1
+latency_bucket{le="128.0"} 1
+latency_bucket{le="+Inf"} 1
+latency_sum 4.0
+latency_count 1
 
 # HELP http_request_errors more help wow
 # TYPE http_request_errors counter

@@ -105,7 +105,7 @@ impl ToTokens for MetricGroup {
                         if let Some(ls) = label_set {
                             quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #metadata),)
                         } else {
-                            quote_spanned!(x.span => #name: <#ty>::with_metadata(#label_set, #metadata),)
+                            quote_spanned!(x.span => #name: <#ty>::with_metadata(#metadata),)
                         }
                     }
                     None => quote_spanned!(x.span => #name: <#ty as ::core::default::Default>::default(),),
