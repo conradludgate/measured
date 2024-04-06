@@ -26,7 +26,7 @@ mod fixed_cardinality {
             kind: StaticLabelSet::new(),
             route: Rodeo::from_iter(routes()).into_reader(),
         };
-        let h = measured::HistogramVec::new_metric_vec(
+        let h = measured::HistogramVec::with_label_set_and_metadata(
             error_set,
             Thresholds::<N>::exponential_buckets(0.001, 2.0),
         );
@@ -47,7 +47,7 @@ mod fixed_cardinality {
             kind: StaticLabelSet::new(),
             route: Rodeo::from_iter(routes()).into_reader(),
         };
-        let h = measured::HistogramVec::new_sparse_metric_vec(
+        let h = measured::HistogramVec::sparse_with_label_set_and_metadata(
             error_set,
             Thresholds::<N>::exponential_buckets(0.001, 2.0),
         );

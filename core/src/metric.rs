@@ -109,7 +109,7 @@ const DEFAULT_MAX_DENSE: usize = 1024;
 
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new metric vec with the given label set and metric metadata
-    pub fn new_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+    pub fn with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         let metrics = match label_set.cardinality() {
             Some(c) if c <= DEFAULT_MAX_DENSE => VecInner::Dense(new_dense(c)),
             _ => VecInner::Sparse(new_sparse()),
@@ -123,7 +123,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 
     /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
-    pub fn new_dense_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+    pub fn dense_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         let c = label_set
             .cardinality()
             .expect("Label group does not have a fixed cardinality.");
@@ -136,7 +136,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
-    pub fn new_sparse_metric_vec(label_set: L, metadata: M::Metadata) -> Self {
+    pub fn sparse_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         Self {
             metrics: VecInner::Sparse(new_sparse()),
             metadata,
@@ -223,7 +223,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                     *m = CachePadded::new(OnceLock::from(M::default()));
                 }
 
-                MetricMut(m.get_mut().unwrap(), &mut self.metadata)
+                MetricMut(m.get_mut().unwrap(), &self.metadata)
             }
             VecInner::Sparse(metrics) => {
                 let shard = &mut metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
@@ -240,7 +240,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                     }
                 };
 
-                MetricMut(v, &mut self.metadata)
+                MetricMut(v, &self.metadata)
             }
         }
     }

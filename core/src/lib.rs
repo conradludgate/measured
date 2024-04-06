@@ -56,7 +56,7 @@
 //!
 //! // Define a fixed cardinality label
 //!
-//! #[derive(FixedCardinalityLabel)]
+//! #[derive(FixedCardinalityLabel, Copy, Clone)]
 //! enum Operation {
 //!     Create,
 //!     Update,
@@ -111,7 +111,7 @@
 //! I recommend the latter for string-based labels that are not `&'static` as it will offer the most efficient use of memory.
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
+//! use measured::{CounterVec, LabelGroup, MetricGroup};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::BufferedTextEncoder;
@@ -166,7 +166,7 @@
 //! It's not advised to use this for high cardinality labels, but if you must, this still offers good performance.
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
+//! use measured::{CounterVec, LabelGroup, MetricGroup};
 //! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::text::BufferedTextEncoder;
@@ -403,7 +403,7 @@ pub use label::value::FixedCardinalityLabel;
 ///     user_name: &'a str,
 /// }
 ///
-/// #[derive(measured::FixedCardinalityLabel)]
+/// #[derive(measured::FixedCardinalityLabel, Copy, Clone)]
 /// enum StatusCode {
 ///     Ok = 200,
 ///     BadRequest = 400,
@@ -481,7 +481,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 ///
 /// // Define a fixed cardinality label
 ///
-/// #[derive(FixedCardinalityLabel)]
+/// #[derive(FixedCardinalityLabel, Copy, Clone)]
 /// enum Operation {
 ///     Create,
 ///     Update,
@@ -497,7 +497,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// }
 ///
 /// // create a histogram vec
-/// let histograms = HistogramVec::new_metric_vec(
+/// let histograms = HistogramVec::with_label_set_and_metadata(
 ///     MyLabelGroupSet {
 ///         operation: StaticLabelSet::new(),
 ///     },
@@ -547,7 +547,7 @@ pub type Counter = Metric<CounterState>;
 ///
 /// // Define a fixed cardinality label
 ///
-/// #[derive(FixedCardinalityLabel)]
+/// #[derive(FixedCardinalityLabel, Copy, Clone)]
 /// enum Operation {
 ///     Create,
 ///     Update,
@@ -610,7 +610,7 @@ pub type Gauge = Metric<GaugeState>;
 ///
 /// // Define a fixed cardinality label
 ///
-/// #[derive(FixedCardinalityLabel)]
+/// #[derive(FixedCardinalityLabel, Copy, Clone)]
 /// enum Operation {
 ///     Create,
 ///     Update,

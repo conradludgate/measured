@@ -50,7 +50,7 @@ impl AppMetrics {
                 status: StaticLabelSet::new(),
                 path: path.clone(),
             }),
-            http_request_duration: HistogramVec::new_sparse_metric_vec(
+            http_request_duration: HistogramVec::sparse_with_label_set_and_metadata(
                 HttpRequestsSet {
                     method: StaticLabelSet::new(),
                     path: path.clone(),
@@ -140,6 +140,7 @@ impl From<axum::http::Method> for Method {
     }
 }
 
+#[derive(Clone, Copy)]
 struct StatusCode(axum::http::StatusCode);
 
 impl LabelValue for StatusCode {

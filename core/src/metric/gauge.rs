@@ -93,7 +93,7 @@ impl<L: LabelGroupSet + Default> Default for GaugeVec<L> {
 impl<L: LabelGroupSet> GaugeVec<L> {
     /// Create a new `GaugeVec`, with label keys identified by the label_set argument.
     pub fn new(label_set: L) -> Self {
-        Self::new_metric_vec(label_set, ())
+        Self::with_label_set_and_metadata(label_set, ())
     }
 
     /// Create a new sparse `GaugeVec`, with label keys identified by the label_set argument.
@@ -101,7 +101,7 @@ impl<L: LabelGroupSet> GaugeVec<L> {
     /// Sparse vecs are recommended if your max cardinality is quite high but the expected cardinality is low.
     /// The trade-off is that sparse vecs are not lock-free, although effort has been made to keep lock contention to a minimum.
     pub fn new_sparse(label_set: L) -> Self {
-        Self::new_sparse_metric_vec(label_set, ())
+        Self::sparse_with_label_set_and_metadata(label_set, ())
     }
 
     /// Increment the gauge value by 1, keyed by the label group

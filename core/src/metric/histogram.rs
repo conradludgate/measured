@@ -201,11 +201,11 @@ impl<const N: usize> Histogram<N> {
 
 impl<L: LabelGroupSet + Default, const N: usize> HistogramVec<L, N> {
     pub fn new(t: Thresholds<N>) -> Self {
-        Self::new_metric_vec(L::default(), t)
+        Self::with_label_set_and_metadata(L::default(), t)
     }
 
     pub fn new_sparse(t: Thresholds<N>) -> Self {
-        Self::new_sparse_metric_vec(L::default(), t)
+        Self::sparse_with_label_set_and_metadata(L::default(), t)
     }
 }
 
@@ -229,13 +229,13 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
     }
 
     /// Observe the duration in seconds
-    pub fn observe_duration(self, label: L::Group<'_>, duration: std::time::Duration) {
+    pub fn observe_duration(&self, label: L::Group<'_>, duration: std::time::Duration) {
         self.observe(label, duration.as_secs_f64());
     }
 
     /// Observe the duration in seconds since the given instant
     pub fn observe_duration_since(
-        self,
+        &self,
         label: L::Group<'_>,
         since: std::time::Instant,
     ) -> Duration {
