@@ -41,7 +41,13 @@ impl ContainerAttrs {
 }
 
 #[derive(Clone)]
-pub enum LabelGroupFieldAttrs {
+pub struct LabelGroupFieldAttrs {
+    pub kind: LabelGroupFieldAttrsKind,
+    pub default: bool,
+}
+
+#[derive(Clone)]
+pub enum LabelGroupFieldAttrsKind {
     Fixed,
     FixedWith(Path),
     DynamicWith(Path),
@@ -49,10 +55,10 @@ pub enum LabelGroupFieldAttrs {
 
 impl LabelGroupFieldAttrs {
     pub fn get_sort_key(&self) -> LabelGroupFieldAttrsSortKey {
-        match self {
-            LabelGroupFieldAttrs::Fixed => LabelGroupFieldAttrsSortKey::Fixed,
-            LabelGroupFieldAttrs::FixedWith(_) => LabelGroupFieldAttrsSortKey::Fixed,
-            LabelGroupFieldAttrs::DynamicWith(_) => LabelGroupFieldAttrsSortKey::Dynamic,
+        match self.kind {
+            LabelGroupFieldAttrsKind::Fixed => LabelGroupFieldAttrsSortKey::Fixed,
+            LabelGroupFieldAttrsKind::FixedWith(_) => LabelGroupFieldAttrsSortKey::Fixed,
+            LabelGroupFieldAttrsKind::DynamicWith(_) => LabelGroupFieldAttrsSortKey::Dynamic,
         }
     }
 }
@@ -65,30 +71,46 @@ pub enum LabelGroupFieldAttrsSortKey {
 
 impl LabelGroupFieldAttrs {
     pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
-        let mut args = None;
+        let mut kind = None;
+        let mut default = None;
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
                 attr.meta.require_list()?.parse_nested_meta(|meta| {
                     match () {
                         () if meta.path.is_ident("fixed") => {
-                            if args.replace(Self::Fixed).is_some() {
+                            if kind.replace(LabelGroupFieldAttrsKind::Fixed).is_some() {
                                 return Err(meta.error("duplicate `label(fixed)` arg"));
                             }
                         }
                         () if meta.path.is_ident("fixed_with") => {
-                            if args
-                                .replace(Self::FixedWith(meta.value()?.parse()?))
+                            if kind
+                                .replace(LabelGroupFieldAttrsKind::FixedWith(
+                                    meta.value()?.parse()?,
+                                ))
                                 .is_some()
                             {
                                 return Err(meta.error("duplicate `label(fixed_with)` arg"));
                             }
+                            if default.is_some() {
+                                return Err(meta.error("fixed_with and default are incompatible"));
+                            }
                         }
                         () if meta.path.is_ident("dynamic_with") => {
-                            if args
-                                .replace(Self::DynamicWith(meta.value()?.parse()?))
+                            if kind
+                                .replace(LabelGroupFieldAttrsKind::DynamicWith(
+                                    meta.value()?.parse()?,
+                                ))
                                 .is_some()
                             {
                                 return Err(meta.error("duplicate `label(dynamic_with)` arg"));
+                            }
+                        }
+                        () if meta.path.is_ident("default") => {
+                            if default.replace(()).is_some() {
+                                return Err(meta.error("duplicate `label(default)` arg"));
+                            }
+                            if matches!(kind, Some(LabelGroupFieldAttrsKind::FixedWith(_))) {
+                                return Err(meta.error("fixed_with and default are incompatible"));
                             }
                         }
                         () => return Err(meta.error("unknown argument found")),
@@ -98,6 +120,12 @@ impl LabelGroupFieldAttrs {
                 })?;
             }
         }
-        Ok(args.unwrap_or(Self::Fixed))
+
+        let kind = kind.unwrap_or(LabelGroupFieldAttrsKind::Fixed);
+        let default = default.map_or(false, |()| true);
+
+        // fixed implies default
+        let default = default || matches!(kind, LabelGroupFieldAttrsKind::Fixed);
+        Ok(Self { kind, default })
     }
 }

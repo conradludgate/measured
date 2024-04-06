@@ -1,7 +1,7 @@
 use quote::ToTokens;
 use syn::{parse_macro_input, DeriveInput};
 
-mod group;
+mod label_group;
 mod metric_group;
 mod value;
 
@@ -16,7 +16,7 @@ pub fn derive_label(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 #[proc_macro_derive(LabelGroup, attributes(label))]
 pub fn derive_label_group(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    match group::LabelGroup::try_from(parse_macro_input!(input as DeriveInput)) {
+    match label_group::LabelGroup::try_from(parse_macro_input!(input as DeriveInput)) {
         Ok(output) => output.to_token_stream(),
         Err(err) => err.into_compile_error().into_token_stream(),
     }
