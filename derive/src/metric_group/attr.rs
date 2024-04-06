@@ -63,7 +63,7 @@ pub enum MetricGroupFieldAttrsKind {
 #[derive(Clone)]
 pub enum MetricGroupFieldAttrsInit {
     Raw(Expr),
-    MetricVec {
+    Metric {
         metadata: Option<Expr>,
         label_set: Option<Expr>,
     },
@@ -111,18 +111,18 @@ impl MetricGroupFieldAttrs {
                         }
                         () if meta.path.is_ident("metadata") => {
                             const DEFAULT: MetricGroupFieldAttrsInit =
-                                MetricGroupFieldAttrsInit::MetricVec {
+                                MetricGroupFieldAttrsInit::Metric {
                                     metadata: None,
                                     label_set: None,
                                 };
                             match init.get_or_insert(DEFAULT) {
-                                MetricGroupFieldAttrsInit::MetricVec {
+                                MetricGroupFieldAttrsInit::Metric {
                                     metadata: metadata @ None,
                                     ..
                                 } => {
                                     *metadata = Some(meta.value()?.parse()?);
                                 }
-                                MetricGroupFieldAttrsInit::MetricVec {
+                                MetricGroupFieldAttrsInit::Metric {
                                     metadata: Some(_), ..
                                 } => {
                                     return Err(meta.error("duplicate `metric(metadata)` attr"));
@@ -134,18 +134,18 @@ impl MetricGroupFieldAttrs {
                         }
                         () if meta.path.is_ident("label_set") => {
                             const DEFAULT: MetricGroupFieldAttrsInit =
-                                MetricGroupFieldAttrsInit::MetricVec {
+                                MetricGroupFieldAttrsInit::Metric {
                                     metadata: None,
                                     label_set: None,
                                 };
                             match init.get_or_insert(DEFAULT) {
-                                MetricGroupFieldAttrsInit::MetricVec {
+                                MetricGroupFieldAttrsInit::Metric {
                                     label_set: label_set @ None,
                                     ..
                                 } => {
                                     *label_set = Some(meta.value()?.parse()?);
                                 }
-                                MetricGroupFieldAttrsInit::MetricVec {
+                                MetricGroupFieldAttrsInit::Metric {
                                     label_set: Some(_), ..
                                 } => {
                                     return Err(meta.error("duplicate `metric(label_set)` attr"));

@@ -99,11 +99,14 @@ impl ToTokens for MetricGroup {
                 let MetricGroupField { name,ty, attrs, .. } = x;
                 match &attrs.init {
                     Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: #init,),
-                    Some(MetricGroupFieldAttrsInit::MetricVec{ metadata, label_set }) => {
+                    Some(MetricGroupFieldAttrsInit::Metric { metadata, label_set }) => {
                         let default: syn::Expr = parse_quote!{::core::default::Default::default()};
                         let metadata = metadata.as_ref().unwrap_or(&default);
-                        let label_set = label_set.as_ref().unwrap_or(&default);
-                        quote_spanned!(x.span => #name: #krate::metric::MetricVec::with_label_set_and_metadata(#label_set, #metadata),)
+                        if let Some(ls) = label_set {
+                            quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #metadata),)
+                        } else {
+                            quote_spanned!(x.span => #name: <#ty>::with_metadata(#label_set, #metadata),)
+                        }
                     }
                     None => quote_spanned!(x.span => #name: <#ty as ::core::default::Default>::default(),),
                 }
