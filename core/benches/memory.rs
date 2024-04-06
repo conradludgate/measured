@@ -1,11 +1,11 @@
-#[global_allocator]
-static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
+// #[global_allocator]
+// static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
 fn main() {
     divan::Divan::from_args()
         .threads([1])
-        .sample_size(1)
-        .sample_count(5000000)
+        .sample_size(100)
+        .sample_count(50000)
         .run_benches();
 }
 

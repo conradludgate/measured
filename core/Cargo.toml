@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.16"
+version = "0.0.17"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -26,7 +26,7 @@ hashbrown = { version = "0.14", features = ["raw"] }
 parking_lot = "0.12"
 crossbeam-utils = "0.8.19"
 
-measured-derive = { path = "../derive", version = "0.0.16" }
+measured-derive = { path = "../derive", version = "0.0.17" }
 
 indexmap = { version = "2", optional = true }
 lasso = { version = "0.7", optional = true, features = ["multi-threaded"] }
@@ -34,11 +34,11 @@ phf = { version = "0.11", optional = true }
 
 [dev-dependencies]
 fake = "2.9.2"
-divan = "0.1.11"
-prometheus = { version = "0.13", default-features = false }
-metrics = "0.22"
-metrics-exporter-prometheus = { version = "0.13", default-features = false }
-prometheus-client = "0.22.1"
+divan = "0.1.14"
+prometheus = { version = "0.13.3", default-features = false }
+metrics = "0.22.3"
+metrics-exporter-prometheus = { version = "0.14.0", default-features = false }
+prometheus-client = "0.22.2"
 rand = { version = "0.8", features = ["small_rng"] }
 phf = { version = "0.11", features = ["macros"] }
 

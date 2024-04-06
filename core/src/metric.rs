@@ -13,7 +13,8 @@ use crate::{
 use crossbeam_utils::CachePadded;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use parking_lot::RwLockWriteGuard;
-use rustc_hash::FxHasher;
+
+type Hasher = rustc_hash::FxHasher;
 
 use self::{group::Encoding, name::MetricNameEncoder};
 
@@ -130,7 +131,7 @@ impl<M: MetricType, L: LabelGroupSet + Default> MetricVec<M, L> {
 
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn sparse_with_metadata(metadata: M::Metadata) -> Self {
-        Self::dense_with_label_set_and_metadata(L::default(), metadata)
+        Self::sparse_with_label_set_and_metadata(L::default(), metadata)
     }
 }
 
@@ -150,7 +151,7 @@ where
 
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn sparse_with_label_set(label_set: L) -> Self {
-        Self::dense_with_label_set_and_metadata(label_set, <M::Metadata>::default())
+        Self::sparse_with_label_set_and_metadata(label_set, <M::Metadata>::default())
     }
 }
 
@@ -170,7 +171,7 @@ where
 
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn sparse() -> Self {
-        Self::dense_with_label_set_and_metadata(L::default(), <M::Metadata>::default())
+        Self::sparse_with_label_set_and_metadata(L::default(), <M::Metadata>::default())
     }
 }
 
@@ -244,7 +245,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 debug_assert!(index < metrics.len());
                 index as u64
             }
-            VecInner::Sparse(_) => BuildHasherDefault::<FxHasher>::default().hash_one(id),
+            VecInner::Sparse(_) => BuildHasherDefault::<Hasher>::default().hash_one(id),
         };
 
         Some(LabelId { id, hash })
@@ -277,7 +278,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                     match entry {
                         RawEntryMut::Occupied(_) => {}
                         RawEntryMut::Vacant(v) => {
-                            let hasher = BuildHasherDefault::<FxHasher>::default();
+                            let hasher = BuildHasherDefault::<Hasher>::default();
                             v.insert_with_hasher(id.hash, id.id, M::default(), |k| {
                                 hasher.hash_one(k)
                             });
@@ -320,7 +321,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 let (_, v) = match entry {
                     RawEntryMut::Occupied(o) => o.into_key_value(),
                     RawEntryMut::Vacant(v) => {
-                        let hasher = BuildHasherDefault::<FxHasher>::default();
+                        let hasher = BuildHasherDefault::<Hasher>::default();
                         v.insert_with_hasher(id.hash, id.id, M::default(), |k| hasher.hash_one(k))
                     }
                 };
