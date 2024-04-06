@@ -24,7 +24,7 @@ pub trait MetricNameEncoder {
     }
 }
 
-/// Error returned by [`MetricName::try_from`]
+/// Error returned by [`MetricName::try_from_str`]
 #[derive(Debug)]
 pub enum InvalidMetricName {
     /// The metric name contained invalid characters
@@ -54,7 +54,7 @@ impl std::error::Error for InvalidMetricName {}
 /// Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex `[a-zA-Z_:][a-zA-Z0-9_:]*`.
 pub struct MetricName(str);
 
-const fn assert_metric_name(name: &str) {
+const fn const_assert_metric_name(name: &str) {
     assert!(!name.is_empty(), "string should not be empty");
 
     let mut i = 0;
@@ -72,18 +72,43 @@ const fn assert_metric_name(name: &str) {
     );
 }
 
+fn try_assert_metric_name(value: &str) -> Result<(), InvalidMetricName> {
+    if value.is_empty() {
+        return Err(InvalidMetricName::Empty);
+    }
+
+    value.bytes().try_fold((), |(), b| match b {
+        b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => Ok(()),
+        _ => Err(InvalidMetricName::InvalidChars),
+    })?;
+
+    if value.as_bytes()[0].is_ascii_digit() {
+        return Err(InvalidMetricName::StartsWithNumber);
+    }
+
+    Ok(())
+}
+
 impl MetricName {
     /// Construct a [`MetricName`] from a string, can be used in const expressions.
     ///
     /// # Panics
     /// Will panic if the string contains invalid characters
     #[must_use]
-    pub const fn from_str(value: &str) -> &Self {
-        assert_metric_name(value);
+    pub const fn from_str(value: &'static str) -> &Self {
+        const_assert_metric_name(value);
 
         // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
         unsafe { &*(value as *const str as *const MetricName) }
+    }
+
+    pub fn try_from_str(value: &str) -> Result<&Self, InvalidMetricName> {
+        try_assert_metric_name(value)?;
+
+        // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
+        // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
+        Ok(unsafe { &*(value as *const str as *const MetricName) })
     }
 
     /// Add a namespace prefix to this metric name.
@@ -102,30 +127,6 @@ impl MetricName {
             suffix,
             metric_name: self,
         }
-    }
-}
-
-impl<'a> TryFrom<&'a str> for &'a MetricName {
-    type Error = InvalidMetricName;
-
-    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        // > Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex [a-zA-Z_:][a-zA-Z0-9_:]*
-        if value.is_empty() {
-            return Err(InvalidMetricName::Empty);
-        }
-
-        value.bytes().try_fold((), |(), b| match b {
-            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => Ok(()),
-            _ => Err(InvalidMetricName::InvalidChars),
-        })?;
-
-        if value.as_bytes()[0].is_ascii_digit() {
-            return Err(InvalidMetricName::StartsWithNumber);
-        }
-
-        // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
-        // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
-        Ok(unsafe { &*(value as *const str as *const MetricName) })
     }
 }
 

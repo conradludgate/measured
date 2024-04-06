@@ -11,13 +11,13 @@ impl ToTokens for LabelGroup {
             krate,
             ident,
             generics,
-            sorted_fields,
+            fields,
             ..
         } = self;
 
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-        let visits = sorted_fields.iter().map(|x| {
+        let visits = fields.iter().map(|x| {
             let LabelGroupField { name, .. } = x;
             let name_string = name.to_string();
             let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
@@ -51,9 +51,12 @@ impl ToTokens for Set<'_> {
             krate,
             ident,
             generics,
-            sorted_fields,
+            fields,
             set_ident,
         } = self.0;
+
+        let mut sorted_fields = fields.clone();
+        sorted_fields.sort_by_key(|x| x.attrs.get_sort_key());
 
         let (_, ty_generics, _) = generics.split_for_impl();
 
@@ -101,26 +104,58 @@ impl ToTokens for Set<'_> {
             })
             .collect();
 
-        let can_default = sorted_fields.iter().all(|x| x.attrs.default);
-        let default = can_default.then(|| {
-            let defaults = sorted_fields.iter().map(|x| {
+        let defaults = sorted_fields.iter().map(|x| {
+            let name = &x.name;
+            if x.attrs.default {
+                match &x.attrs.kind {
+                    LabelGroupFieldAttrsKind::Fixed => {
+                        quote_spanned!(x.span => #name: #krate::label::StaticLabelSet::new(),)
+                    }
+                    LabelGroupFieldAttrsKind::FixedWith(path)
+                    | LabelGroupFieldAttrsKind::DynamicWith(path) => {
+                        quote_spanned!(x.span => #name: <#path as ::core::default::Default>::default(),)
+                    }
+                }
+            } else {
+                quote_spanned!(x.span => #name,)
+            }
+        });
+        let default = if sorted_fields.iter().all(|x| x.attrs.default) {
+            quote! {
+                impl #set_ident {
+                    pub fn new() -> Self {
+                        Self {
+                            #(#defaults)*
+                        }
+                    }
+                }
+                impl ::core::default::Default for #set_ident {
+                    fn default() -> Self {
+                        Self::new()
+                    }
+                }
+            }
+        } else {
+            let args = sorted_fields.iter().filter(|x| !x.attrs.default).map(|x| {
                 let name = &x.name;
                 match &x.attrs.kind {
-                    LabelGroupFieldAttrsKind::Fixed => quote_spanned!(x.span => #name: #krate::label::StaticLabelSet::new(),),
-                    LabelGroupFieldAttrsKind::FixedWith(_) => unreachable!(),
-                    LabelGroupFieldAttrsKind::DynamicWith(path) => quote_spanned!(x.span => #name: <#path as ::core::default::Default>::default(),),
+                    LabelGroupFieldAttrsKind::Fixed => unreachable!("fixed is always default"),
+                    LabelGroupFieldAttrsKind::FixedWith(path)
+                    | LabelGroupFieldAttrsKind::DynamicWith(path) => {
+                        quote_spanned!(x.span => #name: #path)
+                    }
                 }
             });
             quote! {
-                impl ::core::default::Default for #set_ident {
-                    fn default() -> Self {
+                impl #set_ident {
+                    pub fn new(#(#args),*) -> Self {
                         Self {
                             #(#defaults)*
                         }
                     }
                 }
             }
-        });
+        };
 
         let cardinality_fns = if dynamics.is_empty() {
             quote!(

@@ -12,7 +12,7 @@ pub struct LabelGroup {
     krate: Path,
     set_ident: Ident,
     ident: Ident,
-    sorted_fields: Vec<LabelGroupField>,
+    fields: Vec<LabelGroupField>,
     generics: Generics,
 }
 

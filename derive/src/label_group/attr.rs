@@ -91,9 +91,6 @@ impl LabelGroupFieldAttrs {
                             {
                                 return Err(meta.error("duplicate `label(fixed_with)` arg"));
                             }
-                            if default.is_some() {
-                                return Err(meta.error("fixed_with and default are incompatible"));
-                            }
                         }
                         () if meta.path.is_ident("dynamic_with") => {
                             if kind
@@ -108,9 +105,6 @@ impl LabelGroupFieldAttrs {
                         () if meta.path.is_ident("default") => {
                             if default.replace(()).is_some() {
                                 return Err(meta.error("duplicate `label(default)` arg"));
-                            }
-                            if matches!(kind, Some(LabelGroupFieldAttrsKind::FixedWith(_))) {
-                                return Err(meta.error("fixed_with and default are incompatible"));
                             }
                         }
                         () => return Err(meta.error("unknown argument found")),

@@ -158,7 +158,9 @@ mod tests {
     use measured_derive::{FixedCardinalityLabel, LabelGroup, MetricGroup};
     use prometheus_client::encoding::EncodeLabelValue;
 
-    use crate::{label::StaticLabelSet, metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Histogram};
+    use crate::{
+        metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Histogram,
+    };
 
     use super::MetricGroup;
 
@@ -183,7 +185,7 @@ mod tests {
     #[metric(new(route: RodeoReader))]
     struct MyHttpMetrics {
         /// more help wow
-        #[metric(label_set = ErrorsSet { kind: StaticLabelSet::new(), route })]
+        #[metric(label_set = ErrorsSet::new(route))]
         errors: CounterVec<ErrorsSet>,
     }
 

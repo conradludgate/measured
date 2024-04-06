@@ -38,7 +38,7 @@ impl TryFrom<DeriveInput> for LabelGroup {
             .set
             .ok_or_else(|| syn::Error::new(span, "missing `set` attribute"))?;
 
-        let mut sorted_fields = match data {
+        let fields = match data {
             Data::Enum(_) => return Err(syn::Error::new(span, "enums not supported")),
             Data::Union(_) => return Err(syn::Error::new(span, "unions not supported")),
             Data::Struct(s) => match s.fields {
@@ -54,14 +54,12 @@ impl TryFrom<DeriveInput> for LabelGroup {
             },
         };
 
-        sorted_fields.sort_by_key(|x| x.attrs.get_sort_key());
-
         Ok(Self {
             vis,
             krate,
             set_ident,
             ident,
-            sorted_fields,
+            fields,
             generics,
         })
     }

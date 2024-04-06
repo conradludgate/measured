@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicI64;
 
-use crate::{label::LabelGroupSet, GaugeVec};
+use crate::{label::LabelGroupSet, Gauge, GaugeVec};
 
 use super::{MetricMut, MetricRef, MetricType};
 
@@ -15,6 +15,33 @@ pub type GaugeRef<'a> = MetricRef<'a, GaugeState>;
 
 /// A mut reference to a specific gauge.
 pub type GaugeMut<'a> = MetricMut<'a, GaugeState>;
+
+impl Gauge {
+    /// Increment the gauge value by 1
+    pub fn inc(&self) {
+        self.get_metric().inc()
+    }
+
+    /// Increment the gauge value by `x`
+    pub fn inc_by(&self, x: i64) {
+        self.get_metric().inc_by(x)
+    }
+
+    /// Decrement the gauge value by 1
+    pub fn dec(&self) {
+        self.get_metric().dec()
+    }
+
+    /// Decrement the gauge value by `x`
+    pub fn dec_by(&self, x: i64) {
+        self.get_metric().dec_by(x)
+    }
+
+    /// Set the gauge value to `x`
+    pub fn set(&self, x: i64) {
+        self.get_metric().set(x)
+    }
+}
 
 impl GaugeRef<'_> {
     /// Increment the gauge value by 1

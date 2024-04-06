@@ -1,279 +1,6 @@
 //! # Measured. A metrics crate.
 //!
-//! This crate was born out of a desire for better ergonomics dealing with prometheus,
-//! with the added extra goal of minimizing small allocations to reduce memory fragmentation.
-//!
-//! ## Basic Usage
-//!
-//! The most basic usage is defining a single counter. This is very easy.
-//!
-//! ```
-//! use measured::{Counter, MetricGroup};
-//! use measured::metric::name::MetricName;
-//! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::BufferedTextEncoder;
-//!
-//! // Define a metric group, consisting of 1 or more metrics
-//! #[derive(MetricGroup)]
-//! #[metric(new())]
-//! struct MyMetricGroup {
-//!     /// counts things
-//!     my_first_counter: Counter,
-//! }
-//!
-//! // create the metrics
-//! let metrics = MyMetricGroup::new();
-//!
-//! // increment the counter value
-//! metrics.my_first_counter.inc();
-//!
-//! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = BufferedTextEncoder::new();
-//! metrics.collect_group_into(&mut text_encoder);
-//! let bytes = text_encoder.finish();
-//!
-//! assert_eq!(
-//!     bytes,
-//!     r#"# HELP my_first_counter counts things
-//! ## TYPE my_first_counter counter
-//! my_first_counter 1
-//! "#);
-//! ```
-//!
-//! ## With labels
-//!
-//! It's common to have labels added to your metrics, such as adding an operation type. When all possible values
-//! can be determined at compile time, you can define the label value as a [`FixedCardinalityLabel`] enum.
-//!
-//! Multiple label pairs are collected into a [`LabelGroup`].
-//!
-//! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
-//! use measured::label::StaticLabelSet;
-//! use measured::metric::name::MetricName;
-//! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::BufferedTextEncoder;
-//!
-//! // Define a fixed cardinality label
-//!
-//! #[derive(FixedCardinalityLabel, Copy, Clone)]
-//! enum Operation {
-//!     Create,
-//!     Update,
-//!     Delete,
-//! }
-//!
-//! // Define a label group, consisting of 1 or more label values
-//!
-//! #[derive(LabelGroup)]
-//! #[label(set = MyLabelGroupSet)]
-//! struct MyLabelGroup {
-//!     operation: Operation,
-//! }
-//!
-//! // Define a metric group, consisting of 1 or more metrics
-//! #[derive(MetricGroup)]
-//! #[metric(new())]
-//! struct MyMetricGroup {
-//!     /// counts things
-//!     my_first_counter: CounterVec<MyLabelGroupSet>,
-//! }
-//!
-//! // create the metrics
-//! let metrics = MyMetricGroup::new();
-//!
-//! // increment the counter at a given label
-//! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Create });
-//! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Delete });
-//!
-//! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = BufferedTextEncoder::new();
-//! metrics.collect_group_into(&mut text_encoder);
-//! let bytes = text_encoder.finish();
-//!
-//! assert_eq!(
-//!     bytes,
-//!     r#"# HELP my_first_counter counts things
-//! ## TYPE my_first_counter counter
-//! my_first_counter{operation="create"} 1
-//! my_first_counter{operation="delete"} 1
-//! "#);
-//! ```
-//!
-//! ## With dynamic labels and label sets
-//!
-//! Sometimes, the labels cannot be determined at compile time, but they can be determine at the start of the program.
-//! This might be the paths of a RESTful API. For efficiency,
-//! `measured` offers a trait called [`FixedCardinalitySet`](label::FixedCardinalitySet) that allows for compact encoding.
-//!
-//! Implementations of [`FixedCardinalitySet`](label::FixedCardinalitySet) are provided for you,
-//! notably [`phf::OrderedSet`], [`indexmap::IndexSet`], and [`lasso::RodeoReader`].
-//! I recommend the latter for string-based labels that are not `&'static` as it will offer the most efficient use of memory.
-//!
-//! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup};
-//! use measured::metric::name::MetricName;
-//! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::BufferedTextEncoder;
-//!
-//! // Define a label group, consisting of 1 or more label values
-//!
-//! #[derive(LabelGroup)]
-//! #[label(set = MyLabelGroupSet)]
-//! struct MyLabelGroup<'a> {
-//!     #[label(fixed_with = lasso::RodeoReader)]
-//!     path: &'a str,
-//! }
-//!
-//! // Define a metric group, consisting of 1 or more metrics
-//! #[derive(MetricGroup)]
-//! #[metric(new(path: lasso::RodeoReader))]
-//! struct MyMetricGroup {
-//!     /// counts things
-//!     #[metric(label_set = MyLabelGroupSet { path })]
-//!     my_first_counter: CounterVec<MyLabelGroupSet>,
-//! }
-//!
-//! // create the metrics
-//! let paths = lasso::Rodeo::from_iter([
-//!     "/api/v1/products",
-//!     "/api/v1/users",
-//! ])
-//! .into_reader();
-//! let metrics = MyMetricGroup::new(paths);
-//!
-//! // increment the counter at a given label
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
-//!
-//! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = BufferedTextEncoder::new();
-//! metrics.collect_group_into(&mut text_encoder);
-//! let bytes = text_encoder.finish();
-//!
-//! assert_eq!(
-//!     bytes,
-//!     r#"# HELP my_first_counter counts things
-//! ## TYPE my_first_counter counter
-//! my_first_counter{path="/api/v1/products"} 1
-//! my_first_counter{path="/api/v1/users"} 1
-//! "#);
-//! ```
-//!
-//! In the rare case that the label cannot be determined even at startup, you can still use them. You will have to make use of the
-//! [`DynamicLabelSet`](label::DynamicLabelSet) trait. One implementation for string data is provided in the form of [`lasso::ThreadedRodeo`].
-//!
-//! It's not advised to use this for high cardinality labels, but if you must, this still offers good performance.
-//!
-//! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup};
-//! use measured::metric::name::MetricName;
-//! use measured::metric::MetricFamilyEncoding;
-//! use measured::text::BufferedTextEncoder;
-//!
-//! // Define a label group, consisting of 1 or more label values
-//!
-//! #[derive(LabelGroup)]
-//! #[label(set = MyLabelGroupSet)]
-//! struct MyLabelGroup<'a> {
-//!     #[label(dynamic_with = lasso::ThreadedRodeo)]
-//!     path: &'a str,
-//! }
-//!
-//! // Define a metric group, consisting of 1 or more metrics
-//! #[derive(MetricGroup)]
-//! #[metric(new())]
-//! struct MyMetricGroup {
-//!     /// counts things
-//!     #[metric(label_set = MyLabelGroupSet { path: lasso::ThreadedRodeo::new() })]
-//!     my_first_counter: CounterVec<MyLabelGroupSet>,
-//! }
-//!
-//! // create the metrics
-//! let metrics = MyMetricGroup::new();
-//!
-//! // increment the counter at a given label
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
-//!
-//! // sample the metrics and encode the values to a textual format.
-//! let mut text_encoder = BufferedTextEncoder::new();
-//! metrics.collect_group_into(&mut text_encoder);
-//! let bytes = text_encoder.finish();
-//!
-//! assert_eq!(
-//!     bytes,
-//!     r#"# HELP my_first_counter counts things
-//! ## TYPE my_first_counter counter
-//! my_first_counter{path="/api/v1/products"} 1
-//! my_first_counter{path="/api/v1/users"} 1
-//! "#);
-//! ```
-//!
-//! ## Prometheus vs Memory Fragmentation
-//!
-//! The [`prometheus`](https://docs.rs/prometheus/0.13.3/prometheus/index.html) crate allows you to very quickly
-//! start recording metrics for your application and expose a text-based scrape endpoint. However, the implementation
-//! can quickly lead to memory fragmentation issues.
-//!
-//! For example, let's look at `IntCounterVec`. It's an alias for `MetricVec<CounterVecBuilder<AtomicU64>>`. `MetricVec` has the following definition:
-//!
-//! ```ignore
-//! pub struct MetricVec<T: MetricVecBuilder> {
-//!     pub(crate) v: Arc<MetricVecCore<T>>,
-//! }
-//! pub(crate) struct MetricVecCore<T: MetricVecBuilder> {
-//!     pub children: RwLock<HashMap<u64, T::M>>,
-//!     // ...
-//! }
-//! ```
-//!
-//! And for our int counter, `T::M` here is
-//!
-//! ```ignore
-//! pub struct GenericCounter<P: Atomic> {
-//!     v: Arc<Value<P>>,
-//! }
-//!
-//! pub struct Value<P: Atomic> {
-//!     pub val: P,
-//!     pub label_pairs: Vec<LabelPair>,
-//!     // ...
-//! }
-//!
-//! pub struct LabelPair {
-//!     name: SingularField<String>,
-//!     value: SingularField<String>,
-//!     // ...
-//! }
-//! ```
-//!
-//! So, if we have a counter vec with 3 different labels, and a totel of 24 unique label groups, then we will have
-//!
-//! * 1 allocation for the `MetricVec` `Arc`
-//! * 1 allocation for the `MetricVecCore` `HashMap`
-//! * 24 allocations for the counter value `Arc`
-//! * 24 allocations for the label pairs `Vec`
-//! * 144 allocations for the `String`s in the `LabelPair`
-//!
-//! Totalling **194 small allocations**.
-//!
-//! There's nothing wrong with small allocations necessarily, but since these are long-lived allocations that are not allocated inside of
-//! an arena, it can lead to fragmentation issues where each small alloc can occupy many different allocator pages and prevent them from being freed.
-//!
-//! Compared to this crate, `measured` **only needs 1 allocation** for the `HashMap`.
-//! If you have semi-dynamic string labels (such as REST API path slugs) then that would add 4 allocations for
-//! a [`RodeoReader`](lasso::RodeoReader) or 2 allocations for an [`IndexSet`](indexmap::IndexSet) to track them.
-//!
-//! And while it's bad form to have extremely high-cardinality metrics, this crate can easily handle
-//! 100,000 unique label groups with just a few large allocations.
-//!
-//! ## Comparisons to the `metrics` family of crates
-//!
-//! The [`metrics`](https://docs.rs/metrics/latest/metrics/) facade crate and
-//! [`metrics_exporter_prometheus`](https://docs.rs/metrics-exporter-prometheus/latest/metrics_exporter_prometheus/index.html)
-//! implementation add a lot of complexity to exposing metrics. They also still alloc an `Arc<AtomicU64>` per individual counter
-//! which does not solve the problem of memory fragmentation.
+//! Getting started? See [`docs`]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 extern crate alloc;
@@ -282,13 +9,39 @@ use metric::{
     counter::CounterState, gauge::GaugeState, histogram::HistogramState, Metric, MetricVec,
 };
 
+#[cfg(any(doc, test))]
+pub mod docs;
 pub mod label;
 pub mod metric;
 pub mod text;
 
 /// Implement [`FixedCardinalityLabel`] on an `enum`
 ///
-/// # Examples
+/// # Container attributes
+///
+/// * `rename_all = "..."` - rename all variants based on their variant name, supporting:
+///     * `"UpperCamelCase"`
+///     * `"lowerCamelCase"`
+///     * `"snake_case"`
+///     * `"kebab-case"`
+///     * `"SHOUTY_SNAKE_CASE"`
+///     * `"SHOUTY-KEBAB-CASE"`
+///     * `"Title Case"`
+///     * `"Train-Case"`
+/// * `singleton = "..."` - This `FixedCardinalityLabel` on it's own represents a [`LabelGroup`]
+///
+/// # Variant attributes
+///
+/// * `rename = "..."` - Rename this variant.
+///
+/// # Outputs
+///
+/// * `impl FixedCardinalityLabel for T { ... }`
+/// * `impl LabelValue for T { ... }`
+/// * `impl LabelGroup for T { ... }`
+///     - If `singleton` is specified
+///
+/// # Example
 ///
 /// ## Basic
 ///
@@ -386,6 +139,29 @@ pub use label::value::FixedCardinalityLabel;
 /// there is also a [`LabelGroupSet`](label::LabelGroupSet) that is created by this macro.
 /// The set provides additional information needed to encode the values in the group.
 ///
+/// # Container attributes
+///
+/// * `set = Ident` - The name that the corresponding [`LabelGroupSet`](label::LabelGroupSet) should take on. (**required**)
+///
+/// # Field attributes
+///
+/// * `fixed` - The field type implements [`FixedCardinalityLabel`] (**implied**)
+/// * `fixed_with = Type` - The field corresponds to a [`FixedCardinalitySet`](label::FixedCardinalitySet)
+/// * `dynamic_with = Type` - The field corresponds to a [`DynamicLabelSet`](label::DynamicLabelSet)
+/// * `default` - The generated [`LabelGroupSet`](label::LabelGroupSet) can default this field.
+///
+/// # Outputs
+///
+/// * `impl LabelGroup for T { ... }`
+/// * `struct TSet { ... }`
+/// * `impl LabelGroupSet for TSet { ... }`
+/// * `impl TSet { pub fn new(...) -> Self {} }`
+///     - `new` contains args for all the non-default fields.
+/// * `impl Default for TSet { ... }`
+///     - only implemented if all fields are default fields.
+///
+/// # Example
+///
 /// ```
 /// use lasso::{RodeoReader, ThreadedRodeo};
 ///
@@ -399,7 +175,7 @@ pub use label::value::FixedCardinalityLabel;
 ///     route: &'a str,
 ///
 ///     /// user names are not known up-front and are allocated on-demand in a ThreadedRodeo
-///     #[label(dynamic_with = ThreadedRodeo)]
+///     #[label(dynamic_with = ThreadedRodeo, default)]
 ///     user_name: &'a str,
 /// }
 ///
@@ -410,11 +186,9 @@ pub use label::value::FixedCardinalityLabel;
 ///     InternalServerError = 500,
 /// }
 ///
-/// let set = ResponseSet {
-///     kind: measured::label::StaticLabelSet::new(),
-///     route: ["/foo/bar", "/home"].into_iter().collect::<lasso::Rodeo>().into_reader(),
-///     user_name: ThreadedRodeo::new(),
-/// };
+/// let set = ResponseSet::new(
+///     ["/foo/bar", "/home"].into_iter().collect::<lasso::Rodeo>().into_reader(),
+/// );
 ///
 /// use measured::label::LabelGroupSet as _;
 ///
@@ -441,7 +215,33 @@ pub use label::group::LabelGroup;
 
 /// Implement [`MetricGroup`] on a `struct`
 ///
-/// A [`MetricGroup`] is a collection of named [`Metric`]s or [`MetricVec`]s.
+/// A [`MetricGroup`] is a collection of named [`Metric`]s, [`MetricVec`]s, or nested [`MetricGroup`]s.
+///
+/// # Container attributes
+///
+/// * `new(..args)` - The arguments the generated `fn new() -> Self` should take. If not provided, no new function is generated.
+///
+/// # Field attributes
+///
+/// ## Nested groups
+/// These are for fields that also implement [`MetricGroup`]
+///
+/// * `namespace = "..."` - The field represents a nested group with the given namespace.
+/// * `flatten` - The field represents a nested group with no namespacing.
+/// * `init` - The expression needed to initialise the nested metric group.
+///
+/// ## Metrics
+/// These are for fields that implement [`MetricFamilyEncoding`](metric::MetricFamilyEncoding)
+///
+/// * `rename = "..."` - By default, metrics take on the field name in snake case. rename allows renaming them.
+/// * `metadata = expr` - The metadata to initialise a [`Metric`] or [`MetricVec`] with.
+/// * `label_set = expr` - The [`LabelGroupSet`](label::LabelGroupSet) to initialise a [`MetricVec`] with.
+/// * `init = expr` - The expression needed to initialise the metric, if it cannot be defaulted.
+///
+/// # Outputs
+///
+/// * `impl MetricGroup for T { ... }`
+/// * `impl MetricGroup { pub fn new(...) -> Self { ... } }`
 pub use measured_derive::MetricGroup;
 
 pub use metric::group::MetricGroup;
@@ -498,9 +298,7 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 ///
 /// // create a histogram vec
 /// let histograms = HistogramVec::with_label_set_and_metadata(
-///     MyLabelGroupSet {
-///         operation: StaticLabelSet::new(),
-///     },
+///     MyLabelGroupSet::new(),
 ///     Thresholds::<8>::exponential_buckets(0.01, 2.0),
 /// );
 /// // observe a value
@@ -563,9 +361,7 @@ pub type Counter = Metric<CounterState>;
 /// }
 ///
 /// // create a counter vec
-/// let counters = CounterVec::with_label_set(MyLabelGroupSet {
-///     operation: StaticLabelSet::new(),
-/// });
+/// let counters = CounterVec::with_label_set(MyLabelGroupSet::new());
 /// // increment the counter at a given label
 /// counters.inc(MyLabelGroup { operation: Operation::Create });
 /// counters.inc(MyLabelGroup { operation: Operation::Delete });
@@ -626,9 +422,7 @@ pub type Gauge = Metric<GaugeState>;
 /// }
 ///
 /// // create a gauge vec
-/// let gauges = GaugeVec::with_label_set(MyLabelGroupSet {
-///     operation: StaticLabelSet::new(),
-/// });
+/// let gauges = GaugeVec::with_label_set(MyLabelGroupSet::new());
 /// // increment the gauge at a given label
 /// gauges.inc(MyLabelGroup { operation: Operation::Create });
 /// gauges.inc(MyLabelGroup { operation: Operation::Delete });
