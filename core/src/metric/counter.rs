@@ -1,3 +1,5 @@
+//! All things counters. See [`Counter`]
+
 use core::sync::atomic::AtomicU64;
 
 use crate::{label::LabelGroupSet, Counter, CounterVec};

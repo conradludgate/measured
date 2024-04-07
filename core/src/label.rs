@@ -2,9 +2,9 @@
 
 mod impls;
 
-pub mod group;
-pub mod name;
-pub mod value;
+pub(crate) mod group;
+pub(crate) mod name;
+pub(crate) mod value;
 
 pub use group::{ComposedGroup, LabelGroup, LabelGroupSet, LabelGroupVisitor, NoLabels};
 pub use name::LabelName;

@@ -12,9 +12,7 @@ use crate::{
 };
 use crossbeam_utils::CachePadded;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
-use parking_lot::RwLockWriteGuard;
-
-type Hasher = rustc_hash::FxHasher;
+use parking_lot::{RwLock, RwLockWriteGuard};
 
 use self::{group::Encoding, name::MetricNameEncoder};
 
@@ -43,6 +41,39 @@ pub struct Metric<M: MetricType> {
 }
 
 /// Multiple metric values, keyed by [`LabelGroup`]
+///
+/// # Note
+///
+/// The internal representation of the metric vec can either be 'dense' or 'sparse'.
+/// We will try to pick the most sensible representation unless you
+/// specify with one of the `dense_*` or `sparse_*` methods.
+///
+/// The default representation is not considered stable, and will change in future if
+/// it is measured beneficial for performance or memory usage.
+///
+/// ## Dense
+///
+/// Dense metric vecs are represented as a single `Vec<_>` with lazily initiated cells.
+/// The vec is pre-allocated to match the [`LabelGroupSet::cardinality`].
+/// Each cell is [`CachePadded`] to improve performance, but induces higher memory overhead.
+///
+/// The [`MetricVec::remove_metric`] API does not work with dense representations as it introduced too much performance overhead.
+/// Since removal would not reduce memory usage of a dense metric anyway, I do not consider if a priority to support. I suggest switching to
+/// a sparse representation if this is necessary for your use case.
+/// Please open an issue if you absolutely need removal paired with the dense repr metric vec.
+///
+/// This is currently the default if the label set cardinality is <= 1024
+///
+/// ## Sparse
+///
+/// Sparse metric vecs are represented as a sharded hashmap. Because the implementation makes use of [`RwLock`]s, it does have
+/// slower performance compared to the dense representation.
+///
+/// Currently the number of shards used is taken as the number of CPU cores, multiplied by 4 and rounded up to the next power of 2.
+/// This was chosen based on [`dashmap`](https://docs.rs/dashmap/latest/src/dashmap/lib.rs.html#66-71), which is used to reduce lock contention
+/// on each shard. This is not considered stable.
+///
+/// This is currently the default if the label set cardinality is > 1024, or unbounded.
 pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
     metrics: VecInner<L::Unique, M>,
     metadata: M::Metadata,
@@ -93,17 +124,17 @@ fn default_shard_amount() -> usize {
 }
 
 struct DashMap<K, V> {
-    shards: Box<[parking_lot::RwLock<hashbrown::HashMap<K, V, ()>>]>,
+    hasher: BuildHasherDefault<rustc_hash::FxHasher>,
+    shards: Box<[RwLock<HashMap<K, V, ()>>]>,
     shift: u32,
 }
 
 fn new_sparse<U: Hash + Eq, M: MetricType>() -> DashMap<U, M> {
     let shards = default_shard_amount();
     let mut vec = Vec::with_capacity(shards);
-    vec.resize_with(shards, || {
-        parking_lot::RwLock::new(HashMap::with_hasher(()))
-    });
+    vec.resize_with(shards, || RwLock::new(HashMap::with_hasher(())));
     DashMap {
+        hasher: BuildHasherDefault::default(),
         shards: vec.into_boxed_slice(),
         shift: (std::mem::size_of::<usize>() * 8) as u32 - shards.trailing_zeros(),
     }
@@ -245,7 +276,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 debug_assert!(index < metrics.len());
                 index as u64
             }
-            VecInner::Sparse(_) => BuildHasherDefault::<Hasher>::default().hash_one(id),
+            VecInner::Sparse(metrics) => metrics.hasher.hash_one(id),
         };
 
         Some(LabelId { id, hash })
@@ -254,7 +285,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Get the individual metric at the given identifier.
     ///
     /// # Panics
-    /// Can panic of cause strange behaviour if the label ID comes from a different metric family.
+    /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
     pub fn get_metric<R>(
         &self,
         id: LabelId<L>,
@@ -278,9 +309,8 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                     match entry {
                         RawEntryMut::Occupied(_) => {}
                         RawEntryMut::Vacant(v) => {
-                            let hasher = BuildHasherDefault::<Hasher>::default();
                             v.insert_with_hasher(id.hash, id.id, M::default(), |k| {
-                                hasher.hash_one(k)
+                                metrics.hasher.hash_one(k)
                             });
                         }
                     }
@@ -297,10 +327,35 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         }
     }
 
+    /// Remove the metric with the given label, returning it's inner state.
+    ///
+    /// # Note
+    /// 'dense' metrics cannot be removed, and will always return None.
+    /// If you need to support removal with a fixed-cardinality label set, use
+    /// one of the sparse constructors.
+    ///
+    /// # Panics
+    /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
+    pub fn remove_metric(&self, id: LabelId<L>) -> Option<M> {
+        match &self.metrics {
+            VecInner::Dense(_) => None,
+            VecInner::Sparse(metrics) => {
+                let shard = &metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
+
+                let mut shard = shard.write();
+                let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
+                match entry {
+                    RawEntryMut::Occupied(x) => Some(x.remove()),
+                    RawEntryMut::Vacant(_) => None,
+                }
+            }
+        }
+    }
+
     /// Get the individual metric at the given identifier.
     ///
     /// # Panics
-    /// Can panic of cause strange behaviour if the label ID comes from a different metric family.
+    /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
     pub fn get_metric_mut(&mut self, id: LabelId<L>) -> MetricMut<M> {
         match &mut self.metrics {
             VecInner::Dense(metrics) => {
@@ -321,8 +376,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 let (_, v) = match entry {
                     RawEntryMut::Occupied(o) => o.into_key_value(),
                     RawEntryMut::Vacant(v) => {
-                        let hasher = BuildHasherDefault::<Hasher>::default();
-                        v.insert_with_hasher(id.hash, id.id, M::default(), |k| hasher.hash_one(k))
+                        v.insert_with_hasher(id.hash, id.id, M::default(), |k| {
+                            metrics.hasher.hash_one(k)
+                        })
                     }
                 };
 
@@ -334,7 +390,10 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Inspect the current cardinality of this metric-vec, returning the lower bound and the upper bound if known
     pub fn get_cardinality(&self) -> (usize, Option<usize>) {
         match &self.metrics {
-            VecInner::Dense(x) => (x.len(), Some(x.len())),
+            VecInner::Dense(x) => (
+                x.iter().filter(|x| x.get().is_some()).count(),
+                Some(x.len()),
+            ),
             VecInner::Sparse(x) => (
                 x.shards
                     .iter()
@@ -365,6 +424,7 @@ pub trait MetricEncoding<T: Encoding>: MetricType {
     ) -> Result<(), T::Err>;
 }
 
+/// The encoding visitor for a single [`Metric`] or [`MetricVec`]
 pub trait MetricFamilyEncoding<T: Encoding> {
     /// Collect these metric values into the given encoder with the given metric name
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
@@ -444,3 +504,75 @@ impl<L: LabelGroupSet> PartialEq for LabelId<L> {
     }
 }
 impl<L: LabelGroupSet> Eq for LabelId<L> {}
+
+#[cfg(test)]
+mod tests {
+    use crate::{CounterVec, FixedCardinalityLabel, LabelGroup};
+
+    #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
+    #[label(crate = crate, set = ErrorsSet)]
+    struct Error {
+        kind: ErrorKind,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel)]
+    #[label(crate = crate)]
+    enum ErrorKind {
+        User,
+        Internal,
+        Network,
+    }
+
+    #[test]
+    fn dense_cardinality() {
+        let errors = CounterVec::<ErrorsSet>::dense();
+        assert_eq!(errors.get_cardinality(), (0, Some(3)));
+
+        errors.inc(Error {
+            kind: ErrorKind::Internal,
+        });
+        errors.inc(Error {
+            kind: ErrorKind::User,
+        });
+        assert_eq!(errors.get_cardinality(), (2, Some(3)));
+    }
+
+    #[test]
+    fn sparse_cardinality() {
+        let errors = CounterVec::<ErrorsSet>::sparse();
+        assert_eq!(errors.get_cardinality(), (0, Some(3)));
+
+        errors.inc(Error {
+            kind: ErrorKind::Internal,
+        });
+        errors.inc(Error {
+            kind: ErrorKind::User,
+        });
+        assert_eq!(errors.get_cardinality(), (2, Some(3)));
+    }
+
+    #[test]
+    fn remove() {
+        let errors = CounterVec::<ErrorsSet>::sparse();
+
+        errors.inc(Error {
+            kind: ErrorKind::Internal,
+        });
+        errors.inc(Error {
+            kind: ErrorKind::User,
+        });
+        assert_eq!(errors.get_cardinality(), (2, Some(3)));
+        let user_errors = errors
+            .remove_metric(
+                errors
+                    .with_labels(Error {
+                        kind: ErrorKind::User,
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(errors.get_cardinality(), (1, Some(3)));
+        assert_eq!(user_errors.count.into_inner(), 1)
+    }
+}

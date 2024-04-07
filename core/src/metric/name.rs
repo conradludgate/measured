@@ -1,3 +1,5 @@
+//! Metric names and name encodings
+
 use std::io::Write;
 
 /// `MetricName` represents a type that can be encoded into the name of a metric when collected.
@@ -103,6 +105,10 @@ impl MetricName {
         unsafe { &*(value as *const str as *const MetricName) }
     }
 
+    /// Construct a [`MetricName`] from a string
+    ///
+    /// # Errors
+    /// Will panic if the string contains invalid characters
     pub fn try_from_str(value: &str) -> Result<&Self, InvalidMetricName> {
         try_assert_metric_name(value)?;
 
@@ -144,6 +150,7 @@ impl MetricNameEncoder for MetricName {
 /// * [`Sum`] - Used internally for histograms
 /// * [`Bucket`] - Used internally for histograms
 pub trait Suffix {
+    /// Write `_` followed by the suffix value with to the underlying writer
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()>;
 }
 
@@ -160,6 +167,10 @@ pub struct WithNamespace<T: ?Sized> {
 }
 
 impl<T> WithNamespace<T> {
+    /// Create a new namespaced value.
+    ///
+    /// # Panics
+    /// Will panic if the `ns` string contains invalid metric name characters
     pub const fn new(ns: &'static str, inner: T) -> Self {
         Self {
             namespace: MetricName::from_str(ns),
@@ -184,6 +195,7 @@ impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithNamespace<T> {
     }
 }
 
+/// See [`MetricName::with_suffix`]
 pub struct WithSuffix<S, T: ?Sized> {
     suffix: S,
     metric_name: T,
@@ -196,13 +208,13 @@ impl<S: Suffix, T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithSuffix<
     }
 }
 
-/// A [`Suffix`] that is good for counters
+/// `_total`. A [`Suffix`] that is good for counters
 pub struct Total;
-/// A [`Suffix`] that is used internally for histograms
+/// `_count`. A [`Suffix`] that is used internally for histograms
 pub struct Count;
-/// A [`Suffix`] that is used internally for histograms
+/// `_sum`. A [`Suffix`] that is used internally for histograms
 pub struct Sum;
-/// A [`Suffix`] that is used internally for histograms
+/// `_bucket`. A [`Suffix`] that is used internally for histograms
 pub struct Bucket;
 
 impl Suffix for Total {

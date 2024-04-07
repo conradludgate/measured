@@ -23,6 +23,7 @@ use crate::{
 /// The prometheus text encoder helper
 pub struct TextEncoder<W> {
     state: State,
+    /// The inner writer for this text encoder.
     pub writer: W,
 }
 
@@ -35,10 +36,15 @@ enum State {
 /// Prometheus only supports these 5 types of metrics
 #[derive(Clone, Copy, Debug)]
 pub enum MetricType {
+    /// Corresponds to [`Counter`](crate::Counter)
     Counter,
+    /// Corresponds to [`Histogram`](crate::Histogram)
     Histogram,
+    /// Corresponds to [`Gauge`](crate::Gauge)
     Gauge,
+    /// Not currently supported
     Summary,
+    /// Not currently supported
     Untyped,
 }
 

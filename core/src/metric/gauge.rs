@@ -1,3 +1,5 @@
+//! All things gauges. See [`Gauge`]
+
 use core::sync::atomic::AtomicI64;
 
 use crate::{label::LabelGroupSet, Gauge, GaugeVec};

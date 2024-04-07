@@ -131,7 +131,7 @@ pub mod text;
 /// ```
 pub use measured_derive::FixedCardinalityLabel;
 
-pub use label::value::FixedCardinalityLabel;
+pub use label::FixedCardinalityLabel;
 
 /// Implement [`LabelGroup`] on a `struct`
 ///

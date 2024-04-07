@@ -1,4 +1,7 @@
-pub use crate::label::{ComposedGroup, LabelGroup};
+//! Groups of metrics
+
+pub use crate::label::ComposedGroup;
+use crate::LabelGroup;
 
 use super::{
     name::{MetricNameEncoder, WithNamespace},
@@ -14,6 +17,7 @@ pub enum MetricValue {
 
 /// Base trait of a metric encoder.
 pub trait Encoding {
+    /// The error type that this type might produce when encoding metric values.
     type Err;
 
     /// Write the help text for a metric
@@ -44,7 +48,7 @@ impl<E: Encoding> Encoding for &mut E {
     }
 }
 
-/// A `MetricGroup` defines a group of [`MetricFamilyEncoding`s](super::MetricFamilyEncoding)
+/// A `MetricGroup` defines a group of [`MetricFamilyEncoding`](super::MetricFamilyEncoding)s
 pub trait MetricGroup<Enc: Encoding> {
     /// Collect the group of metric families into the encoder
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err>;

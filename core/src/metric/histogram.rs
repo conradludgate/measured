@@ -1,3 +1,5 @@
+//! All things histograms. See [`Histogram`]
+
 use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
@@ -8,9 +10,17 @@ use parking_lot::RwLock;
 use super::{MetricMut, MetricRef, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 
+/// The inner state of a histogram.
+///
+/// A histogram is comprised of 'buckets' where each bucket tracks a range or possible observations.
+/// For instance, an observation of 1.5 would increment a counter in the bucket `1.0..2.0`.
+/// If there is no suitable bucket, 'inf' is incremented.
 pub struct HistogramStateInner<const N: usize> {
+    /// The buckets count the number of observed values in the ranges described by [`Thresholds`]
     pub buckets: [AtomicU64; N],
+    /// The number of observed values that are greater than described by [`Thresholds`]
     pub inf: AtomicU64,
+    /// The accumulated sum (encoded with [`f64::to_bits`])
     pub sum: AtomicU64,
 }
 
@@ -56,11 +66,17 @@ impl<const N: usize> HistogramStateInner<N> {
     }
 }
 
+/// The state of a histogram. See also [`HistogramStateInner`]
 pub struct HistogramState<const N: usize> {
+    /// A rwlock over the inner histogram state.
+    /// The read lock is acquired for observations.
+    /// The write lock is acquired for sampling.
     pub inner: RwLock<HistogramStateInner<N>>,
 }
 
+/// A shared ref to an individual histogram
 pub type HistogramRef<'a, const N: usize> = MetricRef<'a, HistogramState<N>>;
+/// A unique ref to an individual histogram
 pub type HistogramMut<'a, const N: usize> = MetricMut<'a, HistogramState<N>>;
 
 impl<const N: usize> Default for HistogramState<N> {
@@ -248,6 +264,7 @@ impl<'a, L: LabelGroupSet, const N: usize> HistogramVecTimer<'a, L, N> {
         self.vec = None;
     }
 
+    /// Stop the timer and record the duration since the timer was started in the histogram, in seconds.
     pub fn observe(mut self) -> Duration {
         let v = self.vec.take().unwrap();
         v.get_metric(self.id, |x| x.observe_duration_since(self.start))
@@ -274,6 +291,7 @@ impl<'a, const N: usize> HistogramTimer<'a, N> {
         self.vec = None;
     }
 
+    /// Stop the timer and record the duration since the timer was started in the histogram, in seconds.
     pub fn observe(mut self) -> Duration {
         let v = self.vec.take().unwrap();
         v.get_metric().observe_duration_since(self.start)
