@@ -18,8 +18,6 @@ mod tests {
     use fake::{faker::name::raw::Name, locales::EN, Fake};
     use lasso::{Rodeo, RodeoReader, ThreadedRodeo};
 
-    use crate::label::StaticLabelSet;
-
     use super::LabelGroupSet;
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
@@ -47,10 +45,7 @@ mod tests {
         rodeo.get_or_intern("/user/:id/subscribe");
         rodeo.get_or_intern("/user/:id/videos");
 
-        let set = ErrorsSet {
-            kind: StaticLabelSet::new(),
-            route: rodeo.into_reader(),
-        };
+        let set = ErrorsSet::new(rodeo.into_reader());
         assert_eq!(set.cardinality(), Some(12));
 
         let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
@@ -70,7 +65,7 @@ mod tests {
         kind: ErrorKind,
         #[label(fixed_with = RodeoReader)]
         route: &'a str,
-        #[label(dynamic_with = ThreadedRodeo)]
+        #[label(dynamic_with = ThreadedRodeo, default)]
         user: &'a str,
     }
 
@@ -83,11 +78,7 @@ mod tests {
         rodeo.get_or_intern("/user/:id/subscribe");
         rodeo.get_or_intern("/user/:id/videos");
 
-        let set = ErrorsSet2 {
-            kind: StaticLabelSet::new(),
-            route: rodeo.into_reader(),
-            user: ThreadedRodeo::new(),
-        };
+        let set = ErrorsSet2::new(rodeo.into_reader());
         assert_eq!(set.cardinality(), None);
 
         let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];

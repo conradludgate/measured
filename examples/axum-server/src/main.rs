@@ -1,10 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
-use aide::{
-    axum::{routing::get, ApiRouter},
-    openapi::OpenApi,
+use axum::{
+    extract::{FromRef, Path},
+    http::StatusCode,
+    middleware,
+    routing::get,
+    Router,
 };
-use axum::{extract::Path, http::StatusCode, middleware};
 use metrics::{AppMetrics, AppMetricsEncoder};
 use tokio::net::TcpListener;
 
@@ -15,36 +17,31 @@ struct AppState {
     metrics: Arc<AppMetricsEncoder>,
 }
 
+impl FromRef<AppState> for Arc<AppMetricsEncoder> {
+    fn from_ref(input: &AppState) -> Self {
+        input.metrics.clone()
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    // We use the openapi features from `aide` in order to record the API routes we register.
-    let mut api = OpenApi::default();
-
-    let app = ApiRouter::new()
-        .nest("/api/v1", api_v1())
-        .api_route("/metrics", get(metrics::handler))
-        .finish_api(&mut api);
-
-    let paths = api
-        .paths
-        .unwrap()
-        .iter()
-        // this is a little awkward
-        // aide replaces the `:id` with `{id}` so we need to undo that...
-        .map(|(path, _)| path.replace('{', ":").replace('}', ""))
-        .collect::<lasso::Rodeo>()
-        .into_reader();
-
-    // Using the routes captured in the OpenApi object, we build the app metrics
     let state = AppState {
-        metrics: Arc::new(AppMetricsEncoder::new(AppMetrics::new(Arc::new(paths)))),
+        metrics: Arc::new(AppMetricsEncoder::new(AppMetrics::new(Arc::new(
+            lasso::ThreadedRodeo::new(),
+        )))),
     };
 
-    let app = app
+    let app = Router::new()
+        // add our API routes
+        .nest("/api/v1", api_v1())
+        // add the metrics exporter
+        .route("/metrics", get(metrics::handler))
+        // add the metrics middleware
         .layer(middleware::from_fn_with_state(
             state.clone(),
             metrics::middleware,
         ))
+        // add the state
         .with_state(state);
 
     let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -52,16 +49,16 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-fn api_v1() -> ApiRouter<AppState> {
-    ApiRouter::new()
+fn api_v1() -> Router<AppState> {
+    Router::new()
         .nest("/users", users())
         .nest("/products", products())
 }
 
-fn users() -> ApiRouter<AppState> {
-    ApiRouter::new()
-        .api_route("/", get(|| async { StatusCode::OK }))
-        .api_route(
+fn users() -> Router<AppState> {
+    Router::new()
+        .route("/", get(|| async { StatusCode::OK }))
+        .route(
             "/:id",
             get(|p: Path<String>| async move {
                 if p.0 == "current" {
@@ -74,10 +71,10 @@ fn users() -> ApiRouter<AppState> {
         )
 }
 
-fn products() -> ApiRouter<AppState> {
-    ApiRouter::new()
-        .api_route("/", get(|| async { StatusCode::OK }))
-        .api_route(
+fn products() -> Router<AppState> {
+    Router::new()
+        .route("/", get(|| async { StatusCode::OK }))
+        .route(
             "/:id",
             get(|p: Path<String>| async move {
                 if p.0 == "awesome" {
@@ -88,7 +85,7 @@ fn products() -> ApiRouter<AppState> {
             })
             .post(|| async { StatusCode::CREATED }),
         )
-        .api_route(
+        .route(
             "/:id/owner",
             get(|p: Path<String>| async move {
                 if p.0 == "awesome" {
@@ -98,7 +95,7 @@ fn products() -> ApiRouter<AppState> {
                 }
             }),
         )
-        .api_route(
+        .route(
             "/:id/purchase",
             get(|p: Path<String>| async move {
                 if p.0 == "awesome" {

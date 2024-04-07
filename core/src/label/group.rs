@@ -62,7 +62,7 @@ impl LabelGroup for NoLabels {
 }
 
 /// `ComposedGroup` represents either a combine [`LabelGroup`] or a [`LabelGroupSet`]. See [`LabelGroup::compose_with`]
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct ComposedGroup<A, B>(pub A, pub B);
 
 impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
@@ -179,5 +179,74 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
 
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
         T::decode(self, value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{FixedCardinalityLabel, LabelGroup};
+
+    use super::{ComposedGroup, LabelGroupSet};
+
+    #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
+    #[label(crate = crate, set = ErrorsSet)]
+    struct Error {
+        kind: ErrorKind,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel)]
+    #[label(crate = crate)]
+    enum ErrorKind {
+        User,
+        Internal,
+        Network,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
+    #[label(crate = crate, set = OperationsSet)]
+    struct Operation {
+        kind: OperationKind,
+    }
+
+    #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel)]
+    #[label(crate = crate)]
+    enum OperationKind {
+        Get,
+        Post,
+    }
+
+    #[test]
+    fn composed_label_set() {
+        let composed = ComposedGroup(OperationsSet::new(), ErrorsSet::new());
+
+        assert_eq!(composed.cardinality(), Some(6));
+
+        let get_user = ComposedGroup(
+            Operation {
+                kind: OperationKind::Get,
+            },
+            Error {
+                kind: ErrorKind::User,
+            },
+        );
+
+        let post_internal = ComposedGroup(
+            Operation {
+                kind: OperationKind::Post,
+            },
+            Error {
+                kind: ErrorKind::Internal,
+            },
+        );
+
+        assert_eq!(composed.encode(get_user), Some(ComposedGroup(0, 0)),);
+        assert_eq!(composed.encode_dense(ComposedGroup(0, 0)), Some(0));
+        assert_eq!(composed.decode_dense(0), get_user);
+        assert_eq!(composed.decode(&ComposedGroup(0, 0)), get_user);
+
+        assert_eq!(composed.encode(post_internal), Some(ComposedGroup(1, 1)),);
+        assert_eq!(composed.encode_dense(ComposedGroup(1, 1)), Some(4));
+        assert_eq!(composed.decode_dense(4), post_internal);
+        assert_eq!(composed.decode(&ComposedGroup(1, 1)), post_internal);
     }
 }

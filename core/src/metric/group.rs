@@ -163,7 +163,7 @@ mod tests {
     use prometheus_client::encoding::EncodeLabelValue;
 
     use crate::{
-        metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Histogram,
+        metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Gauge, Histogram
     };
 
     use super::MetricGroup;
@@ -201,6 +201,9 @@ mod tests {
         events_total: Counter,
 
         /// help text
+        cool_factor: Gauge,
+
+        /// help text
         #[metric(metadata = Thresholds::exponential_buckets(1.0, 2.0))]
         latency: Histogram<8>,
 
@@ -235,6 +238,8 @@ mod tests {
             }
         }
 
+        group.cool_factor.set(42);
+
         group.events_total.inc();
         group.latency.observe(4.0);
 
@@ -245,6 +250,10 @@ mod tests {
             r#"# HELP events_total help text
 # TYPE events_total counter
 events_total 1
+
+# HELP cool_factor help text
+# TYPE cool_factor gauge
+cool_factor 42
 
 # HELP latency help text
 # TYPE latency histogram

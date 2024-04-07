@@ -7,44 +7,39 @@ use axum::{
     RequestExt,
 };
 use measured::{
-    label::{self, LabelValue, StaticLabelSet},
+    label::{self, LabelValue},
     metric::histogram::Thresholds,
     text::BufferedTextEncoder,
     CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup,
 };
-use tokio::{sync::Mutex, time::Instant};
+use tokio::sync::Mutex;
 
-use crate::AppState;
-
+/// Defines both the metrics and the metrics encoder.
+/// Will be stored in the axum state.
 pub struct AppMetricsEncoder {
     encoder: Mutex<BufferedTextEncoder>,
     pub metrics: AppMetrics,
 }
 
+/// The metrics we wish to export
 #[derive(MetricGroup)]
-#[metric(new(paths: Arc<lasso::RodeoReader>))]
+#[metric(new(paths: Arc<lasso::ThreadedRodeo>))]
 pub struct AppMetrics {
-    #[metric(label_set = HttpRequestsSet {
-        method: StaticLabelSet::new(),
-        path: paths.clone(),
-    })]
+    /// total number of HTTP requests by path and method
+    #[metric(label_set = HttpRequestsSet::new(paths.clone()))]
     pub http_requests: CounterVec<HttpRequestsSet>,
 
-    #[metric(label_set = HttpResponsesSet {
-        method: StaticLabelSet::new(),
-        status: StaticLabelSet::new(),
-        path: paths.clone(),
-    })]
+    /// total number of HTTP responses by path, method, and status
+    #[metric(label_set = HttpResponsesSet::new(paths.clone()))]
     pub http_responses: CounterVec<HttpResponsesSet>,
 
+    /// duration of HTTP handlers by path and method
     #[metric(
-        label_set = HttpRequestsSet {
-            method: StaticLabelSet::new(),
-            path: paths.clone(),
-        },
-        metadata = Thresholds::exponential_buckets(0.1, 2.0),
+        label_set = HttpRequestsSet::new(paths),
+        // starting at 0.1ms up to 6.5s
+        metadata = Thresholds::exponential_buckets(0.0001, 2.0),
     )]
-    pub http_request_duration: HistogramVec<HttpRequestsSet, 6>,
+    pub http_request_duration: HistogramVec<HttpRequestsSet, 16>,
 }
 
 impl AppMetricsEncoder {
@@ -56,30 +51,41 @@ impl AppMetricsEncoder {
     }
 }
 
-pub async fn middleware(s: State<AppState>, mut request: Request, next: Next) -> Response {
+/// Middleware wraps all HTTP requests to automatically report metrics
+pub async fn middleware(
+    s: State<Arc<AppMetricsEncoder>>,
+    mut request: Request,
+    next: Next,
+) -> Response {
     let AppMetrics {
         http_requests,
         http_responses,
         http_request_duration,
         ..
-    } = &s.0.metrics.metrics;
+    } = &s.0.metrics;
 
-    let path = request.extract_parts::<MatchedPath>().await.unwrap();
-    let path = path.as_str();
-    let method = request.method().clone().into();
+    // extract the 'matched path', which excludes any filled in patterns.
+    // eg "/users/conradludgate" => "/users/:id"
+    let path = request.extract_parts::<MatchedPath>().await;
+    let path = match &path {
+        Ok(path) => path.as_str(),
+        Err(_) => "unknown",
+    };
+    let method = request.method().into();
 
     // record new request
     http_requests.inc(HttpRequests { path, method });
 
-    let start = Instant::now();
+    let timer = http_request_duration
+        .start_timer(HttpRequests { path, method })
+        .unwrap();
 
     let response = next.run(request).await;
 
     // record http request duration
-    let duration = start.elapsed();
-    http_request_duration.observe(HttpRequests { path, method }, duration.as_secs_f64());
+    timer.observe();
 
-    // record http status response
+    // record http response with status
     http_responses.inc(HttpResponses {
         path,
         method,
@@ -89,8 +95,9 @@ pub async fn middleware(s: State<AppState>, mut request: Request, next: Next) ->
     response
 }
 
-pub async fn handler(s: State<AppState>) -> Response {
-    let AppMetricsEncoder { encoder, metrics } = &*s.0.metrics;
+/// sample and export the metrics
+pub async fn handler(s: State<Arc<AppMetricsEncoder>>) -> Response {
+    let AppMetricsEncoder { encoder, metrics } = &*s.0;
 
     let mut encoder = encoder.lock().await;
     metrics.collect_group_into(&mut *encoder).unwrap();
@@ -100,7 +107,7 @@ pub async fn handler(s: State<AppState>) -> Response {
 #[derive(LabelGroup)]
 #[label(set = HttpRequestsSet)]
 pub struct HttpRequests<'a> {
-    #[label(fixed_with = Arc<lasso::RodeoReader>)]
+    #[label(dynamic_with = Arc<lasso::ThreadedRodeo>)]
     path: &'a str,
     method: Method,
 }
@@ -108,7 +115,7 @@ pub struct HttpRequests<'a> {
 #[derive(LabelGroup)]
 #[label(set = HttpResponsesSet)]
 pub struct HttpResponses<'a> {
-    #[label(fixed_with = Arc<lasso::RodeoReader>)]
+    #[label(dynamic_with = Arc<lasso::ThreadedRodeo>)]
     path: &'a str,
     method: Method,
     status: StatusCode,
@@ -123,8 +130,8 @@ enum Method {
     Other,
 }
 
-impl From<axum::http::Method> for Method {
-    fn from(value: axum::http::Method) -> Self {
+impl From<&axum::http::Method> for Method {
+    fn from(value: &axum::http::Method) -> Self {
         if value == axum::http::Method::GET {
             Method::Get
         } else if value == axum::http::Method::POST {
@@ -146,6 +153,7 @@ impl LabelValue for StatusCode {
 
 impl FixedCardinalityLabel for StatusCode {
     fn cardinality() -> usize {
+        // Status code values in the range 100-999 (inclusive) are supported by this type
         (100..1000).len()
     }
 

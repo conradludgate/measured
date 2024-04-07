@@ -575,4 +575,48 @@ mod tests {
         assert_eq!(errors.get_cardinality(), (1, Some(3)));
         assert_eq!(user_errors.count.into_inner(), 1)
     }
+
+    #[cfg(feature = "lasso")]
+    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
+    #[label(crate = crate, set = ErrorsSet2)]
+    struct Error2<'a> {
+        kind: ErrorKind,
+        #[label(dynamic_with = lasso::ThreadedRodeo, default)]
+        user: &'a str,
+    }
+
+    #[cfg(feature = "lasso")]
+    #[test]
+    fn dynamic_labels() {
+        use fake::{faker::name::raw::Name, locales::EN, Fake};
+
+        use crate::GaugeVec;
+
+        let set = GaugeVec::with_label_set(ErrorsSet2::default());
+
+        let names = (0..64).map(|_| Name(EN).fake()).collect::<Vec<String>>();
+
+        let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
+
+        for kind in error_kinds {
+            for name in &names {
+                let error = Error2 { kind, user: name };
+                set.inc(error);
+            }
+        }
+        for kind in error_kinds {
+            for name in &names {
+                let error = Error2 { kind, user: name };
+                set.inc_by(error, 2);
+            }
+        }
+
+        for kind in error_kinds {
+            for name in &names {
+                let error = Error2 { kind, user: name };
+                let label = set.with_labels(error).unwrap();
+                let _ = set.remove_metric(label);
+            }
+        }
+    }
 }

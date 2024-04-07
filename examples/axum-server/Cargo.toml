@@ -5,7 +5,6 @@ publish = false
 edition = "2021"
 
 [dependencies]
-aide = { version = "0.13", features = ["axum"] }
 axum = "0.7"
 lasso = { version = "0.7" }
 measured = { path = "../../core", features = ["lasso"] }
