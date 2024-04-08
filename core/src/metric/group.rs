@@ -163,7 +163,8 @@ mod tests {
     use prometheus_client::encoding::EncodeLabelValue;
 
     use crate::{
-        metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Gauge, Histogram
+        metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Gauge,
+        Histogram,
     };
 
     use super::MetricGroup;
@@ -227,14 +228,10 @@ mod tests {
 
         for kind in [ErrorKind::Internal, ErrorKind::Network, ErrorKind::User] {
             for route in route_array {
-                group.http.errors.get_metric(
-                    group
-                        .http
-                        .errors
-                        .with_labels(Error { kind, route })
-                        .unwrap(),
-                    |_| {},
-                )
+                group
+                    .http
+                    .errors
+                    .get_metric(group.http.errors.with_labels(Error { kind, route }));
             }
         }
 

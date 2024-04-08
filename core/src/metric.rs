@@ -2,7 +2,8 @@
 
 use core::hash::Hash;
 use std::{
-    hash::{BuildHasher, BuildHasherDefault},
+    hash::BuildHasher,
+    ops::{Deref, DerefMut},
     sync::OnceLock,
 };
 
@@ -11,8 +12,6 @@ use crate::{
     MetricGroup,
 };
 use crossbeam_utils::CachePadded;
-use hashbrown::{hash_map::RawEntryMut, HashMap};
-use parking_lot::{RwLock, RwLockWriteGuard};
 
 use self::{group::Encoding, name::MetricNameEncoder};
 
@@ -21,6 +20,7 @@ pub mod gauge;
 pub mod group;
 pub mod histogram;
 pub mod name;
+mod sparse;
 
 /// Defines a metric
 pub trait MetricType: Default {
@@ -28,11 +28,55 @@ pub trait MetricType: Default {
     type Metadata: Sized;
 }
 
-/// A shared ref to an individual metric value
-pub struct MetricRef<'a, M: MetricType>(&'a M, &'a M::Metadata);
+/// A shared ref to an individual metric value.
+///
+/// As the name implies, it might hold a lock (only applicable to sparse metric vecs, but this is not guaranteed behaviour)
+pub struct MetricLockGuard<'a, M: MetricType>(MetricLockGuardRepr<'a, M>, &'a M::Metadata);
+
+enum MetricLockGuardRepr<'a, M> {
+    Dense(&'a M),
+    Sparse(sparse::SparseLockGuard<'a, M>),
+}
+
+impl<M: MetricType> Deref for MetricLockGuard<'_, M> {
+    type Target = M;
+
+    fn deref(&self) -> &Self::Target {
+        match self.0 {
+            MetricLockGuardRepr::Dense(d) => d,
+            MetricLockGuardRepr::Sparse(ref s) => s,
+        }
+    }
+}
+
+impl<M: MetricType> MetricLockGuard<'_, M> {
+    pub fn metadata(&self) -> &M::Metadata {
+        self.1
+    }
+}
 
 /// A unique ref to an individual metric value
 pub struct MetricMut<'a, M: MetricType>(&'a mut M, &'a M::Metadata);
+
+impl<M: MetricType> Deref for MetricMut<'_, M> {
+    type Target = M;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<M: MetricType> DerefMut for MetricMut<'_, M> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
+impl<M: MetricType> MetricMut<'_, M> {
+    pub fn metadata(&self) -> &M::Metadata {
+        self.1
+    }
+}
 
 /// A single metric value.
 pub struct Metric<M: MetricType> {
@@ -82,7 +126,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 
 enum VecInner<U: Hash + Eq, M: MetricType> {
     Dense(Box<[CachePadded<OnceLock<M>>]>),
-    Sparse(DashMap<U, M>),
+    Sparse(sparse::ShardedMap<U, M>),
 }
 
 impl<M: MetricType> Metric<M>
@@ -105,38 +149,13 @@ impl<M: MetricType> Metric<M> {
     }
 
     /// Get a ref to the metric
-    pub fn get_metric(&self) -> MetricRef<'_, M> {
-        MetricRef(&self.metric, &self.metadata)
+    pub fn get_metric(&self) -> MetricLockGuard<'_, M> {
+        MetricLockGuard(MetricLockGuardRepr::Dense(&self.metric), &self.metadata)
     }
 
     /// Get a mut ref to the metric
     pub fn get_metric_mut(&mut self) -> MetricMut<'_, M> {
         MetricMut(&mut self.metric, &self.metadata)
-    }
-}
-
-// taken from dashmap
-fn default_shard_amount() -> usize {
-    static DEFAULT_SHARD_AMOUNT: OnceLock<usize> = OnceLock::new();
-    *DEFAULT_SHARD_AMOUNT.get_or_init(|| {
-        (std::thread::available_parallelism().map_or(1, usize::from) * 4).next_power_of_two()
-    })
-}
-
-struct DashMap<K, V> {
-    hasher: BuildHasherDefault<rustc_hash::FxHasher>,
-    shards: Box<[RwLock<HashMap<K, V, ()>>]>,
-    shift: u32,
-}
-
-fn new_sparse<U: Hash + Eq, M: MetricType>() -> DashMap<U, M> {
-    let shards = default_shard_amount();
-    let mut vec = Vec::with_capacity(shards);
-    vec.resize_with(shards, || RwLock::new(HashMap::with_hasher(())));
-    DashMap {
-        hasher: BuildHasherDefault::default(),
-        shards: vec.into_boxed_slice(),
-        shift: (std::mem::size_of::<usize>() * 8) as u32 - shards.trailing_zeros(),
     }
 }
 
@@ -224,12 +243,38 @@ where
     }
 }
 
+impl<M: MetricType, U: Hash + Eq + Copy> VecInner<U, M> {
+    fn get_metric(&self, id: LabelIdInner<U>) -> MetricLockGuardRepr<'_, M> {
+        match self {
+            VecInner::Dense(metrics) => {
+                let m = metrics[id.hash as usize].get_or_init(M::default);
+                MetricLockGuardRepr::Dense(m)
+            }
+            VecInner::Sparse(metrics) => MetricLockGuardRepr::Sparse(metrics.get_metric(id)),
+        }
+    }
+
+    fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
+        match self {
+            VecInner::Dense(metrics) => {
+                let m = &mut metrics[id.hash as usize];
+                if m.get_mut().is_none() {
+                    *m = CachePadded::new(OnceLock::from(M::default()));
+                }
+
+                m.get_mut().unwrap()
+            }
+            VecInner::Sparse(metrics) => metrics.get_metric_mut(id),
+        }
+    }
+}
+
 impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new metric vec with the given label set and metric metadata
     pub fn with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         let metrics = match label_set.cardinality() {
             Some(c) if c <= DEFAULT_MAX_DENSE => VecInner::Dense(new_dense(c)),
-            _ => VecInner::Sparse(new_sparse()),
+            _ => VecInner::Sparse(sparse::ShardedMap::new()),
         };
 
         Self {
@@ -255,7 +300,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn sparse_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(new_sparse()),
+            metrics: VecInner::Sparse(sparse::ShardedMap::new()),
             metadata,
             label_set,
         }
@@ -267,7 +312,19 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 
     /// Get an identifier for the specific metric identified by this label group
-    pub fn with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
+    ///
+    /// # Panics
+    /// Panics if the label group is not contained within the label set.
+    pub fn with_labels(&self, label: L::Group<'_>) -> LabelId<L> {
+        self.try_with_labels(label)
+            .expect("label group was not contained within this label set")
+    }
+
+    /// Get an identifier for the specific metric identified by this label group
+    ///
+    /// # Errors
+    /// Returns None if the label group is not contained within the label set.
+    pub fn try_with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
         let id = self.label_set.encode(label)?;
 
         let hash = match &self.metrics {
@@ -279,52 +336,15 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
             VecInner::Sparse(metrics) => metrics.hasher.hash_one(id),
         };
 
-        Some(LabelId { id, hash })
+        Some(LabelId(LabelIdInner { id, hash }))
     }
 
     /// Get the individual metric at the given identifier.
     ///
     /// # Panics
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
-    pub fn get_metric<R>(
-        &self,
-        id: LabelId<L>,
-        f: impl for<'a> FnOnce(MetricRef<'a, M>) -> R,
-    ) -> R {
-        match &self.metrics {
-            VecInner::Dense(metrics) => {
-                let m = metrics[id.hash as usize].get_or_init(M::default);
-                f(MetricRef(m, &self.metadata))
-            }
-            VecInner::Sparse(metrics) => {
-                let shard = &metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
-
-                if let Some((_, v)) = shard.read().raw_table().get(id.hash, |(k, _v)| *k == id.id) {
-                    return f(MetricRef(v, &self.metadata));
-                }
-
-                let shard = {
-                    let mut shard = shard.write();
-                    let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
-                    match entry {
-                        RawEntryMut::Occupied(_) => {}
-                        RawEntryMut::Vacant(v) => {
-                            v.insert_with_hasher(id.hash, id.id, M::default(), |k| {
-                                metrics.hasher.hash_one(k)
-                            });
-                        }
-                    }
-                    RwLockWriteGuard::downgrade(shard)
-                };
-
-                let (_, v) = shard
-                    .raw_table()
-                    .get(id.hash, |(k, _v)| *k == id.id)
-                    .expect("it was just inserted");
-
-                f(MetricRef(v, &self.metadata))
-            }
-        }
+    pub fn get_metric(&self, id: LabelId<L>) -> MetricLockGuard<'_, M> {
+        MetricLockGuard(self.metrics.get_metric(id.0), &self.metadata)
     }
 
     /// Remove the metric with the given label, returning it's inner state.
@@ -339,16 +359,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     pub fn remove_metric(&self, id: LabelId<L>) -> Option<M> {
         match &self.metrics {
             VecInner::Dense(_) => None,
-            VecInner::Sparse(metrics) => {
-                let shard = &metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
-
-                let mut shard = shard.write();
-                let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
-                match entry {
-                    RawEntryMut::Occupied(x) => Some(x.remove()),
-                    RawEntryMut::Vacant(_) => None,
-                }
-            }
+            VecInner::Sparse(metrics) => metrics.remove_metric(id.0),
         }
     }
 
@@ -357,34 +368,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// # Panics
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
     pub fn get_metric_mut(&mut self, id: LabelId<L>) -> MetricMut<M> {
-        match &mut self.metrics {
-            VecInner::Dense(metrics) => {
-                let m = &mut metrics[id.hash as usize];
-                if m.get_mut().is_none() {
-                    *m = CachePadded::new(OnceLock::from(M::default()));
-                }
-
-                MetricMut(m.get_mut().unwrap(), &self.metadata)
-            }
-            VecInner::Sparse(metrics) => {
-                let shard = &mut metrics.shards[((id.hash as usize) << 7) >> metrics.shift];
-
-                let entry = shard
-                    .get_mut()
-                    .raw_entry_mut()
-                    .from_hash(id.hash, |k| *k == id.id);
-                let (_, v) = match entry {
-                    RawEntryMut::Occupied(o) => o.into_key_value(),
-                    RawEntryMut::Vacant(v) => {
-                        v.insert_with_hasher(id.hash, id.id, M::default(), |k| {
-                            metrics.hasher.hash_one(k)
-                        })
-                    }
-                };
-
-                MetricMut(v, &self.metadata)
-            }
-        }
+        MetricMut(self.metrics.get_metric_mut(id.0), &self.metadata)
     }
 
     /// Inspect the current cardinality of this metric-vec, returning the lower bound and the upper bound if known
@@ -394,13 +378,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 x.iter().filter(|x| x.get().is_some()).count(),
                 Some(x.len()),
             ),
-            VecInner::Sparse(x) => (
-                x.shards
-                    .iter()
-                    .map(|shard| shard.read().len())
-                    .sum::<usize>(),
-                self.label_set.cardinality(),
-            ),
+            VecInner::Sparse(x) => (x.get_cardinality(), self.label_set.cardinality()),
         }
     }
 
@@ -487,8 +465,11 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T
     }
 }
 
-pub struct LabelId<L: LabelGroupSet> {
-    id: L::Unique,
+pub struct LabelId<L: LabelGroupSet>(LabelIdInner<L::Unique>);
+
+#[derive(Clone, Copy)]
+pub struct LabelIdInner<U> {
+    id: U,
     hash: u64,
 }
 
@@ -500,10 +481,16 @@ impl<L: LabelGroupSet> Clone for LabelId<L> {
 impl<L: LabelGroupSet> Copy for LabelId<L> {}
 impl<L: LabelGroupSet> PartialEq for LabelId<L> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.0 == other.0
     }
 }
 impl<L: LabelGroupSet> Eq for LabelId<L> {}
+impl<L: Hash + Eq> PartialEq for LabelIdInner<L> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl<L: Hash + Eq> Eq for LabelIdInner<L> {}
 
 #[cfg(test)]
 mod tests {
@@ -563,13 +550,9 @@ mod tests {
         });
         assert_eq!(errors.get_cardinality(), (2, Some(3)));
         let user_errors = errors
-            .remove_metric(
-                errors
-                    .with_labels(Error {
-                        kind: ErrorKind::User,
-                    })
-                    .unwrap(),
-            )
+            .remove_metric(errors.with_labels(Error {
+                kind: ErrorKind::User,
+            }))
             .unwrap();
 
         assert_eq!(errors.get_cardinality(), (1, Some(3)));
@@ -614,7 +597,7 @@ mod tests {
         for kind in error_kinds {
             for name in &names {
                 let error = Error2 { kind, user: name };
-                let label = set.with_labels(error).unwrap();
+                let label = set.with_labels(error);
                 let _ = set.remove_metric(label);
             }
         }

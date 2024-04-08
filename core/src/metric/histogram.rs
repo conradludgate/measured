@@ -7,7 +7,7 @@ use std::{
 
 use parking_lot::RwLock;
 
-use super::{MetricMut, MetricRef, MetricType};
+use super::{MetricLockGuard, MetricMut, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 
 /// The inner state of a histogram.
@@ -75,7 +75,7 @@ pub struct HistogramState<const N: usize> {
 }
 
 /// A shared ref to an individual histogram
-pub type HistogramRef<'a, const N: usize> = MetricRef<'a, HistogramState<N>>;
+pub type HistogramLockGuard<'a, const N: usize> = MetricLockGuard<'a, HistogramState<N>>;
 /// A unique ref to an individual histogram
 pub type HistogramMut<'a, const N: usize> = MetricMut<'a, HistogramState<N>>;
 
@@ -160,11 +160,11 @@ impl<const N: usize> Thresholds<N> {
     }
 }
 
-impl<const N: usize> HistogramRef<'_, N> {
+impl<const N: usize> HistogramLockGuard<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
-        let bucket = self.1.le.partition_point(|le| x > *le);
-        self.0.inner.read().observe(bucket, x);
+        let bucket = self.metadata().le.partition_point(|le| x > *le);
+        self.inner.read().observe(bucket, x);
     }
 
     /// Observe the duration in seconds
@@ -182,9 +182,9 @@ impl<const N: usize> HistogramRef<'_, N> {
 
 impl<const N: usize> HistogramMut<'_, N> {
     /// Add a single observation to the [`Histogram`].
-    pub fn observe(self, x: f64) {
-        let bucket = self.1.le.partition_point(|le| x > *le);
-        self.0.inner.get_mut().observe(bucket, x);
+    pub fn observe(mut self, x: f64) {
+        let bucket = self.metadata().le.partition_point(|le| x > *le);
+        self.inner.get_mut().observe(bucket, x);
     }
 
     /// Observe the duration in seconds
@@ -218,20 +218,19 @@ impl<const N: usize> Histogram<N> {
 impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
     /// Add a single observation to the [`Histogram`], keyed by the label group.
     pub fn observe(&self, label: L::Group<'_>, y: f64) {
-        self.get_metric(
-            self.with_labels(label)
-                .expect("label group should be in the set"),
-            |x| x.observe(y),
-        );
+        self.get_metric(self.with_labels(label)).observe(y);
     }
 
     /// Create a [`HistogramVecTimer`] object that automatically observes a duration when the timer is dropped.
-    pub fn start_timer(&self, label: L::Group<'_>) -> Option<HistogramVecTimer<'_, L, N>> {
-        Some(HistogramVecTimer {
+    ///
+    /// # Panics
+    /// Panics if the label group is not contained within the label set.
+    pub fn start_timer(&self, label: L::Group<'_>) -> HistogramVecTimer<'_, L, N> {
+        HistogramVecTimer {
             vec: Some(self),
-            id: self.with_labels(label)?,
+            id: self.with_labels(label),
             start: std::time::Instant::now(),
-        })
+        }
     }
 
     /// Observe the duration in seconds
@@ -267,14 +266,14 @@ impl<'a, L: LabelGroupSet, const N: usize> HistogramVecTimer<'a, L, N> {
     /// Stop the timer and record the duration since the timer was started in the histogram, in seconds.
     pub fn observe(mut self) -> Duration {
         let v = self.vec.take().unwrap();
-        v.get_metric(self.id, |x| x.observe_duration_since(self.start))
+        v.get_metric(self.id).observe_duration_since(self.start)
     }
 }
 
 impl<'a, L: LabelGroupSet, const N: usize> Drop for HistogramVecTimer<'a, L, N> {
     fn drop(&mut self) {
         if let Some(v) = self.vec {
-            v.get_metric(self.id, |m| m.observe_duration_since(self.start));
+            v.get_metric(self.id).observe_duration_since(self.start);
         }
     }
 }

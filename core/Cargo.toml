@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.17"
+version = "0.0.16"
 edition = "2021"
 description = "A better way to measure your application performance"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -32,6 +32,10 @@ indexmap = { version = "2", optional = true }
 lasso = { version = "0.7", optional = true, features = ["multi-threaded"] }
 phf = { version = "0.11", optional = true }
 
+ahash = { version = "0.8.11" }
+fnv = "1.0.7"
+twox-hash = "1.6.3"
+
 [dev-dependencies]
 fake = "2.9.2"
 divan = "0.1.14"
@@ -52,6 +56,10 @@ harness = false
 
 [[bench]]
 name = "memory"
+harness = false
+
+[[bench]]
+name = "high_cardinality"
 harness = false
 
 [[bench]]

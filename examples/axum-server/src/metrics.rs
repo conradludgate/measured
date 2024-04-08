@@ -76,9 +76,7 @@ pub async fn middleware(
     // record new request
     http_requests.inc(HttpRequests { path, method });
 
-    let timer = http_request_duration
-        .start_timer(HttpRequests { path, method })
-        .unwrap();
+    let timer = http_request_duration.start_timer(HttpRequests { path, method });
 
     let response = next.run(request).await;
 
