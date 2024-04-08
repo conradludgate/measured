@@ -25,17 +25,21 @@
 //! # drop(metrics);
 //! ```
 
-use std::{
-    cell::OnceCell,
-    sync::atomic::{AtomicI64, AtomicU64},
+use std::sync::{
+    atomic::{AtomicI64, AtomicU64},
+    OnceLock,
 };
 
 use measured::{
     label::NoLabels,
     metric::{
-        counter::CounterState, gauge::GaugeState, group::Encoding, name::MetricName, MetricEncoding,
+        counter::CounterState,
+        gauge::GaugeState,
+        group::Encoding,
+        name::{MetricName, MetricNameEncoder},
+        MetricEncoding,
     },
-    Counter, MetricGroup,
+    MetricGroup,
 };
 use nix::unistd::Pid;
 
@@ -53,7 +57,7 @@ pub struct ProcessCollector {
 
 impl ProcessCollector {
     /// Create a `ProcessCollector` with the given process id and namespace.
-    pub fn new<S: Into<String>>(pid: Pid) -> ProcessCollector {
+    pub fn new(pid: Pid) -> ProcessCollector {
         // proc_start_time init once because it is immutable
         let mut start_time = None;
         if let Ok(boot_time) = procfs::boot_time_secs() {
@@ -71,7 +75,11 @@ impl ProcessCollector {
     }
 }
 
-fn write_count<T: Encoding>(x: u64, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>
+fn write_count<Enc: Encoding>(
+    x: u64,
+    name: impl MetricNameEncoder,
+    enc: &mut Enc,
+) -> Result<(), Enc::Err>
 where
     CounterState: MetricEncoding<Enc>,
 {
@@ -81,7 +89,11 @@ where
     .collect_into(&(), NoLabels, name, enc)
 }
 
-fn write_gauge<T: Encoding>(x: i64, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>
+fn write_gauge<Enc: Encoding>(
+    x: i64,
+    name: impl MetricNameEncoder,
+    enc: &mut Enc,
+) -> Result<(), Enc::Err>
 where
     GaugeState: MetricEncoding<Enc>,
 {
@@ -97,7 +109,7 @@ where
     GaugeState: MetricEncoding<Enc>,
 {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
-        let Ok(p) = procfs::process::Process::new(self.pid) else {
+        let Ok(p) = procfs::process::Process::new(self.pid.as_raw()) else {
             // we can't construct a Process object, so there's no stats to gather
             return Ok(());
         };
@@ -143,7 +155,7 @@ where
                 name,
                 "Start time of the process since unix epoch in seconds.",
             )?;
-            write_gauge(self.start_time, name, &mut *enc)?;
+            write_gauge(start_time, name, &mut *enc)?;
         }
 
         Ok(())
@@ -151,8 +163,8 @@ where
 }
 
 fn clk_tck() -> i64 {
-    static CLK_TCK: OnceCell<i64> = OnceCell::new();
-    CLK_TCK.get_or_init(|| {
+    static CLK_TCK: OnceLock<i64> = OnceLock::new();
+    *CLK_TCK.get_or_init(|| {
         nix::unistd::sysconf(nix::unistd::SysconfVar::CLK_TCK)
             .unwrap()
             .unwrap()
@@ -160,8 +172,8 @@ fn clk_tck() -> i64 {
 }
 
 fn pagesize() -> i64 {
-    static PAGESIZE: OnceCell<i64> = OnceCell::new();
-    PAGESIZE.get_or_init(|| {
+    static PAGESIZE: OnceLock<i64> = OnceLock::new();
+    *PAGESIZE.get_or_init(|| {
         nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)
             .unwrap()
             .unwrap()
