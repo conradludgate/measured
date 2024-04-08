@@ -306,6 +306,23 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         }
     }
 
+    /// For dense metric-vecs, sometimes you might want to initialise all metric values to their initial state.
+    /// This is intended to run once at startup.
+    ///
+    /// # Note
+    /// This does nothing if the metric vec is not 'dense'.
+    ///
+    /// You can initialise specific metric labels with the [`get_metric`](MetricVec::get_metric) method.
+    pub fn init_all_dense(&mut self) {
+        if let VecInner::Dense(metrics) = &mut self.metrics {
+            for m in metrics.iter_mut() {
+                if m.get_mut().is_none() {
+                    *m = CachePadded::new(OnceLock::from(M::default()));
+                }
+            }
+        }
+    }
+
     /// View the metric metadata
     pub fn metadata(&self) -> &M::Metadata {
         &self.metadata

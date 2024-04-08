@@ -17,15 +17,15 @@ pub type CounterLockGuard<'a> = MetricLockGuard<'a, CounterState>;
 /// A mut reference to a specific counter.
 pub type CounterMut<'a> = MetricMut<'a, CounterState>;
 
-impl CounterLockGuard<'_> {
+impl CounterState {
     /// Increment the counter value by 1
-    pub fn inc(self) {
+    pub fn inc(&self) {
         self.count
             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     }
 
     /// Increment the counter value by `x`
-    pub fn inc_by(self, x: u64) {
+    pub fn inc_by(&self, x: u64) {
         self.count
             .fetch_add(x, core::sync::atomic::Ordering::Relaxed);
     }
