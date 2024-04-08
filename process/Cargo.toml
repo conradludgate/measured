@@ -1,6 +1,6 @@
 [package]
 name = "measured-process"
-version = "0.0.19"
+version = "0.0.20"
 edition = "2021"
 description = "Linux process metrics for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -14,7 +14,7 @@ readme = "../README.md"
 default = []
 
 [dependencies]
-measured = { path = "../core", version = "0.0.19" }
+measured = { path = "../core", version = "0.0.20" }
 libc = { version = "^0.2" }
 procfs = { version = "^0.16", default-features = false }
 

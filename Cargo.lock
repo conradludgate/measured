@@ -591,7 +591,7 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "measured"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "bytes",
  "crossbeam-utils",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "measured-derive"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "measured-process"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "libc",
  "measured",
