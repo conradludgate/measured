@@ -1,5 +1,7 @@
 //! Groups of metrics
 
+use std::sync::Arc;
+
 pub use crate::label::ComposedGroup;
 use crate::LabelGroup;
 
@@ -87,6 +89,21 @@ where
             namespace: self.namespace,
             inner: enc,
         })
+    }
+}
+
+impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Option<M> {
+    fn collect_group_into(&self, enc: &mut T) -> Result<(), T::Err> {
+        if let Some(this) = self {
+            this.collect_group_into(enc)?;
+        }
+        Ok(())
+    }
+}
+
+impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Arc<M> {
+    fn collect_group_into(&self, enc: &mut T) -> Result<(), T::Err> {
+        M::collect_group_into(self, enc)
     }
 }
 

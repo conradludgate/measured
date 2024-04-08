@@ -149,6 +149,7 @@ pub use label::FixedCardinalityLabel;
 /// * `fixed_with = Type` - The field corresponds to a [`FixedCardinalitySet`](label::FixedCardinalitySet)
 /// * `dynamic_with = Type` - The field corresponds to a [`DynamicLabelSet`](label::DynamicLabelSet)
 /// * `default` - The generated [`LabelGroupSet`](label::LabelGroupSet) can default this field.
+/// * `rename = "..."` - Rename this label.
 ///
 /// # Outputs
 ///

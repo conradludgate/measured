@@ -18,8 +18,8 @@ impl ToTokens for LabelGroup {
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
         let visits = fields.iter().map(|x| {
-            let LabelGroupField { name, .. } = x;
-            let name_string = name.to_string();
+            let LabelGroupField { name, attrs, .. } = x;
+            let name_string = attrs.rename.as_ref().map_or_else(|| name.to_string(), |r| r.value());
             let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
             quote_spanned! { x.span =>
                 const #ident: &#krate::label::LabelName = #krate::label::LabelName::from_str(#name_string);

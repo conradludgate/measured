@@ -1,6 +1,5 @@
 use syn::{
     parse::{Parse, ParseStream},
-    spanned::Spanned,
     Attribute, LitStr, Token,
 };
 
@@ -80,34 +79,16 @@ impl VariantAttrs {
         let mut args = VariantAttrs { rename: None };
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
-                attr.parse_args_with(|input: ParseStream| {
-                    let mut first = true;
-                    while !input.is_empty() {
-                        if !first {
-                            input.parse::<Token![,]>()?;
-                        }
-                        first = false;
-
-                        match () {
-                            () if input.peek(syn::Ident) => {
-                                let name: syn::Ident = input.parse()?;
-                                match &*name.to_string() {
-                                    "rename" => {
-                                        let _: Token![=] = input.parse()?;
-
-                                        if args.rename.replace(input.parse()?).is_some() {
-                                            return Err(syn::Error::new(
-                                                attr.span(),
-                                                "duplicate `rename` attr",
-                                            ));
-                                        }
-                                    }
-                                    _ => return Err(input.error("unknown argument found")),
-                                }
+                attr.meta.require_list()?.parse_nested_meta(|meta| {
+                    match () {
+                        () if meta.path.is_ident("rename") => {
+                            if args.rename.replace(meta.value()?.parse()?).is_some() {
+                                return Err(meta.error("duplicate `label(rename)` arg"));
                             }
-                            () => return Err(input.error("unknown argument found")),
-                        };
+                        }
+                        () => return Err(meta.error("unknown argument found")),
                     }
+
                     Ok(())
                 })?;
             }

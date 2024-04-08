@@ -15,7 +15,7 @@ default = []
 
 [dependencies]
 measured = { path = "../core", version = "0.0.19" }
-nix = { version = "0.28", features = ["process", "feature"] }
+libc = { version = "^0.2" }
 procfs = { version = "^0.16", default-features = false }
 
 [package.metadata.docs.rs]

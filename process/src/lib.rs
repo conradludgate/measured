@@ -25,23 +25,20 @@
 //! # drop(metrics);
 //! ```
 
-use std::sync::{
-    atomic::{AtomicI64, AtomicU64},
-    OnceLock,
-};
+use std::sync::OnceLock;
 
+use libc::pid_t;
 use measured::{
     label::NoLabels,
     metric::{
         counter::CounterState,
         gauge::GaugeState,
-        group::Encoding,
-        name::{MetricName, MetricNameEncoder},
+        group::{Encoding, MetricValue},
+        name::MetricName,
         MetricEncoding,
     },
     MetricGroup,
 };
-use nix::unistd::Pid;
 
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 // https://github.com/tikv/rust-prometheus/blob/f49c724df0e123520554664436da68e555593af0/src/process_collector.rs
@@ -51,13 +48,13 @@ use nix::unistd::Pid;
 /// CPU, memory and file descriptor usage, thread count, as well as the process
 /// start time for the given process id.
 pub struct ProcessCollector {
-    pid: Pid,
+    pid: pid_t,
     start_time: Option<i64>,
 }
 
 impl ProcessCollector {
     /// Create a `ProcessCollector` with the given process id and namespace.
-    pub fn new(pid: Pid) -> ProcessCollector {
+    pub fn new(pid: pid_t) -> ProcessCollector {
         // proc_start_time init once because it is immutable
         let mut start_time = None;
         if let Ok(boot_time) = procfs::boot_time_secs() {
@@ -71,36 +68,9 @@ impl ProcessCollector {
 
     /// Return a `ProcessCollector` of the calling process.
     pub fn for_self() -> ProcessCollector {
-        ProcessCollector::new(Pid::this())
+        let pid = unsafe { libc::getpid() };
+        ProcessCollector::new(pid)
     }
-}
-
-fn write_count<Enc: Encoding>(
-    x: u64,
-    name: impl MetricNameEncoder,
-    enc: &mut Enc,
-) -> Result<(), Enc::Err>
-where
-    CounterState: MetricEncoding<Enc>,
-{
-    CounterState {
-        count: AtomicU64::new(x),
-    }
-    .collect_into(&(), NoLabels, name, enc)
-}
-
-fn write_gauge<Enc: Encoding>(
-    x: i64,
-    name: impl MetricNameEncoder,
-    enc: &mut Enc,
-) -> Result<(), Enc::Err>
-where
-    GaugeState: MetricEncoding<Enc>,
-{
-    GaugeState {
-        count: AtomicI64::new(x),
-    }
-    .collect_into(&(), NoLabels, name, enc)
 }
 
 impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector
@@ -109,7 +79,7 @@ where
     GaugeState: MetricEncoding<Enc>,
 {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
-        let Ok(p) = procfs::process::Process::new(self.pid.as_raw()) else {
+        let Ok(p) = procfs::process::Process::new(self.pid) else {
             // we can't construct a Process object, so there's no stats to gather
             return Ok(());
         };
@@ -118,13 +88,13 @@ where
         if let Ok(fd_count) = p.fd_count() {
             let fd = MetricName::from_str("open_fds");
             enc.write_help(fd, "Number of open file descriptors.")?;
-            write_gauge(fd_count as i64, fd, &mut *enc)?;
+            enc.write_metric_value(fd, NoLabels, MetricValue::Int(fd_count as i64))?;
         }
         if let Ok(limits) = p.limits() {
             if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
                 let fd = MetricName::from_str("max_fds");
                 enc.write_help(fd, "Maximum number of open file descriptors.")?;
-                write_gauge(max as i64, fd, &mut *enc)?;
+                enc.write_metric_value(fd, NoLabels, MetricValue::Int(max as i64))?;
             }
         }
 
@@ -132,21 +102,29 @@ where
             // memory
             let vmm = MetricName::from_str("virtual_memory_bytes");
             enc.write_help(vmm, "Virtual memory size in bytes.")?;
-            write_gauge(stat.vsize as i64, vmm, &mut *enc)?;
+            enc.write_metric_value(vmm, NoLabels, MetricValue::Int(stat.vsize as i64))?;
 
             let rss = MetricName::from_str("resident_memory_bytes");
-            enc.write_help(vmm, "Resident memory size in bytes.")?;
-            write_gauge((stat.rss as i64) * pagesize(), rss, &mut *enc)?;
+            enc.write_help(rss, "Resident memory size in bytes.")?;
+            enc.write_metric_value(
+                rss,
+                NoLabels,
+                MetricValue::Int((stat.rss as i64) * pagesize()),
+            )?;
 
             // cpu
             let cpu = MetricName::from_str("cpu_seconds_total");
             enc.write_help(cpu, "Total user and system CPU time spent in seconds.")?;
-            write_count((stat.utime + stat.stime) / clk_tck() as u64, cpu, &mut *enc)?;
+            enc.write_metric_value(
+                cpu,
+                NoLabels,
+                MetricValue::Int((stat.utime + stat.stime) as i64 / clk_tck()),
+            )?;
 
             // threads
             let threads = MetricName::from_str("threads");
-            enc.write_help(vmm, "Number of OS threads in the process.")?;
-            write_gauge(stat.num_threads, threads, &mut *enc)?;
+            enc.write_help(threads, "Number of OS threads in the process.")?;
+            enc.write_metric_value(threads, NoLabels, MetricValue::Int(stat.num_threads))?;
         }
 
         if let Some(start_time) = self.start_time {
@@ -155,7 +133,7 @@ where
                 name,
                 "Start time of the process since unix epoch in seconds.",
             )?;
-            write_gauge(start_time, name, &mut *enc)?;
+            enc.write_metric_value(name, NoLabels, MetricValue::Int(start_time))?;
         }
 
         Ok(())
@@ -164,18 +142,10 @@ where
 
 fn clk_tck() -> i64 {
     static CLK_TCK: OnceLock<i64> = OnceLock::new();
-    *CLK_TCK.get_or_init(|| {
-        nix::unistd::sysconf(nix::unistd::SysconfVar::CLK_TCK)
-            .unwrap()
-            .unwrap()
-    })
+    *CLK_TCK.get_or_init(|| unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as i64)
 }
 
 fn pagesize() -> i64 {
     static PAGESIZE: OnceLock<i64> = OnceLock::new();
-    *PAGESIZE.get_or_init(|| {
-        nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE)
-            .unwrap()
-            .unwrap()
-    })
+    *PAGESIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as i64)
 }

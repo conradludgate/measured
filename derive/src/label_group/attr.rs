@@ -1,5 +1,5 @@
 use proc_macro2::Ident;
-use syn::{Attribute, Path};
+use syn::{Attribute, LitStr, Path};
 
 use crate::Krate;
 
@@ -44,6 +44,7 @@ impl ContainerAttrs {
 pub struct LabelGroupFieldAttrs {
     pub kind: LabelGroupFieldAttrsKind,
     pub default: bool,
+    pub rename: Option<LitStr>,
 }
 
 #[derive(Clone)]
@@ -73,6 +74,8 @@ impl LabelGroupFieldAttrs {
     pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut kind = None;
         let mut default = None;
+        let mut rename = None;
+
         for attr in attrs {
             if attr.path().is_ident(LABEL_ATTR) {
                 attr.meta.require_list()?.parse_nested_meta(|meta| {
@@ -107,6 +110,11 @@ impl LabelGroupFieldAttrs {
                                 return Err(meta.error("duplicate `label(default)` arg"));
                             }
                         }
+                        () if meta.path.is_ident("rename") => {
+                            if rename.replace(meta.value()?.parse()?).is_some() {
+                                return Err(meta.error("duplicate `label(rename)` arg"));
+                            }
+                        }
                         () => return Err(meta.error("unknown argument found")),
                     }
 
@@ -120,6 +128,10 @@ impl LabelGroupFieldAttrs {
 
         // fixed implies default
         let default = default || matches!(kind, LabelGroupFieldAttrsKind::Fixed);
-        Ok(Self { kind, default })
+        Ok(Self {
+            kind,
+            default,
+            rename,
+        })
     }
 }

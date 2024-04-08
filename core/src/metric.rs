@@ -7,10 +7,7 @@ use std::{
     sync::OnceLock,
 };
 
-use crate::{
-    label::{LabelGroup, LabelGroupSet, NoLabels},
-    MetricGroup,
-};
+use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use crossbeam_utils::CachePadded;
 
 use self::{group::Encoding, name::MetricNameEncoder};
@@ -429,15 +426,6 @@ impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Option
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
         if let Some(this) = self {
             this.collect_family_into(name, enc)?;
-        }
-        Ok(())
-    }
-}
-
-impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Option<M> {
-    fn collect_group_into(&self, enc: &mut T) -> Result<(), T::Err> {
-        if let Some(this) = self {
-            this.collect_group_into(enc)?;
         }
         Ok(())
     }
