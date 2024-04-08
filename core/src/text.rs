@@ -376,7 +376,7 @@ impl BufferedTextEncoder {
     }
 }
 
-impl<const N: usize> MetricEncoding<BufferedTextEncoder> for HistogramState<N> {
+impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEncoder> for T {
     fn write_type(
         name: impl MetricNameEncoder,
         enc: &mut BufferedTextEncoder,
@@ -385,45 +385,7 @@ impl<const N: usize> MetricEncoding<BufferedTextEncoder> for HistogramState<N> {
     }
     fn collect_into(
         &self,
-        metadata: &Thresholds<N>,
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
-        self.collect_into(metadata, labels, name, &mut enc.inner)
-            .unreachable()
-    }
-}
-
-impl MetricEncoding<BufferedTextEncoder> for CounterState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
-        Self::write_type(name, &mut enc.inner).unreachable()
-    }
-    fn collect_into(
-        &self,
-        metadata: &(),
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
-        self.collect_into(metadata, labels, name, &mut enc.inner)
-            .unreachable()
-    }
-}
-
-impl MetricEncoding<BufferedTextEncoder> for GaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
-        Self::write_type(name, &mut enc.inner).unreachable()
-    }
-    fn collect_into(
-        &self,
-        metadata: &(),
+        metadata: &T::Metadata,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut BufferedTextEncoder,

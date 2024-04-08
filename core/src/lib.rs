@@ -1,4 +1,4 @@
-//! # Measured. A metrics crate.
+//! # Measured. A low-overhead prometheus/metrics crate for measuring your application statistics.
 //!
 //! Getting started? See [`docs`]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]

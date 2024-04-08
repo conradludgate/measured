@@ -2,7 +2,7 @@
 name = "measured-derive"
 version = "0.0.19"
 edition = "2021"
-description = "A better way to measure your application performance"
+description = "A better way to measure your application statistics"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/conradludgate/measured"
