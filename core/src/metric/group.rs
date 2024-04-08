@@ -125,7 +125,15 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
         labels: impl LabelGroup,
         value: MetricValue,
     ) -> Result<(), Self::Err> {
-        E::write_metric_value(&mut self.inner, name, labels, value)
+        E::write_metric_value(
+            &mut self.inner,
+            WithNamespace {
+                namespace: self.namespace,
+                inner: name,
+            },
+            labels,
+            value,
+        )
     }
 }
 

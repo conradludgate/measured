@@ -1,6 +1,6 @@
 [package]
 name = "measured-derive"
-version = "0.0.20"
+version = "0.0.21"
 edition = "2021"
 description = "A better way to measure your application statistics"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
