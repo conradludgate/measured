@@ -8,7 +8,6 @@ use std::{
 };
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
-use crossbeam_utils::CachePadded;
 use parking_lot::Mutex;
 use thread_local::ThreadLocal;
 
@@ -64,10 +63,10 @@ impl<M: MetricType> MetricLockGuard<'_, M> {
 }
 
 /// A unique ref to an individual metric value
-pub struct MetricMut<'a, M: MetricType>(&'a mut M, &'a M::Metadata);
+pub struct MetricMut<'a, M: MetricType>(&'a mut M::Internal, &'a M::Metadata);
 
 impl<M: MetricType> Deref for MetricMut<'_, M> {
-    type Target = M;
+    type Target = M::Internal;
 
     fn deref(&self) -> &Self::Target {
         self.0
@@ -87,8 +86,9 @@ impl<M: MetricType> MetricMut<'_, M> {
 }
 
 /// A single metric value.
-pub struct Metric<M: MetricType> {
-    metric: M,
+pub struct Metric<M: MetricType + Send> {
+    sample: Mutex<M::Internal>,
+    metric: ThreadLocal<M>,
     metadata: M::Metadata,
 }
 
@@ -182,7 +182,7 @@ struct DenseLocal<M> {
     metrics: Box<[OnceLock<M>]>,
 }
 
-impl<M: MetricType> Metric<M>
+impl<M: MetricType + Send> Metric<M>
 where
     M::Metadata: Default,
 {
@@ -192,23 +192,29 @@ where
     }
 }
 
-impl<M: MetricType> Metric<M> {
+impl<M: MetricType + Send> Metric<M> {
     /// Create a new metric with the given metadata
     pub fn with_metadata(metadata: M::Metadata) -> Self {
         Self {
-            metric: M::default(),
+            sample: Mutex::default(),
+            metric: ThreadLocal::with_capacity(
+                std::thread::available_parallelism().map_or(0, |x| x.get()),
+            ),
             metadata,
         }
     }
 
     /// Get a ref to the metric
     pub fn get_metric(&self) -> MetricLockGuard<'_, M> {
-        MetricLockGuard(MetricLockGuardRepr::Dense(&self.metric), &self.metadata)
+        MetricLockGuard(
+            MetricLockGuardRepr::Dense(self.metric.get_or_default()),
+            &self.metadata,
+        )
     }
 
     /// Get a mut ref to the metric
     pub fn get_metric_mut(&mut self) -> MetricMut<'_, M> {
-        MetricMut(&mut self.metric, &self.metadata)
+        MetricMut(self.sample.get_mut(), &self.metadata)
     }
 }
 
@@ -298,16 +304,10 @@ impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> VecInner<U, M> {
         }
     }
 
-    fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
+    fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M::Internal {
         match self {
             VecInner::Dense(metrics) => {
-                todo!()
-                // let m = &mut metrics[id.hash as usize];
-                // if m.get_mut().is_none() {
-                //     *m = CachePadded::new(OnceLock::from(M::default()));
-                // }
-
-                // m.get_mut().unwrap()
+                metrics.sample.get_mut()[id.hash as usize].get_or_insert_with(Default::default)
             }
             VecInner::Sparse(metrics) => metrics.get_metric_mut(id),
         }
@@ -479,11 +479,21 @@ impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Option
     }
 }
 
-impl<M: MetricEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Metric<M> {
+impl<M: MetricEncoding<T> + Send + Sync, T: Encoding> MetricFamilyEncoding<T> for Metric<M> {
     /// Collect this metric value into the given encoder with the given metric name
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
         M::write_type(&name, enc)?;
-        M::collect_into(&self.metric.sample(), &self.metadata, NoLabels, name, enc)
+
+        let mut sample_lock = self.sample.lock();
+        *sample_lock = Default::default();
+        for thread in self.metric.iter() {
+            M::update(&mut *sample_lock, thread.sample());
+        }
+
+        M::collect_into(&*sample_lock, &self.metadata, NoLabels, name, enc)?;
+
+        *sample_lock = Default::default();
+        Ok(())
     }
 }
 
@@ -495,6 +505,11 @@ impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFa
         match &self.metrics {
             VecInner::Dense(m) => {
                 let mut sample_lock = m.sample.lock();
+
+                // clear the sample
+                for s in sample_lock.iter_mut().flatten() {
+                    *s = Default::default();
+                }
 
                 for thread in m.locals.iter() {
                     for (index, value) in thread.metrics.iter().enumerate() {
@@ -520,6 +535,11 @@ impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFa
             }
             VecInner::Sparse(m) => {
                 let mut sample_lock = m.sample.lock();
+
+                // clear the sample
+                for s in sample_lock.values_mut() {
+                    *s = Default::default();
+                }
 
                 for thread in m.locals.iter() {
                     for (key, value) in thread.read().iter() {
