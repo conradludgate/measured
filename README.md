@@ -13,13 +13,13 @@ Increment a counter. Keyed with 2 labels and 18 distinct label groupings (6 * 3)
 #### Linux Ryzen 9 7950x (32 Threads)
 
 ```
-Timer precision: 41 ns
+Timer precision: 2.36 µs
 counters              fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ measured           60.55 ns      │ 190.3 ns      │ 147.5 ns      │ 149.2 ns      │ 504     │ 50400000
-├─ measured_sparse    380.4 ns      │ 538.5 ns      │ 497.9 ns      │ 495.6 ns      │ 504     │ 50400000
-├─ metrics            1.06 µs       │ 1.327 µs      │ 1.233 µs      │ 1.228 µs      │ 504     │ 50400000
-├─ prometheus         4.332 µs      │ 4.595 µs      │ 4.543 µs      │ 4.532 µs      │ 504     │ 50400000
-╰─ prometheus_client  4.074 µs      │ 4.391 µs      │ 4.332 µs      │ 4.323 µs      │ 504     │ 50400000
+├─ measured           17.4 ns       │ 27.21 ns      │ 23.3 ns       │ 23.34 ns      │ 512     │ 51200000
+├─ measured_sparse    22.63 ns      │ 178.6 ns      │ 63.04 ns      │ 71.53 ns      │ 512     │ 51200000
+├─ metrics            673 ns        │ 848.5 ns      │ 722.4 ns      │ 727.5 ns      │ 512     │ 51200000
+├─ prometheus         1.95 µs       │ 2.827 µs      │ 2.259 µs      │ 2.257 µs      │ 512     │ 51200000
+╰─ prometheus_client  1.657 µs      │ 3.481 µs      │ 3.228 µs      │ 3.12 µs       │ 512     │ 51200000
 ```
 
 #### Macbook Pro M2 Max (12 Threads)
@@ -42,19 +42,19 @@ counters              fastest       │ slowest       │ median        │ mean
 #### Linux Ryzen 9 7950x (32 Threads)
 
 ```
-Timer precision: 2.36 µs
+Timer precision: 2.4 µs
 histograms               fastest       │ slowest       │ median        │ mean          │ samples │ iters
 ├─ fixed_cardinality                   │               │               │               │         │
-│  ├─ measured           296 ns        │ 464.6 ns      │ 380.6 ns      │ 381.1 ns      │ 512     │ 51200000
-│  ├─ measured_sparse    457.1 ns      │ 621.2 ns      │ 523.4 ns      │ 522 ns        │ 512     │ 51200000
-│  ├─ metrics            4.146 µs      │ 4.867 µs      │ 4.314 µs      │ 4.346 µs      │ 512     │ 51200000
-│  ├─ prometheus         1.43 µs       │ 1.872 µs      │ 1.525 µs      │ 1.546 µs      │ 512     │ 51200000
-│  ╰─ prometheus_client  2.196 µs      │ 2.753 µs      │ 2.551 µs      │ 2.549 µs      │ 512     │ 51200000
+│  ├─ measured           32.03 ns      │ 61.72 ns      │ 50.21 ns      │ 50.11 ns      │ 512     │ 51200000
+│  ├─ measured_sparse    37.92 ns      │ 237.9 ns      │ 113.7 ns      │ 115.6 ns      │ 512     │ 51200000
+│  ├─ metrics            3.988 µs      │ 5.149 µs      │ 4.248 µs      │ 4.269 µs      │ 512     │ 51200000
+│  ├─ prometheus         2.309 µs      │ 2.733 µs      │ 2.515 µs      │ 2.505 µs      │ 512     │ 51200000
+│  ╰─ prometheus_client  2.368 µs      │ 3.146 µs      │ 2.759 µs      │ 2.765 µs      │ 512     │ 51200000
 ╰─ no_cardinality                      │               │               │               │         │
-   ├─ measured           7.211 µs      │ 12.88 µs      │ 7.283 µs      │ 7.685 µs      │ 512     │ 51200000
-   ├─ metrics            11.68 µs      │ 12.67 µs      │ 11.81 µs      │ 11.89 µs      │ 512     │ 51200000
-   ├─ prometheus         7.202 µs      │ 8.017 µs      │ 7.322 µs      │ 7.362 µs      │ 512     │ 51200000
-   ╰─ prometheus_client  109.5 µs      │ 113.1 µs      │ 111.4 µs      │ 111.4 µs      │ 512     │ 51200000
+   ├─ measured           6.948 µs      │ 8.209 µs      │ 7.116 µs      │ 7.151 µs      │ 512     │ 51200000
+   ├─ metrics            11.6 µs       │ 13.92 µs      │ 11.79 µs      │ 11.87 µs      │ 512     │ 51200000
+   ├─ prometheus         7.164 µs      │ 7.658 µs      │ 7.238 µs      │ 7.264 µs      │ 512     │ 51200000
+   ╰─ prometheus_client  98.58 µs      │ 103.9 µs      │ 100.9 µs      │ 101.2 µs      │ 512     │ 51200000
 ```
 
 #### Macbook Pro M2 Max (12 Threads)
@@ -91,48 +91,48 @@ The second block removes the memory tracking and runs 100 iterators per sample. 
 
 
 ```
-Timer precision: 2.39 µs
+Timer precision: 2.25 µs
 memory                fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ measured           2.089 µs      │ 777.3 µs      │ 2.709 µs      │ 2.811 µs      │ 5000000 │ 5000000
+├─ measured           2.109 µs      │ 32.2 ms       │ 2.679 µs      │ 2.804 µs      │ 5000000 │ 5000000
 │                     alloc:        │               │               │               │         │
-│                       0           │ 1             │ 0             │ 0.001         │         │
-│                       0 B         │ 1.638 MB      │ 0 B           │ 132.5 B       │         │
+│                       0           │ 1             │ 0             │ 0             │         │
+│                       0 B         │ 276.8 MB      │ 0 B           │ 159.3 B       │         │
 │                     dealloc:      │               │               │               │         │
 │                       0           │ 1             │ 0             │ 0             │         │
-│                       0 B         │ 819.2 KB      │ 0 B           │ 62.92 B       │         │
-├─ metrics            2.129 µs      │ 18.05 ms      │ 2.889 µs      │ 3.228 µs      │ 5000000 │ 5000000
+│                       0 B         │ 138.4 MB      │ 0 B           │ 76.34 B       │         │
+├─ metrics            2.149 µs      │ 18.02 ms      │ 2.839 µs      │ 3.204 µs      │ 5000000 │ 5000000
 │                     alloc:        │               │               │               │         │
-│                       7           │ 8             │ 5             │ 6.635         │         │
-│                       394 B       │ 21.23 MB      │ 289 B         │ 648.1 B       │         │
+│                       7           │ 8             │ 7             │ 6.635         │         │
+│                       394 B       │ 21.23 MB      │ 392 B         │ 648.1 B       │         │
 │                     dealloc:      │               │               │               │         │
 │                       4           │ 5             │ 4             │ 4             │         │
-│                       205 B       │ 10.61 MB      │ 203 B         │ 341.8 B       │         │
-├─ prometheus         2.119 µs      │ 41.79 ms      │ 3.229 µs      │ 3.357 µs      │ 5000000 │ 5000000
+│                       205 B       │ 10.61 MB      │ 204 B         │ 341.8 B       │         │
+├─ prometheus         2.109 µs      │ 41.65 ms      │ 3.199 µs      │ 3.336 µs      │ 5000000 │ 5000000
 │                     alloc:        │               │               │               │         │
 │                       20          │ 21            │ 20            │ 18.17         │         │
-│                       821 B       │ 142.6 MB      │ 832 B         │ 810.5 B       │         │
+│                       838 B       │ 142.6 MB      │ 823 B         │ 810.5 B       │         │
 │                     dealloc:      │               │               │               │         │
 │                       6           │ 7             │ 6             │ 5.453         │         │
 │                       355 B       │ 71.3 MB       │ 355 B         │ 351.1 B       │         │
 │                     grow:         │               │               │               │         │
 │                       3           │ 3             │ 3             │ 2.726         │         │
 │                       20 B        │ 20 B          │ 20 B          │ 18.17 B       │         │
-╰─ prometheus_client  2.109 µs      │ 452.1 ms      │ 2.759 µs      │ 2.979 µs      │ 5000000 │ 5000000
+╰─ prometheus_client  0 ns          │ 443.2 ms      │ 2.709 µs      │ 2.933 µs      │ 5000000 │ 5000000
                       alloc:        │               │               │               │         │
                         2           │ 3             │ 2             │ 1.817         │         │
-                        41 B        │ 478.1 MB      │ 41 B          │ 225.3 B       │         │
+                        34 B        │ 478.1 MB      │ 36 B          │ 225.3 B       │         │
                       dealloc:      │               │               │               │         │
                         1           │ 2             │ 1             │ 1             │         │
-                        17 B        │ 239 MB        │ 19 B          │ 112 B         │         │
+                        16 B        │ 239 MB        │ 16 B          │ 112 B         │         │
 ```
 
 ```
-Timer precision: 2.26 µs
-memory                fastest       │ slowest       │ median        │ mean          │ samples │ iters
-├─ measured           81.44 ns      │ 20.1 µs       │ 271.6 ns      │ 305.1 ns      │ 50000   │ 5000000
-├─ metrics            226.2 ns      │ 177 µs        │ 416.4 ns      │ 635.6 ns      │ 50000   │ 5000000
-├─ prometheus         445.8 ns      │ 427.5 µs      │ 724.5 ns      │ 688.4 ns      │ 50000   │ 5000000
-╰─ prometheus_client  113.1 ns      │ 4.231 ms      │ 260.4 ns      │ 416.8 ns      │ 50000   │ 5000000
+Timer precision: 2.35 µs
+high_cardinality      fastest       │ slowest       │ median        │ mean          │ samples │ iters
+├─ measured           76.51 ns      │ 326.4 µs      │ 241.8 ns      │ 264.5 ns      │ 50000   │ 5000000
+├─ metrics            229.3 ns      │ 343.2 µs      │ 418.3 ns      │ 636.5 ns      │ 50000   │ 5000000
+├─ prometheus         454.6 ns      │ 443.2 µs      │ 747.5 ns      │ 707.2 ns      │ 50000   │ 5000000
+╰─ prometheus_client  124.5 ns      │ 4.349 ms      │ 273.4 ns      │ 429.5 ns      │ 50000   │ 5000000
 ```
 
 #### Macbook Pro M2 Max (12 Threads)
@@ -189,28 +189,28 @@ Encode a counter family into a prometheus text format. With the extra dimension 
 #### Linux Ryzen 9 7950x (32 Threads)
 
 ```
-Timer precision: 2.24 µs
+Timer precision: 2.29 µs
 encoding              fastest       │ slowest       │ median        │ mean          │ samples │ iters
 ├─ measured                         │               │               │               │         │
-│  ├─ 100             2.945 µs      │ 5.269 µs      │ 3.119 µs      │ 3.195 µs      │ 100     │ 1000
-│  ├─ 1000            24.12 µs      │ 39.75 µs      │ 25.02 µs      │ 25.43 µs      │ 100     │ 1000
-│  ├─ 10000           247.8 µs      │ 411.6 µs      │ 257.3 µs      │ 263.4 µs      │ 100     │ 1000
-│  ╰─ 100000          2.486 ms      │ 3.594 ms      │ 2.566 ms      │ 2.604 ms      │ 100     │ 1000
+│  ├─ 100             3.062 µs      │ 5.622 µs      │ 3.307 µs      │ 3.453 µs      │ 100     │ 1000
+│  ├─ 1000            29.45 µs      │ 42.99 µs      │ 29.91 µs      │ 30.5 µs       │ 100     │ 1000
+│  ├─ 10000           328.6 µs      │ 557.7 µs      │ 345.2 µs      │ 351.2 µs      │ 100     │ 1000
+│  ╰─ 100000          3.432 ms      │ 4.172 ms      │ 3.543 ms      │ 3.559 ms      │ 100     │ 1000
 ├─ metrics                          │               │               │               │         │
-│  ├─ 100             40.14 µs      │ 44.47 µs      │ 40.64 µs      │ 40.91 µs      │ 100     │ 1000
-│  ├─ 1000            395.4 µs      │ 404.2 µs      │ 397.7 µs      │ 398 µs        │ 100     │ 1000
-│  ├─ 10000           4.084 ms      │ 4.741 ms      │ 4.298 ms      │ 4.281 ms      │ 100     │ 1000
-│  ╰─ 100000          63.26 ms      │ 77.02 ms      │ 65.06 ms      │ 65.96 ms      │ 100     │ 1000
+│  ├─ 100             37.55 µs      │ 49.92 µs      │ 38.15 µs      │ 38.8 µs       │ 100     │ 1000
+│  ├─ 1000            374.4 µs      │ 408.1 µs      │ 377.6 µs      │ 378.6 µs      │ 100     │ 1000
+│  ├─ 10000           4.104 ms      │ 8.8 ms        │ 4.151 ms      │ 4.201 ms      │ 100     │ 1000
+│  ╰─ 100000          62.65 ms      │ 72.31 ms      │ 65.12 ms      │ 65.41 ms      │ 100     │ 1000
 ├─ prometheus                       │               │               │               │         │
-│  ├─ 100             22.17 µs      │ 24.76 µs      │ 22.5 µs       │ 22.65 µs      │ 100     │ 1000
-│  ├─ 1000            259.1 µs      │ 270 µs        │ 262.4 µs      │ 262.5 µs      │ 100     │ 1000
-│  ├─ 10000           3.542 ms      │ 3.664 ms      │ 3.556 ms      │ 3.558 ms      │ 100     │ 1000
-│  ╰─ 100000          62.62 ms      │ 67.59 ms      │ 65.59 ms      │ 65.49 ms      │ 100     │ 1000
+│  ├─ 100             21.06 µs      │ 23.77 µs      │ 21.38 µs      │ 21.59 µs      │ 100     │ 1000
+│  ├─ 1000            242.8 µs      │ 250 µs        │ 245.4 µs      │ 245.4 µs      │ 100     │ 1000
+│  ├─ 10000           3.368 ms      │ 3.758 ms      │ 3.417 ms      │ 3.476 ms      │ 100     │ 1000
+│  ╰─ 100000          63.83 ms      │ 68.72 ms      │ 65.35 ms      │ 65.81 ms      │ 100     │ 1000
 ╰─ prometheus_client                │               │               │               │         │
-   ├─ 100             4.992 µs      │ 7.61 µs       │ 5.508 µs      │ 5.515 µs      │ 100     │ 1000
-   ├─ 1000            50.56 µs      │ 57.72 µs      │ 53.1 µs       │ 53.11 µs      │ 100     │ 1000
-   ├─ 10000           515.1 µs      │ 532.2 µs      │ 522.3 µs      │ 522.7 µs      │ 100     │ 1000
-   ╰─ 100000          5.184 ms      │ 5.347 ms      │ 5.265 ms      │ 5.261 ms      │ 100     │ 1000
+   ├─ 100             5.111 µs      │ 7.671 µs      │ 5.526 µs      │ 5.592 µs      │ 100     │ 1000
+   ├─ 1000            50.67 µs      │ 55.61 µs      │ 52.57 µs      │ 52.83 µs      │ 100     │ 1000
+   ├─ 10000           518.1 µs      │ 544.8 µs      │ 538.4 µs      │ 537 µs        │ 100     │ 1000
+   ╰─ 100000          5.313 ms      │ 5.458 ms      │ 5.442 ms      │ 5.425 ms      │ 100     │ 1000
 ```
 
 #### Macbook Pro M2 Max (12 Threads)
