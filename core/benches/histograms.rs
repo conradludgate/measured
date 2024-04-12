@@ -35,10 +35,11 @@ mod fixed_cardinality {
             static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
         }
 
-        bencher.bench(|| {
-            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
-            h.observe(Error { kind, route }, latency);
-        });
+        bencher
+            .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
+            .bench_values(|(kind, route, latency)| {
+                h.observe(Error { kind, route }, latency);
+            });
     }
 
     #[divan::bench]
@@ -56,10 +57,11 @@ mod fixed_cardinality {
             static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
         }
 
-        bencher.bench(|| {
-            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
-            h.observe(Error { kind, route }, latency);
-        });
+        bencher
+            .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
+            .bench_values(|(kind, route, latency)| {
+                h.observe(Error { kind, route }, latency);
+            });
     }
 
     #[divan::bench]
@@ -78,12 +80,13 @@ mod fixed_cardinality {
             static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
         }
 
-        bencher.bench(|| {
-            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
-            counter_vec
-                .with_label_values(&[kind.to_str(), route])
-                .observe(latency);
-        });
+        bencher
+            .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
+            .bench_values(|(kind, route, latency)| {
+                counter_vec
+                    .with_label_values(&[kind.to_str(), route])
+                    .observe(latency);
+            });
     }
 
     #[divan::bench]
@@ -104,13 +107,14 @@ mod fixed_cardinality {
             static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
         }
 
-        bencher.bench(|| {
-            metrics::with_local_recorder(&recorder, || {
-                let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
-                let labels = [("kind", kind.to_str()), ("route", route)];
-                metrics::histogram!("http_request_errors", &labels).record(latency);
+        bencher
+            .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
+            .bench_values(|(kind, route, latency)| {
+                metrics::with_local_recorder(&recorder, || {
+                    let labels = [("kind", kind.to_str()), ("route", route)];
+                    metrics::histogram!("http_request_errors", &labels).record(latency);
+                });
             });
-        });
     }
 
     #[divan::bench]
@@ -139,11 +143,12 @@ mod fixed_cardinality {
             static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
         }
 
-        bencher.bench(|| {
-            let (kind, route, latency) = RNG.with(|rng| get(&mut *rng.borrow_mut()));
-            h.get_or_create(&ErrorStatic { kind, route })
-                .observe(latency);
-        });
+        bencher
+            .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
+            .bench_values(|(kind, route, latency)| {
+                h.get_or_create(&ErrorStatic { kind, route })
+                    .observe(latency);
+            });
     }
 
     fn thread_rng() -> SmallRng {

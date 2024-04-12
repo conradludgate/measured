@@ -1,11 +1,8 @@
 //! All things histograms. See [`Histogram`]
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use std::time::Duration;
 
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 
 use super::{MetricLockGuard, MetricMut, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
@@ -15,15 +12,7 @@ use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 /// A histogram is comprised of 'buckets' where each bucket tracks a range or possible observations.
 /// For instance, an observation of 1.5 would increment a counter in the bucket `1.0..2.0`.
 /// If there is no suitable bucket, 'inf' is incremented.
-pub struct HistogramStateInner<const N: usize> {
-    /// The buckets count the number of observed values in the ranges described by [`Thresholds`]
-    pub buckets: [AtomicU64; N],
-    /// The number of observed values that are greater than described by [`Thresholds`]
-    pub inf: AtomicU64,
-    /// The accumulated sum (encoded with [`f64::to_bits`])
-    pub sum: AtomicU64,
-}
-
+#[derive(Clone, Copy)]
 pub struct HistogramStateInnerSample<const N: usize> {
     /// The buckets count the number of observed values in the ranges described by [`Thresholds`]
     pub buckets: [u64; N],
@@ -33,54 +22,22 @@ pub struct HistogramStateInnerSample<const N: usize> {
     pub sum: f64,
 }
 
-impl<const N: usize> HistogramStateInner<N> {
+impl<const N: usize> HistogramStateInnerSample<N> {
     /// Add a single observation to the [`Histogram`].
-    pub fn observe(&self, bucket: usize, x: f64) {
+    pub fn observe(&mut self, bucket: usize, x: f64) {
         assert!(bucket <= N);
         if bucket < N {
-            self.buckets[bucket].fetch_add(1, Ordering::Relaxed);
+            self.buckets[bucket] += 1;
         } else {
-            self.inf.fetch_add(1, Ordering::Relaxed);
+            self.inf += 1;
         }
-        self.sum
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                Some(f64::to_bits(f64::from_bits(v) + x))
-            })
-            .unwrap();
-    }
-
-    /// Add a single observation to the [`Histogram`].
-    pub fn observe_mut(&mut self, bucket: usize, x: f64) {
-        assert!(bucket <= N);
-        if bucket < N {
-            *self.buckets[bucket].get_mut() += 1;
-        } else {
-            *self.inf.get_mut() += 1;
-        }
-        let v = *self.sum.get_mut();
-        *self.sum.get_mut() = f64::to_bits(f64::from_bits(v) + x);
-    }
-
-    pub(crate) fn sample(&mut self) -> HistogramStateInnerSample<N> {
-        let mut buckets = [0; N];
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..N {
-            buckets[i] = *self.buckets[i].get_mut();
-        }
-        HistogramStateInnerSample {
-            buckets,
-            inf: *self.inf.get_mut(),
-            sum: f64::from_bits(*self.sum.get_mut()),
-        }
+        self.sum += x;
     }
 }
 
 /// The state of a histogram. See also [`HistogramStateInner`]
 pub struct HistogramState<const N: usize> {
-    /// A rwlock over the inner histogram state.
-    /// The read lock is acquired for observations.
-    /// The write lock is acquired for sampling.
-    pub inner: RwLock<HistogramStateInner<N>>,
+    pub inner: Mutex<HistogramStateInnerSample<N>>,
 }
 
 /// A shared ref to an individual histogram
@@ -90,14 +47,8 @@ pub type HistogramMut<'a, const N: usize> = MetricMut<'a, HistogramState<N>>;
 
 impl<const N: usize> Default for HistogramState<N> {
     fn default() -> Self {
-        #[allow(clippy::declare_interior_mutable_const)]
-        const ZERO: AtomicU64 = AtomicU64::new(0);
         Self {
-            inner: RwLock::new(HistogramStateInner {
-                buckets: [ZERO; N],
-                inf: ZERO,
-                sum: ZERO,
-            }),
+            inner: Mutex::new(HistogramStateInnerSample::default()),
         }
     }
 }
@@ -118,7 +69,7 @@ impl<const N: usize> MetricType for HistogramState<N> {
     type Internal = HistogramStateInnerSample<N>;
 
     fn sample(&self) -> Self::Internal {
-        self.inner.write().sample()
+        *self.inner.lock()
     }
 
     fn update(left: &mut Self::Internal, right: Self::Internal) {
@@ -197,7 +148,7 @@ impl<const N: usize> HistogramLockGuard<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
         let bucket = self.metadata().le.partition_point(|le| x > *le);
-        self.inner.read().observe(bucket, x);
+        self.inner.lock().observe(bucket, x);
     }
 
     /// Observe the duration in seconds
