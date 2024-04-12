@@ -46,7 +46,7 @@ pub trait LabelGroupSet {
     fn decode_dense(&self, value: usize) -> Self::Group<'_>;
 
     /// A type that can uniquely represent all possible labels
-    type Unique: Copy + Hash + Eq;
+    type Unique: Copy + Hash + Eq + Send + Sync;
 
     /// Encode the label groups into the unique compressed representation
     fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique>;

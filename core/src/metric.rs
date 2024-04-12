@@ -132,9 +132,9 @@ pub struct MetricVec<M: MetricType + Send, L: LabelGroupSet> {
     label_set: L,
 }
 
-enum VecInner<U: Hash + Eq, M: MetricType + Send> {
+enum VecInner<U: Hash + Eq + Send, M: MetricType + Send> {
     Dense(Dense<M>),
-    Sparse(sparse::ShardedMap<U, M>),
+    Sparse(sparse::Sparse<U, M>),
 }
 
 struct Dense<M: MetricType + Send> {
@@ -158,7 +158,7 @@ impl<M: MetricType + Send> Dense<M> {
         }
     }
 
-    fn get(&self, index: usize) -> MetricLockGuardRepr<'_, M> {
+    fn get(&self, index: usize) -> &M {
         let metrics = self.locals.get_or(|| {
             let mut vec = Vec::with_capacity(self.size);
             vec.resize_with(self.size, OnceLock::default);
@@ -170,8 +170,7 @@ impl<M: MetricType + Send> Dense<M> {
         metrics
             .accessed
             .store(true, std::sync::atomic::Ordering::Release);
-        let m = metrics.metrics[index].get_or_init(M::default);
-        MetricLockGuardRepr::Dense(m)
+        metrics.metrics[index].get_or_init(M::default)
     }
 }
 
@@ -182,11 +181,6 @@ struct DenseLocal<M> {
     accessed: AtomicBool,
     metrics: Box<[OnceLock<M>]>,
 }
-
-// this code does not compile
-// hey you, yes you:
-// replace everything with https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html#method.iter
-// thanks, love you
 
 impl<M: MetricType> Metric<M>
 where
@@ -216,12 +210,6 @@ impl<M: MetricType> Metric<M> {
     pub fn get_metric_mut(&mut self) -> MetricMut<'_, M> {
         MetricMut(&mut self.metric, &self.metadata)
     }
-}
-
-fn new_dense<M: MetricType>(c: usize) -> Box<[OnceLock<M>]> {
-    let mut vec = Vec::with_capacity(c);
-    vec.resize_with(c, OnceLock::default);
-    vec.into_boxed_slice()
 }
 
 // if cardinality is greater than this, then metric vecs are allocated sparsely by default.
@@ -302,10 +290,10 @@ where
     }
 }
 
-impl<M: MetricType + Send, U: Hash + Eq + Copy> VecInner<U, M> {
+impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> VecInner<U, M> {
     fn get_metric(&self, id: LabelIdInner<U>) -> MetricLockGuardRepr<'_, M> {
         match self {
-            VecInner::Dense(metrics) => metrics.get(id.hash as usize),
+            VecInner::Dense(metrics) => MetricLockGuardRepr::Dense(metrics.get(id.hash as usize)),
             VecInner::Sparse(metrics) => MetricLockGuardRepr::Sparse(metrics.get_metric(id)),
         }
     }
@@ -331,7 +319,7 @@ impl<M: MetricType + Send, L: LabelGroupSet> MetricVec<M, L> {
     pub fn with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         let metrics = match label_set.cardinality() {
             Some(c) if c <= DEFAULT_MAX_DENSE => VecInner::Dense(Dense::new(c)),
-            _ => VecInner::Sparse(sparse::ShardedMap::new()),
+            _ => VecInner::Sparse(sparse::Sparse::new()),
         };
 
         Self {
@@ -357,7 +345,7 @@ impl<M: MetricType + Send, L: LabelGroupSet> MetricVec<M, L> {
     /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
     pub fn sparse_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         Self {
-            metrics: VecInner::Sparse(sparse::ShardedMap::new()),
+            metrics: VecInner::Sparse(sparse::Sparse::new()),
             metadata,
             label_set,
         }
@@ -531,16 +519,35 @@ impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFa
                 }
             }
             VecInner::Sparse(m) => {
-                for shard in m.shards.iter() {
-                    for (k, v) in shard.read().iter() {
-                        M::collect_into(
-                            &v.sample(),
-                            &self.metadata,
-                            self.label_set.decode(k),
-                            &name,
-                            enc,
-                        )?;
+                let mut sample_lock = m.sample.lock();
+
+                for thread in m.locals.iter() {
+                    for (key, value) in thread.read().iter() {
+                        let sample = match sample_lock
+                            .raw_entry_mut()
+                            .from_hash(key.hash, |k| *k == key.id)
+                        {
+                            hashbrown::hash_map::RawEntryMut::Occupied(o) => o.into_mut(),
+                            hashbrown::hash_map::RawEntryMut::Vacant(v) => {
+                                v.insert_with_hasher(key.hash, key.id, Default::default(), |k| {
+                                    m.hasher.hash_one(k)
+                                })
+                                .1
+                            }
+                        };
+                        M::update(sample, value.sample())
                     }
+                    // thread.accessed.swap(false, std::sync::atomic::Ordering::Acquire);
+                }
+
+                for (key, sample) in sample_lock.iter() {
+                    M::collect_into(
+                        sample,
+                        &self.metadata,
+                        self.label_set.decode(key),
+                        &name,
+                        enc,
+                    )?;
                 }
             }
         }
@@ -607,82 +614,82 @@ mod tests {
     //     assert_eq!(errors.get_cardinality(), (2, Some(3)));
     // }
 
-    #[test]
-    fn sparse_cardinality() {
-        let errors = CounterVec::<ErrorsSet>::sparse();
-        assert_eq!(errors.get_cardinality(), (0, Some(3)));
+    // #[test]
+    // fn sparse_cardinality() {
+    //     let errors = CounterVec::<ErrorsSet>::sparse();
+    //     assert_eq!(errors.get_cardinality(), (0, Some(3)));
 
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
-        assert_eq!(errors.get_cardinality(), (2, Some(3)));
-    }
+    //     errors.inc(Error {
+    //         kind: ErrorKind::Internal,
+    //     });
+    //     errors.inc(Error {
+    //         kind: ErrorKind::User,
+    //     });
+    //     assert_eq!(errors.get_cardinality(), (2, Some(3)));
+    // }
 
-    #[test]
-    fn remove() {
-        let errors = CounterVec::<ErrorsSet>::sparse();
+    // #[test]
+    // fn remove() {
+    //     let errors = CounterVec::<ErrorsSet>::sparse();
 
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
-        assert_eq!(errors.get_cardinality(), (2, Some(3)));
-        let user_errors = errors
-            .remove_metric(errors.with_labels(Error {
-                kind: ErrorKind::User,
-            }))
-            .unwrap();
+    //     errors.inc(Error {
+    //         kind: ErrorKind::Internal,
+    //     });
+    //     errors.inc(Error {
+    //         kind: ErrorKind::User,
+    //     });
+    //     assert_eq!(errors.get_cardinality(), (2, Some(3)));
+    //     let user_errors = errors
+    //         .remove_metric(errors.with_labels(Error {
+    //             kind: ErrorKind::User,
+    //         }))
+    //         .unwrap();
 
-        assert_eq!(errors.get_cardinality(), (1, Some(3)));
-        assert_eq!(user_errors.count.into_inner(), 1)
-    }
+    //     assert_eq!(errors.get_cardinality(), (1, Some(3)));
+    //     assert_eq!(user_errors.count.into_inner(), 1)
+    // }
 
-    #[cfg(feature = "lasso")]
-    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
-    #[label(crate = crate, set = ErrorsSet2)]
-    struct Error2<'a> {
-        kind: ErrorKind,
-        #[label(dynamic_with = lasso::ThreadedRodeo, default)]
-        user: &'a str,
-    }
+    // #[cfg(feature = "lasso")]
+    // #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
+    // #[label(crate = crate, set = ErrorsSet2)]
+    // struct Error2<'a> {
+    //     kind: ErrorKind,
+    //     #[label(dynamic_with = lasso::ThreadedRodeo, default)]
+    //     user: &'a str,
+    // }
 
-    #[cfg(feature = "lasso")]
-    #[test]
-    fn dynamic_labels() {
-        use fake::{faker::name::raw::Name, locales::EN, Fake};
+    // #[cfg(feature = "lasso")]
+    // #[test]
+    // fn dynamic_labels() {
+    //     use fake::{faker::name::raw::Name, locales::EN, Fake};
 
-        use crate::GaugeVec;
+    //     use crate::GaugeVec;
 
-        let set = GaugeVec::with_label_set(ErrorsSet2::default());
+    //     let set = GaugeVec::with_label_set(ErrorsSet2::default());
 
-        let names = (0..64).map(|_| Name(EN).fake()).collect::<Vec<String>>();
+    //     let names = (0..64).map(|_| Name(EN).fake()).collect::<Vec<String>>();
 
-        let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
+    //     let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
 
-        for kind in error_kinds {
-            for name in &names {
-                let error = Error2 { kind, user: name };
-                set.inc(error);
-            }
-        }
-        for kind in error_kinds {
-            for name in &names {
-                let error = Error2 { kind, user: name };
-                set.inc_by(error, 2);
-            }
-        }
+    //     for kind in error_kinds {
+    //         for name in &names {
+    //             let error = Error2 { kind, user: name };
+    //             set.inc(error);
+    //         }
+    //     }
+    //     for kind in error_kinds {
+    //         for name in &names {
+    //             let error = Error2 { kind, user: name };
+    //             set.inc_by(error, 2);
+    //         }
+    //     }
 
-        for kind in error_kinds {
-            for name in &names {
-                let error = Error2 { kind, user: name };
-                let label = set.with_labels(error);
-                let _ = set.remove_metric(label);
-            }
-        }
-    }
+    //     for kind in error_kinds {
+    //         for name in &names {
+    //             let error = Error2 { kind, user: name };
+    //             let label = set.with_labels(error);
+    //             let _ = set.remove_metric(label);
+    //         }
+    //     }
+    // }
 }

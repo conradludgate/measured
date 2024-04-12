@@ -3,7 +3,7 @@ static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
 fn main() {
     divan::Divan::from_args()
-        .threads([1])
+        .threads([0])
         .sample_size(1)
         .sample_count(5000000)
         .run_benches();

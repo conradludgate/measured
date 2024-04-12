@@ -1,3 +1,6 @@
 [workspace]
 members = ["derive", "core", "process", "examples/*"]
 resolver = "2"
+
+[profile.bench]
+debug = true
