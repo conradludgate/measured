@@ -1,7 +1,7 @@
 use core::hash::Hash;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use parking_lot::{MappedRwLockReadGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::hash::{BuildHasher, BuildHasherDefault};
+use std::hash::BuildHasherDefault;
 use thread_local::ThreadLocal;
 
 use super::{LabelIdInner, MetricType};
@@ -85,17 +85,14 @@ impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> Sparse<U, M> {
         todo!()
     }
 
-    pub(super) fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M::Internal {
-        let shard = self.sample.get_mut();
+    pub(super) fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
+        self.locals.get_or_default();
+        let shard = self.locals.iter_mut().next().unwrap().get_mut();
 
-        let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
+        let entry = shard.raw_entry_mut().from_hash(id.hash, |k| k.id == id.id);
         let (_, v) = match entry {
             RawEntryMut::Occupied(o) => o.into_key_value(),
-            RawEntryMut::Vacant(v) => {
-                v.insert_with_hasher(id.hash, id.id, M::Internal::default(), |k| {
-                    self.hasher.hash_one(k)
-                })
-            }
+            RawEntryMut::Vacant(v) => v.insert_with_hasher(id.hash, id, M::default(), |k| k.hash),
         };
 
         v

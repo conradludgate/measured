@@ -4,7 +4,7 @@ use core::hash::Hash;
 use std::{
     hash::BuildHasher,
     ops::{Deref, DerefMut},
-    sync::{atomic::AtomicBool, OnceLock},
+    sync::OnceLock,
 };
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
@@ -63,10 +63,10 @@ impl<M: MetricType> MetricLockGuard<'_, M> {
 }
 
 /// A unique ref to an individual metric value
-pub struct MetricMut<'a, M: MetricType>(&'a mut M::Internal, &'a M::Metadata);
+pub struct MetricMut<'a, M: MetricType>(&'a mut M, &'a M::Metadata);
 
 impl<M: MetricType> Deref for MetricMut<'_, M> {
-    type Target = M::Internal;
+    type Target = M;
 
     fn deref(&self) -> &Self::Target {
         self.0
@@ -87,7 +87,6 @@ impl<M: MetricType> MetricMut<'_, M> {
 
 /// A single metric value.
 pub struct Metric<M: MetricType + Send> {
-    sample: Mutex<M::Internal>,
     metric: ThreadLocal<M>,
     metadata: M::Metadata,
 }
@@ -159,26 +158,22 @@ impl<M: MetricType + Send> Dense<M> {
     }
 
     fn get(&self, index: usize) -> &M {
-        let metrics = self.locals.get_or(|| {
-            let mut vec = Vec::with_capacity(self.size);
-            vec.resize_with(self.size, OnceLock::default);
-            DenseLocal {
-                accessed: AtomicBool::new(false),
-                metrics: vec.into_boxed_slice(),
-            }
-        });
-        metrics
-            .accessed
-            .store(true, std::sync::atomic::Ordering::Release);
+        let metrics = self.locals.get_or(|| DenseLocal::new(self.size));
         metrics.metrics[index].get_or_init(M::default)
     }
 }
 
+impl<M: MetricType + Send> DenseLocal<M> {
+    fn new(size: usize) -> DenseLocal<M> {
+        let mut vec = Vec::with_capacity(size);
+        vec.resize_with(size, OnceLock::default);
+        DenseLocal {
+            metrics: vec.into_boxed_slice(),
+        }
+    }
+}
+
 struct DenseLocal<M> {
-    // get after sampling metrics
-    // set before adding metrics
-    // use acq/rel?
-    accessed: AtomicBool,
     metrics: Box<[OnceLock<M>]>,
 }
 
@@ -196,7 +191,6 @@ impl<M: MetricType + Send> Metric<M> {
     /// Create a new metric with the given metadata
     pub fn with_metadata(metadata: M::Metadata) -> Self {
         Self {
-            sample: Mutex::default(),
             metric: ThreadLocal::with_capacity(
                 std::thread::available_parallelism().map_or(0, |x| x.get()),
             ),
@@ -214,7 +208,15 @@ impl<M: MetricType + Send> Metric<M> {
 
     /// Get a mut ref to the metric
     pub fn get_metric_mut(&mut self) -> MetricMut<'_, M> {
-        MetricMut(self.sample.get_mut(), &self.metadata)
+        // ensure some entry exists
+        self.metric.get_or_default();
+        MetricMut(
+            self.metric
+                .iter_mut()
+                .next()
+                .expect("we have just ensured there is a metric in the thread local set"),
+            &self.metadata,
+        )
     }
 }
 
@@ -304,10 +306,16 @@ impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> VecInner<U, M> {
         }
     }
 
-    fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M::Internal {
+    fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
         match self {
             VecInner::Dense(metrics) => {
-                metrics.sample.get_mut()[id.hash as usize].get_or_insert_with(Default::default)
+                metrics.locals.get_or(|| DenseLocal::new(metrics.size));
+                let once_lock =
+                    &mut metrics.locals.iter_mut().next().unwrap().metrics[id.hash as usize];
+                if once_lock.get_mut().is_none() {
+                    *once_lock = OnceLock::from(M::default());
+                }
+                once_lock.get_mut().unwrap()
             }
             VecInner::Sparse(metrics) => metrics.get_metric_mut(id),
         }
@@ -360,6 +368,9 @@ impl<M: MetricType + Send, L: LabelGroupSet> MetricVec<M, L> {
     /// You can initialise specific metric labels with the [`get_metric`](MetricVec::get_metric) method.
     pub fn init_all_dense(&mut self) {
         if let VecInner::Dense(metrics) = &mut self.metrics {
+            metrics.sample.lock().iter_mut().for_each(|x| {
+                x.get_or_insert_with(<M::Internal>::default);
+            })
             // for m in metrics.iter_mut() {
             //     if m.get_mut().is_none() {
             //         *m = CachePadded::new(OnceLock::from(M::default()));
@@ -484,15 +495,12 @@ impl<M: MetricEncoding<T> + Send + Sync, T: Encoding> MetricFamilyEncoding<T> fo
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
         M::write_type(&name, enc)?;
 
-        let mut sample_lock = self.sample.lock();
-        *sample_lock = Default::default();
+        let mut sample_lock = <M::Internal>::default();
         for thread in self.metric.iter() {
-            M::update(&mut *sample_lock, thread.sample());
+            M::update(&mut sample_lock, thread.sample());
         }
 
-        M::collect_into(&*sample_lock, &self.metadata, NoLabels, name, enc)?;
-
-        *sample_lock = Default::default();
+        M::collect_into(&sample_lock, &self.metadata, NoLabels, name, enc)?;
         Ok(())
     }
 }
