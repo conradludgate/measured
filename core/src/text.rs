@@ -14,7 +14,7 @@ use crate::{
         counter::CounterState,
         gauge::GaugeState,
         group::{Encoding, MetricValue},
-        histogram::{HistogramState, Thresholds},
+        histogram::{HistogramState, HistogramStateInnerSample, Thresholds},
         name::{Bucket, Count, MetricNameEncoder, Sum},
         MetricEncoding,
     },
@@ -209,7 +209,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
         enc.write_type(&name, MetricType::Histogram)
     }
     fn collect_into(
-        &self,
+        sample: &HistogramStateInnerSample<N>,
         metadata: &Thresholds<N>,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
@@ -233,7 +233,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
             }
         }
 
-        let (buckets, inf, sum) = self.inner.write().sample();
+        let HistogramStateInnerSample { buckets, inf, sum } = sample;
         let mut val = 0;
 
         #[allow(clippy::needless_range_loop)]
@@ -257,7 +257,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
         enc.write_metric_value(
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
-            MetricValue::Float(sum),
+            MetricValue::Float(*sum),
         )?;
         enc.write_metric_value(
             &name.by_ref().with_suffix(Count),
@@ -276,17 +276,13 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for CounterState {
         enc.write_type(&name, MetricType::Counter)
     }
     fn collect_into(
-        &self,
+        sample: &u64,
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(
-            &name,
-            labels,
-            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
-        )
+        enc.write_metric_value(&name, labels, MetricValue::Int(*sample as i64))
     }
 }
 
@@ -298,17 +294,13 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
         enc.write_type(&name, MetricType::Gauge)
     }
     fn collect_into(
-        &self,
+        sample: &i64,
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(
-            &name,
-            labels,
-            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed)),
-        )
+        enc.write_metric_value(&name, labels, MetricValue::Int(*sample))
     }
 }
 
@@ -384,14 +376,13 @@ impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEnc
         Self::write_type(name, &mut enc.inner).unreachable()
     }
     fn collect_into(
-        &self,
+        sample: &T::Internal,
         metadata: &T::Metadata,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut BufferedTextEncoder,
     ) -> Result<(), Infallible> {
-        self.collect_into(metadata, labels, name, &mut enc.inner)
-            .unreachable()
+        Self::collect_into(sample, metadata, labels, name, &mut enc.inner).unreachable()
     }
 }
 

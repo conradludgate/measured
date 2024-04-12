@@ -137,6 +137,7 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
     }
 }
 
+// TODO: can we remove?
 impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
     fn write_type(name: impl MetricNameEncoder, enc: &mut WithNamespace<E>) -> Result<(), E::Err> {
         M::write_type(
@@ -148,13 +149,14 @@ impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
         )
     }
     fn collect_into(
-        &self,
+        sample: &M::Internal,
         metadata: &M::Metadata,
         labels: impl crate::label::LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut WithNamespace<E>,
     ) -> Result<(), E::Err> {
-        self.collect_into(
+        Self::collect_into(
+            sample,
             metadata,
             labels,
             WithNamespace {
@@ -171,13 +173,13 @@ impl<'a, M: MetricEncoding<E>, E: Encoding> MetricEncoding<&'a mut E> for M {
         M::write_type(name, *enc)
     }
     fn collect_into(
-        &self,
+        sample: &M::Internal,
         metadata: &M::Metadata,
         labels: impl crate::label::LabelGroup,
         name: impl MetricNameEncoder,
         enc: &mut &'a mut E,
     ) -> Result<(), E::Err> {
-        self.collect_into(metadata, labels, name, *enc)
+        Self::collect_into(sample, metadata, labels, name, *enc)
     }
 }
 

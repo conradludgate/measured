@@ -24,6 +24,15 @@ pub struct HistogramStateInner<const N: usize> {
     pub sum: AtomicU64,
 }
 
+pub struct HistogramStateInnerSample<const N: usize> {
+    /// The buckets count the number of observed values in the ranges described by [`Thresholds`]
+    pub buckets: [u64; N],
+    /// The number of observed values that are greater than described by [`Thresholds`]
+    pub inf: u64,
+    /// The accumulated sum
+    pub sum: f64,
+}
+
 impl<const N: usize> HistogramStateInner<N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(&self, bucket: usize, x: f64) {
@@ -52,17 +61,17 @@ impl<const N: usize> HistogramStateInner<N> {
         *self.sum.get_mut() = f64::to_bits(f64::from_bits(v) + x);
     }
 
-    pub(crate) fn sample(&mut self) -> ([u64; N], u64, f64) {
-        let mut output = [0; N];
+    pub(crate) fn sample(&mut self) -> HistogramStateInnerSample<N> {
+        let mut buckets = [0; N];
         #[allow(clippy::needless_range_loop)]
         for i in 0..N {
-            output[i] = *self.buckets[i].get_mut();
+            buckets[i] = *self.buckets[i].get_mut();
         }
-        (
-            output,
-            *self.inf.get_mut(),
-            f64::from_bits(*self.sum.get_mut()),
-        )
+        HistogramStateInnerSample {
+            buckets,
+            inf: *self.inf.get_mut(),
+            sum: f64::from_bits(*self.sum.get_mut()),
+        }
     }
 }
 
@@ -93,8 +102,32 @@ impl<const N: usize> Default for HistogramState<N> {
     }
 }
 
+impl<const N: usize> Default for HistogramStateInnerSample<N> {
+    fn default() -> Self {
+        Self {
+            buckets: [0; N],
+            inf: 0,
+            sum: 0.0,
+        }
+    }
+}
+
 impl<const N: usize> MetricType for HistogramState<N> {
     type Metadata = Thresholds<N>;
+
+    type Internal = HistogramStateInnerSample<N>;
+
+    fn sample(&self) -> Self::Internal {
+        self.inner.write().sample()
+    }
+
+    fn update(left: &mut Self::Internal, right: Self::Internal) {
+        for i in 0..N {
+            left.buckets[i] += right.buckets[i];
+        }
+        left.inf += right.inf;
+        left.sum += right.sum;
+    }
 }
 
 /// `Thresholds` defines the size of buckets used in a [`Histogram`]

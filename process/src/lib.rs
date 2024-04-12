@@ -57,6 +57,8 @@ impl ProcessCollector {
     pub fn new(pid: pid_t) -> ProcessCollector {
         // proc_start_time init once because it is immutable
         let mut start_time = None;
+
+        #[cfg(target_os = "linux")]
         if let Ok(boot_time) = procfs::boot_time_secs() {
             if let Ok(stat) = procfs::process::Process::myself().and_then(|p| p.stat()) {
                 start_time = Some(stat.starttime as i64 / clk_tck() + boot_time as i64);
@@ -79,52 +81,55 @@ where
     GaugeState: MetricEncoding<Enc>,
 {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
-        let Ok(p) = procfs::process::Process::new(self.pid) else {
-            // we can't construct a Process object, so there's no stats to gather
-            return Ok(());
-        };
+        #[cfg(target_os = "linux")]
+        {
+            let Ok(p) = procfs::process::Process::new(self.pid) else {
+                // we can't construct a Process object, so there's no stats to gather
+                return Ok(());
+            };
 
-        // file descriptors
-        if let Ok(fd_count) = p.fd_count() {
-            let fd = MetricName::from_str("open_fds");
-            enc.write_help(fd, "Number of open file descriptors.")?;
-            enc.write_metric_value(fd, NoLabels, MetricValue::Int(fd_count as i64))?;
-        }
-        if let Ok(limits) = p.limits() {
-            if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
-                let fd = MetricName::from_str("max_fds");
-                enc.write_help(fd, "Maximum number of open file descriptors.")?;
-                enc.write_metric_value(fd, NoLabels, MetricValue::Int(max as i64))?;
+            // file descriptors
+            if let Ok(fd_count) = p.fd_count() {
+                let fd = MetricName::from_str("open_fds");
+                enc.write_help(fd, "Number of open file descriptors.")?;
+                enc.write_metric_value(fd, NoLabels, MetricValue::Int(fd_count as i64))?;
             }
-        }
+            if let Ok(limits) = p.limits() {
+                if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
+                    let fd = MetricName::from_str("max_fds");
+                    enc.write_help(fd, "Maximum number of open file descriptors.")?;
+                    enc.write_metric_value(fd, NoLabels, MetricValue::Int(max as i64))?;
+                }
+            }
 
-        if let Ok(stat) = p.stat() {
-            // memory
-            let vmm = MetricName::from_str("virtual_memory_bytes");
-            enc.write_help(vmm, "Virtual memory size in bytes.")?;
-            enc.write_metric_value(vmm, NoLabels, MetricValue::Int(stat.vsize as i64))?;
+            if let Ok(stat) = p.stat() {
+                // memory
+                let vmm = MetricName::from_str("virtual_memory_bytes");
+                enc.write_help(vmm, "Virtual memory size in bytes.")?;
+                enc.write_metric_value(vmm, NoLabels, MetricValue::Int(stat.vsize as i64))?;
 
-            let rss = MetricName::from_str("resident_memory_bytes");
-            enc.write_help(rss, "Resident memory size in bytes.")?;
-            enc.write_metric_value(
-                rss,
-                NoLabels,
-                MetricValue::Int((stat.rss as i64) * pagesize()),
-            )?;
+                let rss = MetricName::from_str("resident_memory_bytes");
+                enc.write_help(rss, "Resident memory size in bytes.")?;
+                enc.write_metric_value(
+                    rss,
+                    NoLabels,
+                    MetricValue::Int((stat.rss as i64) * pagesize()),
+                )?;
 
-            // cpu
-            let cpu = MetricName::from_str("cpu_seconds_total");
-            enc.write_help(cpu, "Total user and system CPU time spent in seconds.")?;
-            enc.write_metric_value(
-                cpu,
-                NoLabels,
-                MetricValue::Int((stat.utime + stat.stime) as i64 / clk_tck()),
-            )?;
+                // cpu
+                let cpu = MetricName::from_str("cpu_seconds_total");
+                enc.write_help(cpu, "Total user and system CPU time spent in seconds.")?;
+                enc.write_metric_value(
+                    cpu,
+                    NoLabels,
+                    MetricValue::Int((stat.utime + stat.stime) as i64 / clk_tck()),
+                )?;
 
-            // threads
-            let threads = MetricName::from_str("threads");
-            enc.write_help(threads, "Number of OS threads in the process.")?;
-            enc.write_metric_value(threads, NoLabels, MetricValue::Int(stat.num_threads))?;
+                // threads
+                let threads = MetricName::from_str("threads");
+                enc.write_help(threads, "Number of OS threads in the process.")?;
+                enc.write_metric_value(threads, NoLabels, MetricValue::Int(stat.num_threads))?;
+            }
         }
 
         if let Some(start_time) = self.start_time {

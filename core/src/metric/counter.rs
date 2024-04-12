@@ -90,4 +90,14 @@ impl Counter {
 impl MetricType for CounterState {
     /// [`Counter`]s require no additional metadata
     type Metadata = ();
+
+    type Internal = u64;
+
+    fn sample(&self) -> Self::Internal {
+        self.count.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn update(left: &mut Self::Internal, right: Self::Internal) {
+        *left += right
+    }
 }

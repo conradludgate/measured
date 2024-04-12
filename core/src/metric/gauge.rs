@@ -133,4 +133,14 @@ impl<L: LabelGroupSet> GaugeVec<L> {
 impl MetricType for GaugeState {
     /// [`Gauge`]s require no additional metadata
     type Metadata = ();
+
+    type Internal = i64;
+
+    fn sample(&self) -> Self::Internal {
+        self.count.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn update(left: &mut Self::Internal, right: Self::Internal) {
+        todo!()
+    }
 }

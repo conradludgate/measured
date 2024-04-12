@@ -6,7 +6,7 @@ use std::{
     sync::OnceLock,
 };
 
-use super::{LabelIdInner, MetricType};
+use super::LabelIdInner;
 
 pub(super) struct ShardedMap<K, V> {
     // FxHasher performed the fastest in all my benchmarks.
@@ -30,7 +30,7 @@ fn default_shard_amount() -> usize {
 
 pub(super) type SparseLockGuard<'a, M> = MappedRwLockReadGuard<'a, M>;
 
-impl<M: MetricType, U: Hash + Eq> ShardedMap<U, M> {
+impl<M, U: Hash + Eq> ShardedMap<U, M> {
     pub(super) fn new() -> Self {
         let shards = default_shard_amount();
         let mut vec = Vec::with_capacity(shards);
@@ -43,7 +43,7 @@ impl<M: MetricType, U: Hash + Eq> ShardedMap<U, M> {
     }
 }
 
-impl<M: MetricType, U: Hash + Eq + Copy> ShardedMap<U, M> {
+impl<M: Default, U: Hash + Eq + Copy> ShardedMap<U, M> {
     pub(super) fn get_metric(&self, id: LabelIdInner<U>) -> SparseLockGuard<'_, M> {
         let shard = &self.shards[((id.hash as usize) << 7) >> self.shift];
 
