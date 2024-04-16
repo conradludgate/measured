@@ -131,7 +131,7 @@ pub struct MetricVec<M: MetricType + Send, L: LabelGroupSet> {
     label_set: L,
 }
 
-enum VecInner<U: Hash + Eq + Send, M: MetricType + Send> {
+enum VecInner<U: Ord + Send, M: MetricType + Send> {
     Dense(Dense<M>),
     Sparse(sparse::Sparse<U, M>),
 }
@@ -140,6 +140,20 @@ struct Dense<M: MetricType + Send> {
     size: usize,
     sample: Mutex<Box<[Option<M::Internal>]>>,
     locals: ThreadLocal<DenseLocal<M>>,
+}
+
+impl<M: MetricType + Send + Sync> Dense<M> {
+    fn try_for_each<E>(&self, mut f: impl FnMut(usize, &M) -> Result<(), E>) -> Result<(), E> {
+        for thread in self.locals.iter() {
+            for (index, value) in thread.metrics.iter().enumerate() {
+                if let Some(value) = value.get() {
+                    f(index, value)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl<M: MetricType + Send> Dense<M> {
@@ -298,7 +312,7 @@ where
     }
 }
 
-impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> VecInner<U, M> {
+impl<M: MetricType + Send, U: Ord + Copy + Send> VecInner<U, M> {
     fn get_metric(&self, id: LabelIdInner<U>) -> MetricLockGuardRepr<'_, M> {
         match self {
             VecInner::Dense(metrics) => MetricLockGuardRepr::Dense(metrics.get(id.hash as usize)),
@@ -323,6 +337,19 @@ impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> VecInner<U, M> {
 }
 
 impl<M: MetricType + Send, L: LabelGroupSet> MetricVec<M, L> {
+    fn get_label_inner(&self, id: L::Unique) -> LabelIdInner<L::Unique> {
+        let hash = match &self.metrics {
+            VecInner::Dense(metrics) => {
+                let index = self.label_set.encode_dense(id).expect("If the label set is fixed in cardinality, it must return a value here in the range of `0..cardinality`");
+                debug_assert!(index < metrics.size);
+                index as u64
+            }
+            VecInner::Sparse(metrics) => 0,
+        };
+
+        LabelIdInner { id, hash }
+    }
+
     /// Create a new metric vec with the given label set and metric metadata
     pub fn with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         let metrics = match label_set.cardinality() {
@@ -399,17 +426,7 @@ impl<M: MetricType + Send, L: LabelGroupSet> MetricVec<M, L> {
     /// Returns None if the label group is not contained within the label set.
     pub fn try_with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
         let id = self.label_set.encode(label)?;
-
-        let hash = match &self.metrics {
-            VecInner::Dense(metrics) => {
-                let index = self.label_set.encode_dense(id).expect("If the label set is fixed in cardinality, it must return a value here in the range of `0..cardinality`");
-                debug_assert!(index < metrics.size);
-                index as u64
-            }
-            VecInner::Sparse(metrics) => metrics.hasher.hash_one(id),
-        };
-
-        Some(LabelId(LabelIdInner { id, hash }))
+        Some(LabelId(self.get_label_inner(id)))
     }
 
     /// Get the individual metric at the given identifier.
@@ -447,10 +464,7 @@ impl<M: MetricType + Send, L: LabelGroupSet> MetricVec<M, L> {
     /// Inspect the current cardinality of this metric-vec, returning the lower bound and the upper bound if known
     pub fn get_cardinality(&self) -> (usize, Option<usize>) {
         match &self.metrics {
-            VecInner::Dense(x) => (
-                x.sample.lock().iter().filter(|x| x.is_some()).count(),
-                Some(x.size),
-            ),
+            VecInner::Dense(x) => (0, Some(x.size)),
             VecInner::Sparse(x) => (x.get_cardinality(), self.label_set.cardinality()),
         }
     }
@@ -505,11 +519,34 @@ impl<M: MetricEncoding<T> + Send + Sync, T: Encoding> MetricFamilyEncoding<T> fo
     }
 }
 
+impl<M: MetricType + Sync + Send, L: LabelGroupSet> MetricVec<M, L> {
+    fn try_for_each<E>(&self, mut f: impl FnMut(LabelId<L>, &M) -> Result<(), E>) -> Result<(), E> {
+        match &self.metrics {
+            VecInner::Dense(m) => {
+                m.try_for_each(|index, m| {
+                    f(
+                        LabelId(LabelIdInner {
+                            id: self.label_set.decode_dense(index),
+                            hash: index as u64,
+                        }),
+                        m,
+                    )
+                })?;
+            }
+            VecInner::Sparse(m) => {
+                m.try_for_each(|label, m| f(LabelId(label), m))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T>
     for MetricVec<M, L>
 {
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
         M::write_type(&name, enc)?;
+
         match &self.metrics {
             VecInner::Dense(m) => {
                 let mut sample_lock = m.sample.lock();
@@ -519,22 +556,18 @@ impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFa
                     *s = Default::default();
                 }
 
-                for thread in m.locals.iter() {
-                    for (index, value) in thread.metrics.iter().enumerate() {
-                        if let Some(value) = value.get() {
-                            let sample = sample_lock[index].get_or_insert_with(Default::default);
-                            M::update(sample, value.sample())
-                        }
-                    }
-                    // thread.accessed.swap(false, std::sync::atomic::Ordering::Acquire);
-                }
+                m.try_for_each(|index, m| {
+                    let sample = sample_lock[index].get_or_insert_with(Default::default);
+                    M::update(sample, m.sample());
+                    Ok(())
+                })?;
 
                 for (index, sample) in sample_lock.iter().enumerate() {
                     if let Some(sample) = sample {
                         M::collect_into(
                             sample,
                             &self.metadata,
-                            self.label_set.decode_dense(index),
+                            self.label_set.decode(&self.label_set.decode_dense(index)),
                             &name,
                             enc,
                         )?;
@@ -549,24 +582,17 @@ impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFa
                     *s = Default::default();
                 }
 
-                for thread in m.locals.iter() {
-                    for (key, value) in thread.read().iter() {
-                        let sample = match sample_lock
-                            .raw_entry_mut()
-                            .from_hash(key.hash, |k| *k == key.id)
-                        {
-                            hashbrown::hash_map::RawEntryMut::Occupied(o) => o.into_mut(),
-                            hashbrown::hash_map::RawEntryMut::Vacant(v) => {
-                                v.insert_with_hasher(key.hash, key.id, Default::default(), |k| {
-                                    m.hasher.hash_one(k)
-                                })
-                                .1
-                            }
-                        };
-                        M::update(sample, value.sample())
-                    }
-                    // thread.accessed.swap(false, std::sync::atomic::Ordering::Acquire);
-                }
+                m.try_for_each(|label, m| {
+                    match sample_lock.entry(label.id) {
+                        std::collections::btree_map::Entry::Vacant(v) => {
+                            v.insert(m.sample());
+                        }
+                        std::collections::btree_map::Entry::Occupied(o) => {
+                            M::update(o.into_mut(), m.sample());
+                        }
+                    };
+                    Ok(())
+                })?;
 
                 for (key, sample) in sample_lock.iter() {
                     M::collect_into(

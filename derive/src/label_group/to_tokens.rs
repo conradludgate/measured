@@ -167,8 +167,8 @@ impl ToTokens for Set<'_> {
                 fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
                     Some(value)
                 }
-                fn decode_dense(&self, value: usize) -> Self::Group<'_> {
-                    self.decode(&value)
+                fn decode_dense(&self, value: usize) -> Self::Unique {
+                    value
                 }
             )
         } else {
@@ -182,7 +182,7 @@ impl ToTokens for Set<'_> {
                 fn encode_dense(&self, _value: Self::Unique) -> Option<usize> {
                     None
                 }
-                fn decode_dense(&self, _value: usize) -> Self::Group<'_> {
+                fn decode_dense(&self, _value: usize) -> Self::Unique {
                     unreachable!("does not have a dense encoding")
                 }
             )

@@ -1,24 +1,23 @@
 use core::hash::Hash;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use parking_lot::{MappedRwLockReadGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::hash::BuildHasherDefault;
+use std::{collections::BTreeMap, hash::BuildHasherDefault};
 use thread_local::ThreadLocal;
 
 use super::{LabelIdInner, MetricType};
 
-pub struct Sparse<U: Hash + Eq + Send, M: MetricType + Send> {
-    pub(super) hasher: BuildHasherDefault<rustc_hash::FxHasher>,
-    pub(super) sample: Mutex<HashMap<U, M::Internal, ()>>,
-    pub(super) locals: ThreadLocal<RwLock<HashMap<LabelIdInner<U>, M, ()>>>,
+pub struct Sparse<U: Send, M: MetricType + Send> {
+    // pub(super) hasher: BuildHasherDefault<rustc_hash::FxHasher>,
+    pub(super) sample: Mutex<BTreeMap<U, M::Internal>>,
+    pub(super) locals: ThreadLocal<RwLock<BTreeMap<U, M>>>,
 }
 
 pub(super) type SparseLockGuard<'a, M> = MappedRwLockReadGuard<'a, M>;
 
-impl<M: MetricType + Send, U: Hash + Eq + Send> Sparse<U, M> {
+impl<M: MetricType + Send, U: Send> Sparse<U, M> {
     pub(super) fn new() -> Self {
         Self {
-            hasher: Default::default(),
-            sample: Mutex::new(HashMap::with_hasher(())),
+            sample: Mutex::new(BTreeMap::new()),
             locals: ThreadLocal::with_capacity(
                 std::thread::available_parallelism().map_or(0, |x| x.get()),
             ),
@@ -26,51 +25,39 @@ impl<M: MetricType + Send, U: Hash + Eq + Send> Sparse<U, M> {
     }
 }
 
-impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> Sparse<U, M> {
+impl<M: MetricType + Send + Sync, U: Ord + Copy + Send + Sync> Sparse<U, M> {
+    pub(super) fn try_for_each<E>(
+        &self,
+        mut f: impl FnMut(LabelIdInner<U>, &M) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for thread in self.locals.iter() {
+            for (key, value) in thread.read().iter() {
+                f(LabelIdInner { id: *key, hash: 0 }, value)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<M: MetricType + Send, U: Ord + Copy + Send> Sparse<U, M> {
     pub(super) fn get_metric(&self, id: LabelIdInner<U>) -> SparseLockGuard<'_, M> {
         let shard = self.locals.get_or_default();
 
         {
-            let mapped = RwLockReadGuard::try_map(shard.read(), |shard| {
-                shard
-                    .raw_table()
-                    .get(id.hash, |(k, _v)| k.id == id.id)
-                    .map(|(_, v)| v)
-            });
+            let mapped = RwLockReadGuard::try_map(shard.read(), |shard| shard.get(&id.id));
             if let Ok(mapped) = mapped {
                 return mapped;
             }
         }
 
-        let (shard, index) = {
+        let shard = {
             let mut shard = shard.write();
-            // let entry = shard.raw_entry_mut().from_hash(id.hash, |k| k.id == id.id);
-
-            let raw = shard.raw_table_mut();
-            let res = raw.find_or_find_insert_slot(id.hash, |k| k.0.id == id.id, |k| k.0.hash);
-            let bucket = match res {
-                Ok(bucket) => bucket,
-                Err(slot) => unsafe { raw.insert_in_slot(id.hash, slot, (id, M::default())) },
-            };
-            let index = unsafe { raw.bucket_index(&bucket) };
-
-            // match entry {
-            //     RawEntryMut::Occupied(_) => {}
-            //     RawEntryMut::Vacant(v) => {
-            //         v.insert_with_hasher(id.hash, id, M::default(), |k| k.hash);
-            //     }
-            // }
-            (RwLockWriteGuard::downgrade(shard), index)
+            shard.entry(id.id).or_default();
+            RwLockWriteGuard::downgrade(shard)
         };
 
-        RwLockReadGuard::map(shard, |shard| {
-            unsafe { &shard.raw_table().bucket(index).as_ref().1 }
-            // &shard
-            //             .raw_table()
-            //             .get(id.hash, |(k, _v)| k.id == id.id)
-            //             .expect("the entry was just inserted into the map without allowing any writes inbetween")
-            //             .1
-        })
+        RwLockReadGuard::map(shard, |shard| shard.get(&id.id).unwrap())
     }
 
     pub(super) fn remove_metric(&self, id: LabelIdInner<U>) -> Option<M> {
@@ -88,14 +75,7 @@ impl<M: MetricType + Send, U: Hash + Eq + Copy + Send> Sparse<U, M> {
     pub(super) fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
         self.locals.get_or_default();
         let shard = self.locals.iter_mut().next().unwrap().get_mut();
-
-        let entry = shard.raw_entry_mut().from_hash(id.hash, |k| k.id == id.id);
-        let (_, v) = match entry {
-            RawEntryMut::Occupied(o) => o.into_key_value(),
-            RawEntryMut::Vacant(v) => v.insert_with_hasher(id.hash, id, M::default(), |k| k.hash),
-        };
-
-        v
+        shard.entry(id.id).or_default()
     }
 
     pub(super) fn get_cardinality(&self) -> usize {

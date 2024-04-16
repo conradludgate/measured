@@ -56,8 +56,8 @@ where
         Some(value)
     }
 
-    fn decode_dense(&self, value: usize) -> Self::Group<'_> {
-        LabelSet::decode(self, value)
+    fn decode_dense(&self, value: usize) -> Self::Unique {
+        value
     }
 
     type Unique = usize;

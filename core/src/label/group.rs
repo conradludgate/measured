@@ -43,10 +43,10 @@ pub trait LabelGroupSet {
     /// If the label set is fixed in cardinality, it must return a value here in the range of `0..cardinality`
     fn encode_dense(&self, _value: Self::Unique) -> Option<usize>;
     /// If the label set is fixed in cardinality, a value in the range of `0..cardinality` should decode without panicking.
-    fn decode_dense(&self, value: usize) -> Self::Group<'_>;
+    fn decode_dense(&self, value: usize) -> Self::Unique;
 
     /// A type that can uniquely represent all possible labels
-    type Unique: Copy + Hash + Eq + Send + Sync;
+    type Unique: Copy + Hash + Ord + Send + Sync;
 
     /// Encode the label groups into the unique compressed representation
     fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique>;
@@ -62,7 +62,7 @@ impl LabelGroup for NoLabels {
 }
 
 /// `ComposedGroup` represents either a combine [`LabelGroup`] or a [`LabelGroupSet`]. See [`LabelGroup::compose_with`]
-#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct ComposedGroup<A, B>(pub A, pub B);
 
 impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
@@ -87,7 +87,7 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
         Some(index)
     }
 
-    fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+    fn decode_dense(&self, value: usize) -> Self::Unique {
         let index = value;
         let (index, index1) = (
             index / self.1.cardinality().unwrap(),
@@ -141,7 +141,7 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for &'static T {
         T::encode_dense(self, value)
     }
 
-    fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+    fn decode_dense(&self, value: usize) -> Self::Unique {
         T::decode_dense(self, value)
     }
 
@@ -167,7 +167,7 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
         T::encode_dense(self, value)
     }
 
-    fn decode_dense(&self, value: usize) -> Self::Group<'_> {
+    fn decode_dense(&self, value: usize) -> Self::Unique {
         T::decode_dense(self, value)
     }
 
@@ -241,12 +241,12 @@ mod tests {
 
         assert_eq!(composed.encode(get_user), Some(ComposedGroup(0, 0)),);
         assert_eq!(composed.encode_dense(ComposedGroup(0, 0)), Some(0));
-        assert_eq!(composed.decode_dense(0), get_user);
+        assert_eq!(composed.decode_dense(0), ComposedGroup(0, 0));
         assert_eq!(composed.decode(&ComposedGroup(0, 0)), get_user);
 
         assert_eq!(composed.encode(post_internal), Some(ComposedGroup(1, 1)),);
         assert_eq!(composed.encode_dense(ComposedGroup(1, 1)), Some(4));
-        assert_eq!(composed.decode_dense(4), post_internal);
+        assert_eq!(composed.decode_dense(4), ComposedGroup(1, 1));
         assert_eq!(composed.decode(&ComposedGroup(1, 1)), post_internal);
     }
 }
