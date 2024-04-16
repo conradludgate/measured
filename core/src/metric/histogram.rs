@@ -69,7 +69,7 @@ impl<const N: usize> MetricType for HistogramState<N> {
     type Internal = HistogramStateInnerSample<N>;
 
     fn sample(&self) -> Self::Internal {
-        *self.inner.lock()
+        std::mem::take(&mut *self.inner.lock())
     }
 
     fn update(left: &mut Self::Internal, right: Self::Internal) {

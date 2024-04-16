@@ -94,7 +94,7 @@ impl MetricType for CounterState {
     type Internal = u64;
 
     fn sample(&self) -> Self::Internal {
-        self.count.load(std::sync::atomic::Ordering::Relaxed)
+        self.count.swap(0, std::sync::atomic::Ordering::Relaxed)
     }
 
     fn update(left: &mut Self::Internal, right: Self::Internal) {

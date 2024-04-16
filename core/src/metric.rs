@@ -2,6 +2,7 @@
 
 use core::hash::Hash;
 use std::{
+    convert::Infallible,
     hash::BuildHasher,
     ops::{Deref, DerefMut},
     sync::OnceLock,
@@ -131,6 +132,7 @@ pub struct MetricVec<M: MetricType + Send, L: LabelGroupSet> {
     label_set: L,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum VecInner<U: Ord + Send, M: MetricType + Send> {
     Dense(Dense<M>),
     Sparse(sparse::Sparse<U, M>),
@@ -481,7 +483,7 @@ pub trait MetricEncoding<T: Encoding>: MetricType {
     fn write_type(name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
     /// Sample this metric into the encoder
     fn collect_into(
-        sample: &Self::Internal,
+        sample: &mut Self::Internal,
         metadata: &Self::Metadata,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
@@ -514,7 +516,7 @@ impl<M: MetricEncoding<T> + Send + Sync, T: Encoding> MetricFamilyEncoding<T> fo
             M::update(&mut sample_lock, thread.sample());
         }
 
-        M::collect_into(&sample_lock, &self.metadata, NoLabels, name, enc)?;
+        M::collect_into(&mut sample_lock, &self.metadata, NoLabels, name, enc)?;
         Ok(())
     }
 }
@@ -541,28 +543,49 @@ impl<M: MetricType + Sync + Send, L: LabelGroupSet> MetricVec<M, L> {
     }
 }
 
+impl<M: MetricType + Sync + Send, L: LabelGroupSet> MetricVec<M, L> {
+    fn sample(&self) {
+        match &self.metrics {
+            VecInner::Dense(m) => {
+                let mut sample_lock = m.sample.lock();
+                m.try_for_each::<Infallible>(|index, m| {
+                    let sample = sample_lock[index].get_or_insert_with(Default::default);
+                    M::update(sample, m.sample());
+                    Ok(())
+                })
+                .unwrap_or_else(|x| match x {});
+            }
+            VecInner::Sparse(m) => {
+                let mut sample_lock = m.sample.lock();
+                m.try_for_each::<Infallible>(|label, m| {
+                    match sample_lock.entry(label.id) {
+                        std::collections::btree_map::Entry::Vacant(v) => {
+                            v.insert(m.sample());
+                        }
+                        std::collections::btree_map::Entry::Occupied(o) => {
+                            M::update(o.into_mut(), m.sample());
+                        }
+                    };
+                    Ok(())
+                })
+                .unwrap_or_else(|x| match x {});
+            }
+        }
+    }
+}
+
 impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T>
     for MetricVec<M, L>
 {
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
+        self.sample();
+
         M::write_type(&name, enc)?;
 
         match &self.metrics {
             VecInner::Dense(m) => {
                 let mut sample_lock = m.sample.lock();
-
-                // clear the sample
-                for s in sample_lock.iter_mut().flatten() {
-                    *s = Default::default();
-                }
-
-                m.try_for_each(|index, m| {
-                    let sample = sample_lock[index].get_or_insert_with(Default::default);
-                    M::update(sample, m.sample());
-                    Ok(())
-                })?;
-
-                for (index, sample) in sample_lock.iter().enumerate() {
+                for (index, sample) in sample_lock.iter_mut().enumerate() {
                     if let Some(sample) = sample {
                         M::collect_into(
                             sample,
@@ -576,25 +599,7 @@ impl<M: MetricEncoding<T> + Sync + Send, L: LabelGroupSet, T: Encoding> MetricFa
             }
             VecInner::Sparse(m) => {
                 let mut sample_lock = m.sample.lock();
-
-                // clear the sample
-                for s in sample_lock.values_mut() {
-                    *s = Default::default();
-                }
-
-                m.try_for_each(|label, m| {
-                    match sample_lock.entry(label.id) {
-                        std::collections::btree_map::Entry::Vacant(v) => {
-                            v.insert(m.sample());
-                        }
-                        std::collections::btree_map::Entry::Occupied(o) => {
-                            M::update(o.into_mut(), m.sample());
-                        }
-                    };
-                    Ok(())
-                })?;
-
-                for (key, sample) in sample_lock.iter() {
+                for (key, sample) in sample_lock.iter_mut() {
                     M::collect_into(
                         sample,
                         &self.metadata,

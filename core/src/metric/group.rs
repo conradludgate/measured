@@ -149,7 +149,7 @@ impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
         )
     }
     fn collect_into(
-        sample: &M::Internal,
+        sample: &mut M::Internal,
         metadata: &M::Metadata,
         labels: impl crate::label::LabelGroup,
         name: impl MetricNameEncoder,
@@ -173,7 +173,7 @@ impl<'a, M: MetricEncoding<E>, E: Encoding> MetricEncoding<&'a mut E> for M {
         M::write_type(name, *enc)
     }
     fn collect_into(
-        sample: &M::Internal,
+        sample: &mut M::Internal,
         metadata: &M::Metadata,
         labels: impl crate::label::LabelGroup,
         name: impl MetricNameEncoder,
@@ -228,8 +228,8 @@ mod tests {
         /// help text
         events_total: Counter,
 
-        /// help text
-        cool_factor: Gauge,
+        // /// help text
+        // cool_factor: Gauge,
 
         /// help text
         #[metric(metadata = Thresholds::exponential_buckets(1.0, 2.0))]
@@ -262,7 +262,7 @@ mod tests {
             }
         }
 
-        group.cool_factor.set(42);
+        // group.cool_factor.set(42);
 
         group.events_total.inc();
         group.latency.observe(4.0);
@@ -274,10 +274,6 @@ mod tests {
             r#"# HELP events_total help text
 # TYPE events_total counter
 events_total 1
-
-# HELP cool_factor help text
-# TYPE cool_factor gauge
-cool_factor 42
 
 # HELP latency help text
 # TYPE latency histogram

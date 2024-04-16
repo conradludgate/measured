@@ -209,7 +209,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
         enc.write_type(&name, MetricType::Histogram)
     }
     fn collect_into(
-        sample: &HistogramStateInnerSample<N>,
+        sample: &mut HistogramStateInnerSample<N>,
         metadata: &Thresholds<N>,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
@@ -233,7 +233,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
             }
         }
 
-        let HistogramStateInnerSample { buckets, inf, sum } = sample;
+        let HistogramStateInnerSample { buckets, inf, sum } = *sample;
         let mut val = 0;
 
         #[allow(clippy::needless_range_loop)]
@@ -257,7 +257,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
         enc.write_metric_value(
             &name.by_ref().with_suffix(Sum),
             labels.by_ref(),
-            MetricValue::Float(*sum),
+            MetricValue::Float(sum),
         )?;
         enc.write_metric_value(
             &name.by_ref().with_suffix(Count),
@@ -276,7 +276,7 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for CounterState {
         enc.write_type(&name, MetricType::Counter)
     }
     fn collect_into(
-        sample: &u64,
+        sample: &mut u64,
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
@@ -294,7 +294,7 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
         enc.write_type(&name, MetricType::Gauge)
     }
     fn collect_into(
-        sample: &i64,
+        sample: &mut i64,
         _m: &(),
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
@@ -376,7 +376,7 @@ impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEnc
         Self::write_type(name, &mut enc.inner).unreachable()
     }
     fn collect_into(
-        sample: &T::Internal,
+        sample: &mut T::Internal,
         metadata: &T::Metadata,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
