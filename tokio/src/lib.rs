@@ -140,149 +140,133 @@ impl RuntimeCollector {
             },
         }
     }
-
-    fn histogram_le(&self, bucket: usize) -> HistogramLabelLe {
-        let le = self.runtime.poll_count_histogram_bucket_range(bucket).end;
-        let le = if le == Duration::from_nanos(u64::MAX) {
-            f64::INFINITY
-        } else {
-            le.as_secs_f64()
-        };
-        HistogramLabelLe { le }
-    }
 }
 
-macro_rules! metric {
-    ($enc:expr, $runtime:expr, $name:literal, $help:literal, $expr:expr) => {{
-        #![allow(unused_macros)]
-        const NAME: &MetricName = MetricName::from_str($name);
-        $enc.write_help(NAME, $help)?;
-        macro_rules! write_int {
-            ($labels:expr, $val:expr) => {
-                $enc.write_metric_value(
-                    NAME,
-                    ComposedGroup($runtime, $labels),
-                    MetricValue::Int($val),
-                )?
-            };
-            ($suffix:expr, $labels:expr, $val:expr) => {
-                $enc.write_metric_value(
-                    NAME.with_suffix($suffix),
-                    ComposedGroup($runtime, $labels),
-                    MetricValue::Int($val),
-                )?
-            };
+fn histogram_le(rt: &RuntimeMetrics, bucket: usize) -> HistogramLabelLe {
+    let le = rt.poll_count_histogram_bucket_range(bucket).end;
+    let le = if le == Duration::from_nanos(u64::MAX) {
+        f64::INFINITY
+    } else {
+        le.as_secs_f64()
+    };
+    HistogramLabelLe { le }
+}
+
+fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Result<(), Enc::Err> {
+    macro_rules! metric {
+        ($name:literal, $help:literal, |$rt:ident| $expr:expr) => {{
+            #![allow(unused_macros)]
+            const NAME: &MetricName = MetricName::from_str($name);
+            enc.write_help(NAME, $help)?;
+            for rt in runtimes {
+                let rt_name = &rt.name;
+                macro_rules! write_int {
+                    ($labels:expr, $val:expr) => {
+                        enc.write_metric_value(
+                            NAME,
+                            ComposedGroup(rt_name, $labels),
+                            MetricValue::Int($val),
+                        )?
+                    };
+                    ($suffix:expr, $labels:expr, $val:expr) => {
+                        enc.write_metric_value(
+                            NAME.with_suffix($suffix),
+                            ComposedGroup(rt_name, $labels),
+                            MetricValue::Int($val),
+                        )?
+                    };
+                }
+                macro_rules! write_float {
+                    ($labels:expr, $val:expr) => {
+                        enc.write_metric_value(
+                            NAME,
+                            ComposedGroup(rt_name, $labels),
+                            MetricValue::Float($val),
+                        )?
+                    };
+                    ($suffix:expr, $labels:expr, $val:expr) => {
+                        enc.write_metric_value(
+                            NAME.with_suffix($suffix),
+                            ComposedGroup(rt_name, $labels),
+                            MetricValue::Float($val),
+                        )?
+                    };
+                }
+                let $rt = &rt.runtime;
+                ($expr)
+            }
+        }};
+    }
+
+    metric!(
+        "worker_threads",
+        "number of worker threads used by the runtime",
+        |rt| write_int!(NoLabels, rt.num_workers() as i64)
+    );
+
+    metric!(
+        "blocking_threads",
+        "number of blocking threads used by the runtime",
+        |rt| write_int!(NoLabels, rt.num_blocking_threads() as i64)
+    );
+
+    metric!(
+        "active_tasks",
+        "number of active tasks spawned in the runtime",
+        |rt| write_int!(NoLabels, rt.active_tasks_count() as i64)
+    );
+
+    metric!(
+        "worker_queue_depth",
+        "number of tasks currently scheduled in the given worker's local queue",
+        |rt| for worker in 0..rt.num_workers() {
+            let queue_depth = rt.worker_local_queue_depth(worker);
+            write_int!(WorkerLabels { worker }, queue_depth as i64);
         }
-        macro_rules! write_float {
-            ($labels:expr, $val:expr) => {
-                $enc.write_metric_value(
-                    NAME,
-                    ComposedGroup($runtime, $labels),
-                    MetricValue::Float($val),
-                )?
-            };
-            ($suffix:expr, $labels:expr, $val:expr) => {
-                $enc.write_metric_value(
-                    NAME.with_suffix($suffix),
-                    ComposedGroup($runtime, $labels),
-                    MetricValue::Float($val),
-                )?
-            };
+    );
+
+    metric!(
+        "worker_mean_poll_time_seconds",
+        "estimated weighted moving average of the poll time for this worker",
+        |rt| for worker in 0..rt.num_workers() {
+            let poll_time = rt.worker_mean_poll_time(worker);
+            write_float!(WorkerLabels { worker }, poll_time.as_secs_f64());
         }
-        $expr
-    }};
+    );
+
+    metric!(
+        "worker_busy_time_seconds_total",
+        "amount of time the given worker thread has been busy",
+        |rt| for worker in 0..rt.num_workers() {
+            let busy_time = rt.worker_total_busy_duration(worker);
+            write_float!(WorkerLabels { worker }, busy_time.as_secs_f64());
+        }
+    );
+
+    metric!(
+        "worker_poll_time_seconds",
+        "time this runtime thread has spent polling tasks",
+        |rt| if rt.poll_count_histogram_enabled() {
+            let buckets = rt.poll_count_histogram_num_buckets();
+            for worker in 0..rt.num_workers() {
+                let worker_label = WorkerLabels { worker };
+                let mut total = 0;
+                for bucket in 0..buckets {
+                    let le = histogram_le(rt, bucket);
+                    total += rt.poll_count_histogram_bucket_count(worker, bucket);
+                    write_int!(Bucket, ComposedGroup(worker_label, le), total as i64);
+                }
+                write_int!(Count, worker_label, total as i64);
+            }
+        }
+    );
+
+    Ok(())
 }
 
 impl<Enc: Encoding> MetricGroup<Enc> for RuntimeCollector {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
-        // const IDLE_BLOCKING_THREADS: &MetricName = MetricName::from_str("idle_blocking_threads");
-        // const REMOTE_SCHEDULE: &MetricName = MetricName::from_str("remote_scheduled_tasks_total");
-        // const BUDGET: &MetricName = MetricName::from_str("budget_forced_yield_total");
-        // const WORKER_PARK: &MetricName = MetricName::from_str("workers_parked_total");
-
-        let workers = self.runtime.num_workers();
-
-        metric!(
-            enc,
-            &self.name,
-            "worker_threads",
-            "number of worker threads used by the runtime",
-            write_int!(NoLabels, workers as i64)
-        );
-
-        metric!(
-            enc,
-            &self.name,
-            "blocking_threads",
-            "number of blocking threads used by the runtime",
-            write_int!(NoLabels, self.runtime.num_blocking_threads() as i64)
-        );
-
-        metric!(
-            enc,
-            &self.name,
-            "active_tasks",
-            "number of active tasks spawned in the runtime",
-            write_int!(NoLabels, self.runtime.active_tasks_count() as i64)
-        );
-
-        metric!(
-            enc,
-            &self.name,
-            "worker_queue_depth",
-            "number of tasks currently scheduled in the given worker's local queue",
-            for worker in 0..workers {
-                let queue_depth = self.runtime.worker_local_queue_depth(worker);
-                write_int!(WorkerLabels { worker }, queue_depth as i64);
-            }
-        );
-
-        metric!(
-            enc,
-            &self.name,
-            "worker_mean_poll_time_seconds",
-            "estimated weighted moving average of the poll time for this worker",
-            for worker in 0..workers {
-                let poll_time = self.runtime.worker_mean_poll_time(worker);
-                write_float!(WorkerLabels { worker }, poll_time.as_secs_f64());
-            }
-        );
-
-        metric!(
-            enc,
-            &self.name,
-            "worker_busy_time_seconds_total",
-            "amount of time the given worker thread has been busy",
-            for worker in 0..workers {
-                let busy_time = self.runtime.worker_total_busy_duration(worker);
-                write_float!(WorkerLabels { worker }, busy_time.as_secs_f64());
-            }
-        );
-
-        if self.runtime.poll_count_histogram_enabled() {
-            let buckets = self.runtime.poll_count_histogram_num_buckets();
-            metric!(
-                enc,
-                &self.name,
-                "worker_poll_time_seconds",
-                "time this runtime thread has spent polling tasks",
-                for worker in 0..workers {
-                    let worker_label = WorkerLabels { worker };
-                    let mut total = 0;
-                    for bucket in 0..buckets {
-                        total += self
-                            .runtime
-                            .poll_count_histogram_bucket_count(worker, bucket);
-
-                        let le = self.histogram_le(bucket);
-                        write_int!(Bucket, ComposedGroup(worker_label, le), total as i64);
-                    }
-                    write_int!(Count, worker_label, total as i64);
-                }
-            );
-        }
-
-        Ok(())
+        collect(std::slice::from_ref(self), enc)
     }
 }
 
