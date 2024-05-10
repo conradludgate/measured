@@ -16,7 +16,7 @@
 //!     process: measured_process::ProcessCollector,
 //!
 //!     // other metrics
-//! }}
+//! }
 //!
 //! let metrics = MyAppMetrics::new();
 //!

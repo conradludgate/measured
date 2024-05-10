@@ -15,14 +15,17 @@
 //!     // other metrics
 //! }}
 //!
-//! let metrics = MyAppMetrics::new();
+//! #[tokio::main]
+//! async fn main() {
+//!     let metrics = MyAppMetrics::new();
 //!
-//! // when you run metrics.collect_group_into(...), you will sample tokio to get runtime state.
+//!     // when you run metrics.collect_group_into(...), you will sample tokio to get runtime state.
 //!
-//! # drop(metrics);
+//!     # drop(metrics);
+//! }
 //! ```
 
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, sync::RwLock, time::Duration};
 
 use measured::{
     label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels},
@@ -34,76 +37,54 @@ use measured::{
 };
 use tokio::runtime::RuntimeMetrics;
 
-// /// A collector which exports the current state of tokio metrics including, with the given name as a label
-// pub struct NamedRuntimesCollector {
-//     runtime: RuntimeCollector,
-//     name: Option<Cow<'static, str>>,
-// }
+/// A collector which exports the current state of tokio metrics including, with the given name as a label
+pub struct NamedRuntimesCollector {
+    runtimes: RwLock<Vec<RuntimeCollector>>,
+}
 
-// impl NamedRuntimesCollector {
-//     /// Create a `RuntimeCollector` with the given process id and namespace.
-//     pub fn new(
-//         runtime: RuntimeMetrics,
-//         name: impl Into<Cow<'static, str>>,
-//     ) -> NamedRuntimesCollector {
-//         RuntimeCollector::new(runtime).with_name(name)
-//     }
+impl NamedRuntimesCollector {
+    /// Create a new empty `NamedRuntimesCollector`
+    pub fn new() -> Self {
+        Self {
+            runtimes: RwLock::new(vec![]),
+        }
+    }
 
-//     /// Return a `RuntimeCollector` of the calling process.
-//     ///
-//     /// # Panics
-//     ///
-//     /// This will panic if called outside the context of a Tokio runtime. That means that you must
-//     /// call this on one of the threads **being run by the runtime**, or from a thread with an active
-//     /// `EnterGuard`. Calling this from within a thread created by `std::thread::spawn` (for example)
-//     /// will cause a panic unless that thread has an active `EnterGuard`.
-//     pub fn current(name: impl Into<Cow<'static, str>>) -> NamedRuntimesCollector {
-//         RuntimeCollector::current().with_name(name)
-//     }
-// }
+    /// Inserts a `RuntimeCollector` with the given runtime.
+    pub fn add(&self, rt: RuntimeMetrics, name: impl Into<Cow<'static, str>>) {
+        self.runtimes
+            .write()
+            .unwrap()
+            .push(RuntimeCollector::new(rt).with_name(name))
+    }
 
-// impl<Enc: Encoding> MetricGroup<Enc> for NamedRuntimesCollector {
-//     fn collect_group_into(&self, encoder: &mut Enc) -> Result<(), <Enc as Encoding>::Err> {
-//         let name = self.name.as_deref();
-//         self.runtime
-//             .collect_group_into(&mut WithRuntimeLabel { name, encoder })
-//     }
-// }
+    /// Inserts a `RuntimeCollector` for the current runtime.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if called outside the context of a Tokio runtime. That means that you must
+    /// call this on one of the threads **being run by the runtime**, or from a thread with an active
+    /// `EnterGuard`. Calling this from within a thread created by `std::thread::spawn` (for example)
+    /// will cause a panic unless that thread has an active `EnterGuard`.
+    pub fn add_current(&self, name: impl Into<Cow<'static, str>>) {
+        self.runtimes
+            .write()
+            .unwrap()
+            .push(RuntimeCollector::current().with_name(name))
+    }
+}
 
-// struct WithRuntimeLabel<'a, 'b, Enc> {
-//     name: Option<&'a str>,
-//     encoder: &'b mut Enc,
-// }
+impl Default for NamedRuntimesCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-// impl<'a, 'b, Enc: Encoding> Encoding for WithRuntimeLabel<'a, 'b, Enc> {
-//     type Err = Enc::Err;
-
-//     fn write_help(
-//         &mut self,
-//         name: impl measured::metric::name::MetricNameEncoder,
-//         help: &str,
-//     ) -> Result<(), Self::Err> {
-//         self.encoder.write_help(name, help)
-//     }
-
-//     fn write_metric_value(
-//         &mut self,
-//         name: impl measured::metric::name::MetricNameEncoder,
-//         labels: impl LabelGroup,
-//         value: MetricValue,
-//     ) -> Result<(), Self::Err> {
-//         self.encoder.write_metric_value(
-//             name,
-//             ComposedGroup(
-//                 RuntimeName {
-//                     name: Some(self.name),
-//                 },
-//                 labels,
-//             ),
-//             value,
-//         )
-//     }
-// }
+impl<Enc: Encoding> MetricGroup<Enc> for NamedRuntimesCollector {
+    fn collect_group_into(&self, enc: &mut Enc) -> Result<(), <Enc as Encoding>::Err> {
+        collect(&self.runtimes.read().unwrap(), enc)
+    }
+}
 
 /// A collector which exports the current state of tokio metrics including
 pub struct RuntimeCollector {
@@ -112,7 +93,7 @@ pub struct RuntimeCollector {
 }
 
 impl RuntimeCollector {
-    /// Create a `RuntimeCollector` with the given process id and namespace.
+    /// Create a `RuntimeCollector` with the given runtime.
     pub fn new(runtime: RuntimeMetrics) -> Self {
         RuntimeCollector {
             runtime,
@@ -120,7 +101,7 @@ impl RuntimeCollector {
         }
     }
 
-    /// Return a `RuntimeCollector` of the calling process.
+    /// Return a `RuntimeCollector` for the current runtime.
     ///
     /// # Panics
     ///
@@ -334,7 +315,7 @@ impl LabelGroup for RuntimeName {
 //     use measured::{text::BufferedTextEncoder, MetricGroup};
 //     use tokio::task::JoinSet;
 
-//     use crate::RuntimeCollector;
+//     use crate::{NamedRuntimesCollector, RuntimeCollector};
 
 //     #[test]
 //     fn demo() {
@@ -355,11 +336,33 @@ impl LabelGroup for RuntimeName {
 //                 });
 //             }
 //             while js.join_next().await.is_some() {}
+//         });
 
-//             let rt = RuntimeCollector::current().with_name("blah");
-//             let mut enc = BufferedTextEncoder::new();
-//             rt.collect_group_into(&mut enc).unwrap();
-//             std::io::stdout().write_all(&enc.finish()).unwrap();
-//         })
+//         let rt2 = tokio::runtime::Builder::new_multi_thread()
+//             .worker_threads(8)
+//             .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Linear)
+//             .enable_metrics_poll_count_histogram()
+//             .enable_all()
+//             .build()
+//             .unwrap();
+//         rt2.block_on(async {
+//             let mut js = JoinSet::new();
+//             for _ in 0..100 {
+//                 js.spawn(async {
+//                     for _ in 0..100 {
+//                         tokio::task::yield_now().await;
+//                     }
+//                 });
+//             }
+//             while js.join_next().await.is_some() {}
+//         });
+
+//         let collector = NamedRuntimesCollector::new();
+//         collector.add(rt.metrics(), "foo");
+//         collector.add(rt2.metrics(), "bar");
+
+//         let mut enc = BufferedTextEncoder::new();
+//         collector.collect_group_into(&mut enc).unwrap();
+//         std::io::stdout().write_all(&enc.finish()).unwrap();
 //     }
 // }
