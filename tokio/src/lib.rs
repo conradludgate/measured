@@ -31,9 +31,9 @@ use measured::{
     label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels},
     metric::{
         group::{Encoding, MetricValue},
-        name::{Bucket, Count, MetricName},
+        name::{Bucket, Count, MetricName, Sum},
     },
-    LabelGroup, MetricGroup,
+    FixedCardinalityLabel, LabelGroup, MetricGroup,
 };
 use tokio::runtime::RuntimeMetrics;
 
@@ -179,17 +179,15 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         }};
     }
 
-    metric!(
-        "worker_threads",
-        "number of worker threads used by the runtime",
-        |rt| write_int!(NoLabels, rt.num_workers() as i64)
-    );
-
-    metric!(
-        "blocking_threads",
-        "number of blocking threads used by the runtime",
-        |rt| write_int!(NoLabels, rt.num_blocking_threads() as i64)
-    );
+    metric!("threads", "number of threads used by the runtime", |rt| {
+        write_int!(ThreadKind::Worker, rt.num_workers() as i64);
+        let idle = rt.num_idle_blocking_threads();
+        write_int!(
+            ThreadKind::Blocking,
+            rt.num_blocking_threads().saturating_sub(idle) as i64
+        );
+        write_int!(ThreadKind::Idle, idle as i64);
+    });
 
     metric!(
         "active_tasks",
@@ -198,11 +196,50 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
     );
 
     metric!(
-        "worker_queue_depth",
+        "pending_blocking_tasks",
+        "number of blocking tasks currently waiting for a blocking thread",
+        |rt| write_int!(NoLabels, rt.blocking_queue_depth() as i64)
+    );
+
+    metric!(
+        "pending_global_tasks",
+        "number of tasks currently in the global injection queue",
+        |rt| write_int!(NoLabels, rt.injection_queue_depth() as i64)
+    );
+
+    metric!(
+        "remote_schedule_count",
+        "number of tasks scheduled from outside of the runtime",
+        |rt| write_int!(NoLabels, rt.remote_schedule_count() as i64)
+    );
+
+    metric!(
+        "budget_forced_yield_count",
+        "number of tasks forced to yield after exhausting their budget",
+        |rt| write_int!(NoLabels, rt.budget_forced_yield_count() as i64)
+    );
+
+    metric!(
+        "worker_local_tasks",
         "number of tasks currently scheduled in the given worker's local queue",
         |rt| for worker in 0..rt.num_workers() {
             let queue_depth = rt.worker_local_queue_depth(worker);
-            write_int!(WorkerLabels { worker }, queue_depth as i64);
+            write_int!(Worker(worker), queue_depth as i64);
+        }
+    );
+
+    metric!(
+        "worker_scheduled_tasks_total",
+        "total number of tasks scheduled from inside the worker's runtime",
+        |rt| for worker in 0..rt.num_workers() {
+            write_int!(
+                Worker(worker).compose_with(Overflow(false)),
+                rt.worker_local_schedule_count(worker) as i64
+            );
+            write_int!(
+                Worker(worker).compose_with(Overflow(true)),
+                rt.worker_overflow_count(worker) as i64
+            );
         }
     );
 
@@ -211,34 +248,64 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         "estimated weighted moving average of the poll time for this worker",
         |rt| for worker in 0..rt.num_workers() {
             let poll_time = rt.worker_mean_poll_time(worker);
-            write_float!(WorkerLabels { worker }, poll_time.as_secs_f64());
+            write_float!(Worker(worker), poll_time.as_secs_f64());
         }
     );
 
     metric!(
-        "worker_busy_time_seconds_total",
-        "amount of time the given worker thread has been busy",
+        "worker_noop_count",
+        "number of times the given worker thread woke up with no work",
         |rt| for worker in 0..rt.num_workers() {
-            let busy_time = rt.worker_total_busy_duration(worker);
-            write_float!(WorkerLabels { worker }, busy_time.as_secs_f64());
+            let noops = rt.worker_noop_count(worker);
+            write_int!(Worker(worker), noops as i64);
+        }
+    );
+
+    metric!(
+        "worker_park_count",
+        "number of times the given worker thread has parked",
+        |rt| for worker in 0..rt.num_workers() {
+            let count = rt.worker_park_count(worker);
+            write_int!(Worker(worker), count as i64);
+        }
+    );
+
+    metric!(
+        "worker_steal_count",
+        "number of tasks the given worker thread has stolen",
+        |rt| for worker in 0..rt.num_workers() {
+            let count = rt.worker_steal_count(worker);
+            write_int!(Worker(worker), count as i64);
+        }
+    );
+
+    metric!(
+        "worker_steal_operations_count",
+        "number of times the given worker thread has attempted to steal tasks",
+        |rt| for worker in 0..rt.num_workers() {
+            let count = rt.worker_steal_operations(worker);
+            write_int!(Worker(worker), count as i64);
         }
     );
 
     metric!(
         "worker_poll_time_seconds",
         "time this runtime thread has spent polling tasks",
-        |rt| if rt.poll_count_histogram_enabled() {
-            let buckets = rt.poll_count_histogram_num_buckets();
-            for worker in 0..rt.num_workers() {
-                let worker_label = WorkerLabels { worker };
+        |rt| for worker in 0..rt.num_workers() {
+            let worker_label = Worker(worker);
+            if rt.poll_count_histogram_enabled() {
+                let buckets = rt.poll_count_histogram_num_buckets();
                 let mut total = 0;
                 for bucket in 0..buckets {
                     let le = histogram_le(rt, bucket);
                     total += rt.poll_count_histogram_bucket_count(worker, bucket);
-                    write_int!(Bucket, ComposedGroup(worker_label, le), total as i64);
+                    write_int!(Bucket, worker_label.compose_with(le), total as i64);
                 }
-                write_int!(Count, worker_label, total as i64);
             }
+            let count = rt.worker_poll_count(worker);
+            write_int!(Count, worker_label, count as i64);
+            let busy = rt.worker_total_busy_duration(worker);
+            write_float!(Sum, worker_label, busy.as_secs_f64());
         }
     );
 
@@ -266,14 +333,12 @@ impl LabelValue for F64 {
 }
 
 #[derive(Copy, Clone)]
-struct WorkerLabels {
-    worker: usize,
-}
+struct Worker(usize);
 
-impl LabelGroup for WorkerLabels {
+impl LabelGroup for Worker {
     fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
         const LE: &LabelName = LabelName::from_str("worker");
-        v.write_value(LE, &I64(self.worker as i64));
+        v.write_value(LE, &I64(self.0 as i64));
     }
 }
 
@@ -308,61 +373,78 @@ impl LabelGroup for RuntimeName {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::io::Write;
+struct Overflow(bool);
 
-//     use measured::{text::BufferedTextEncoder, MetricGroup};
-//     use tokio::task::JoinSet;
+impl LabelGroup for Overflow {
+    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
+        const OVERFLOW: &LabelName = LabelName::from_str("overflow");
+        v.write_value(OVERFLOW, if self.0 { &Str("true") } else { &Str("false") });
+    }
+}
 
-//     use crate::{NamedRuntimesCollector, RuntimeCollector};
+#[derive(FixedCardinalityLabel, Clone, Copy)]
+#[label(singleton = "kind")]
+enum ThreadKind {
+    Worker,
+    Idle,
+    Blocking,
+}
 
-//     #[test]
-//     fn demo() {
-//         let rt = tokio::runtime::Builder::new_multi_thread()
-//             .worker_threads(4)
-//             .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Log)
-//             .enable_metrics_poll_count_histogram()
-//             .enable_all()
-//             .build()
-//             .unwrap();
-//         rt.block_on(async {
-//             let mut js = JoinSet::new();
-//             for _ in 0..100 {
-//                 js.spawn(async {
-//                     for _ in 0..100 {
-//                         tokio::task::yield_now().await;
-//                     }
-//                 });
-//             }
-//             while js.join_next().await.is_some() {}
-//         });
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
 
-//         let rt2 = tokio::runtime::Builder::new_multi_thread()
-//             .worker_threads(8)
-//             .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Linear)
-//             .enable_metrics_poll_count_histogram()
-//             .enable_all()
-//             .build()
-//             .unwrap();
-//         rt2.block_on(async {
-//             let mut js = JoinSet::new();
-//             for _ in 0..100 {
-//                 js.spawn(async {
-//                     for _ in 0..100 {
-//                         tokio::task::yield_now().await;
-//                     }
-//                 });
-//             }
-//             while js.join_next().await.is_some() {}
-//         });
+    use measured::{text::BufferedTextEncoder, MetricGroup};
+    use tokio::task::JoinSet;
 
-//         let collector = NamedRuntimesCollector::new();
-//         collector.add(rt.metrics(), "foo");
-//         collector.add(rt2.metrics(), "bar");
+    use crate::{NamedRuntimesCollector, RuntimeCollector};
 
-//         let mut enc = BufferedTextEncoder::new();
-//         collector.collect_group_into(&mut enc).unwrap();
-//         std::io::stdout().write_all(&enc.finish()).unwrap();
-//     }
-// }
+    #[test]
+    fn demo() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Log)
+            .enable_metrics_poll_count_histogram()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mut js = JoinSet::new();
+            for _ in 0..100 {
+                js.spawn(async {
+                    for _ in 0..100 {
+                        tokio::task::yield_now().await;
+                    }
+                });
+            }
+            while js.join_next().await.is_some() {}
+        });
+
+        let rt2 = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(8)
+            .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Linear)
+            .enable_metrics_poll_count_histogram()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt2.block_on(async {
+            let mut js = JoinSet::new();
+            for _ in 0..100 {
+                js.spawn(async {
+                    for _ in 0..100 {
+                        tokio::task::yield_now().await;
+                    }
+                });
+            }
+            while js.join_next().await.is_some() {}
+        });
+
+        let collector = NamedRuntimesCollector::new();
+        collector.add(rt.metrics(), "foo");
+        collector.add(rt2.metrics(), "bar");
+
+        let mut enc = BufferedTextEncoder::new();
+        collector.collect_group_into(&mut enc).unwrap();
+        std::io::stdout().write_all(&enc.finish()).unwrap();
+    }
+}
