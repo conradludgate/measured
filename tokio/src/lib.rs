@@ -8,6 +8,7 @@
 //! #[derive(MetricGroup)]
 //! #[metric(new())]
 //! struct MyAppMetrics {
+//!     #[cfg(tokio_unstable)]
 //!     #[metric(namespace = "tokio")]
 //!     #[metric(init = measured_tokio::RuntimeCollector::current())]
 //!     tokio: measured_tokio::RuntimeCollector,
@@ -37,7 +38,7 @@ use measured::{
 };
 use tokio::runtime::RuntimeMetrics;
 
-/// A collector which exports the current state of tokio metrics including, with the given name as a label
+/// A collector which contains multiple named tokio runtimes
 pub struct NamedRuntimesCollector {
     runtimes: RwLock<Vec<RuntimeCollector>>,
 }
@@ -86,7 +87,7 @@ impl<Enc: Encoding> MetricGroup<Enc> for NamedRuntimesCollector {
     }
 }
 
-/// A collector which exports the current state of tokio metrics including
+/// A collector which exports the current state of tokio metrics
 pub struct RuntimeCollector {
     runtime: RuntimeMetrics,
     name: RuntimeName,
