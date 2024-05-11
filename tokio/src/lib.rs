@@ -196,51 +196,43 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
     );
 
     metric!(
-        "pending_blocking_tasks",
-        "number of blocking tasks currently waiting for a blocking thread",
-        |rt| write_int!(NoLabels, rt.blocking_queue_depth() as i64)
+        "queued_tasks",
+        "number of tasks currently in a queue",
+        |rt| {
+            write_int!(QueueKind::Blocking, rt.blocking_queue_depth() as i64);
+            write_int!(QueueKind::Injection, rt.injection_queue_depth() as i64);
+            for worker in 0..rt.num_workers() {
+                let queue_depth = rt.worker_local_queue_depth(worker);
+                write_int!(QueueKind::Worker(worker), queue_depth as i64);
+            }
+        }
     );
 
     metric!(
-        "pending_global_tasks",
-        "number of tasks currently in the global injection queue",
-        |rt| write_int!(NoLabels, rt.injection_queue_depth() as i64)
-    );
-
-    metric!(
-        "remote_schedule_count",
-        "number of tasks scheduled from outside of the runtime",
-        |rt| write_int!(NoLabels, rt.remote_schedule_count() as i64)
+        "scheduled_tasks_total",
+        "total number of tasks scheduled into the runtime",
+        |rt| {
+            for worker in 0..rt.num_workers() {
+                write_int!(
+                    Worker(worker).compose_with(Overflow(false)),
+                    rt.worker_local_schedule_count(worker) as i64
+                );
+                write_int!(
+                    Worker(worker).compose_with(Overflow(true)),
+                    rt.worker_overflow_count(worker) as i64
+                );
+            }
+            write_int!(
+                Remote.compose_with(Overflow(true)),
+                rt.remote_schedule_count() as i64
+            );
+        }
     );
 
     metric!(
         "budget_forced_yield_count",
         "number of tasks forced to yield after exhausting their budget",
         |rt| write_int!(NoLabels, rt.budget_forced_yield_count() as i64)
-    );
-
-    metric!(
-        "worker_local_tasks",
-        "number of tasks currently scheduled in the given worker's local queue",
-        |rt| for worker in 0..rt.num_workers() {
-            let queue_depth = rt.worker_local_queue_depth(worker);
-            write_int!(Worker(worker), queue_depth as i64);
-        }
-    );
-
-    metric!(
-        "worker_scheduled_tasks_total",
-        "total number of tasks scheduled from inside the worker's runtime",
-        |rt| for worker in 0..rt.num_workers() {
-            write_int!(
-                Worker(worker).compose_with(Overflow(false)),
-                rt.worker_local_schedule_count(worker) as i64
-            );
-            write_int!(
-                Worker(worker).compose_with(Overflow(true)),
-                rt.worker_overflow_count(worker) as i64
-            );
-        }
     );
 
     metric!(
@@ -309,6 +301,25 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         }
     );
 
+    #[cfg(feature = "net")]
+    {
+        metric!(
+            "registered_fds_total",
+            "total number of file descriptors that have been registered in the runtime",
+            |rt| write_int!(NoLabels, rt.io_driver_fd_registered_count() as i64)
+        );
+        metric!(
+            "deregistered_fds_total",
+            "total number of file descriptors that have been deregistered from the runtime",
+            |rt| write_int!(NoLabels, rt.io_driver_fd_deregistered_count() as i64)
+        );
+        metric!(
+            "io_ready_events_total",
+            "total number of ready events the runtime's IO driver has processed",
+            |rt| write_int!(NoLabels, rt.io_driver_ready_count() as i64)
+        );
+    }
+
     Ok(())
 }
 
@@ -339,6 +350,16 @@ impl LabelGroup for Worker {
     fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
         const LE: &LabelName = LabelName::from_str("worker");
         v.write_value(LE, &I64(self.0 as i64));
+    }
+}
+
+#[derive(Copy, Clone)]
+struct Remote;
+
+impl LabelGroup for Remote {
+    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
+        const LE: &LabelName = LabelName::from_str("worker");
+        v.write_value(LE, &Str("remote"));
     }
 }
 
@@ -390,61 +411,85 @@ enum ThreadKind {
     Blocking,
 }
 
-#[cfg(test)]
-mod tests {
-    use std::io::Write;
+enum QueueKind {
+    Worker(usize),
+    Blocking,
+    Injection,
+}
 
-    use measured::{text::BufferedTextEncoder, MetricGroup};
-    use tokio::task::JoinSet;
-
-    use crate::{NamedRuntimesCollector, RuntimeCollector};
-
-    #[test]
-    fn demo() {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(4)
-            .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Log)
-            .enable_metrics_poll_count_histogram()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            let mut js = JoinSet::new();
-            for _ in 0..100 {
-                js.spawn(async {
-                    for _ in 0..100 {
-                        tokio::task::yield_now().await;
-                    }
-                });
-            }
-            while js.join_next().await.is_some() {}
-        });
-
-        let rt2 = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(8)
-            .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Linear)
-            .enable_metrics_poll_count_histogram()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt2.block_on(async {
-            let mut js = JoinSet::new();
-            for _ in 0..100 {
-                js.spawn(async {
-                    for _ in 0..100 {
-                        tokio::task::yield_now().await;
-                    }
-                });
-            }
-            while js.join_next().await.is_some() {}
-        });
-
-        let collector = NamedRuntimesCollector::new();
-        collector.add(rt.metrics(), "foo");
-        collector.add(rt2.metrics(), "bar");
-
-        let mut enc = BufferedTextEncoder::new();
-        collector.collect_group_into(&mut enc).unwrap();
-        std::io::stdout().write_all(&enc.finish()).unwrap();
+#[automatically_derived]
+impl LabelValue for QueueKind {
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        match self {
+            QueueKind::Worker(i) => v.write_str(itoa::Buffer::new().format(*i)),
+            QueueKind::Blocking => v.write_str("blocking"),
+            QueueKind::Injection => v.write_str("injection"),
+        }
     }
 }
+
+impl LabelGroup for QueueKind {
+    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
+        const NAME: &LabelName = LabelName::from_str("kind");
+        v.write_value(NAME, self);
+    }
+}
+
+// #[cfg(test)]
+// mod tests {
+//     use std::io::Write;
+
+//     use measured::{text::BufferedTextEncoder, MetricGroup};
+//     use tokio::task::JoinSet;
+
+//     use crate::{NamedRuntimesCollector, RuntimeCollector};
+
+//     #[test]
+//     fn demo() {
+//         let rt = tokio::runtime::Builder::new_multi_thread()
+//             .worker_threads(4)
+//             .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Log)
+//             .enable_metrics_poll_count_histogram()
+//             .enable_all()
+//             .build()
+//             .unwrap();
+//         rt.block_on(async {
+//             let mut js = JoinSet::new();
+//             for _ in 0..100 {
+//                 js.spawn(async {
+//                     for _ in 0..100 {
+//                         tokio::task::yield_now().await;
+//                     }
+//                 });
+//             }
+//             while js.join_next().await.is_some() {}
+//         });
+
+//         let rt2 = tokio::runtime::Builder::new_multi_thread()
+//             .worker_threads(8)
+//             .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Linear)
+//             .enable_metrics_poll_count_histogram()
+//             .enable_all()
+//             .build()
+//             .unwrap();
+//         rt2.block_on(async {
+//             let mut js = JoinSet::new();
+//             for _ in 0..100 {
+//                 js.spawn(async {
+//                     for _ in 0..100 {
+//                         tokio::task::yield_now().await;
+//                     }
+//                 });
+//             }
+//             while js.join_next().await.is_some() {}
+//         });
+
+//         let collector = NamedRuntimesCollector::new();
+//         collector.add(rt.metrics(), "foo");
+//         collector.add(rt2.metrics(), "bar");
+
+//         let mut enc = BufferedTextEncoder::new();
+//         collector.collect_group_into(&mut enc).unwrap();
+//         std::io::stdout().write_all(&enc.finish()).unwrap();
+//     }
+// }

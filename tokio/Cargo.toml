@@ -12,10 +12,12 @@ readme = "README.md"
 
 [features]
 default = []
+net = ["tokio/net"]
 
 [dependencies]
 measured = { path = "../core", version = "0.0.21" }
 tokio = { version = "1.37", features = ["rt"] }
+itoa = "1"
 
 [dev-dependencies]
 tokio = { version = "1.37", features = ["rt", "rt-multi-thread"] }

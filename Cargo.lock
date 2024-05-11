@@ -637,6 +637,7 @@ dependencies = [
 name = "measured-tokio"
 version = "0.0.21"
 dependencies = [
+ "itoa",
  "measured",
  "tokio",
 ]
