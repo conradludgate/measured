@@ -63,7 +63,7 @@ impl<W: Write> Encoding for TextEncoder<W> {
         self.state = State::Info;
 
         self.writer.write_all(b"# HELP ")?;
-        name.encode_text(&mut self.writer)?;
+        name.encode_utf8(&mut self.writer)?;
         self.writer.write_all(b" ")?;
         self.writer.write_all(help.as_bytes())?;
         self.writer.write_all(b"\n")?;
@@ -133,7 +133,7 @@ impl<W: Write> Encoding for TextEncoder<W> {
         }
 
         self.state = State::Metrics;
-        name.encode_text(&mut self.writer)?;
+        name.encode_utf8(&mut self.writer)?;
 
         let mut visitor = GroupVisitor {
             first: true,
@@ -190,7 +190,7 @@ impl<W: Write> TextEncoder<W> {
         self.state = State::Info;
 
         self.writer.write_all(b"# TYPE ")?;
-        name.encode_text(&mut self.writer)?;
+        name.encode_utf8(&mut self.writer)?;
         match typ {
             MetricType::Counter => self.writer.write_all(b" counter\n"),
             MetricType::Histogram => self.writer.write_all(b" histogram\n"),

@@ -7,7 +7,10 @@ pub trait MetricNameEncoder {
     /// Encoded this name into the given bytes buffer according to the Prometheus metric name encoding specification.
     ///
     /// See <https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels>
-    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()>;
+    fn encode_utf8(&self, b: &mut impl Write) -> std::io::Result<()>;
+
+    /// The length of the utf8 string this metric name encodes to.
+    fn encode_len(&self) -> usize;
 
     /// Adds a semantic suffix to this metric name.
     fn with_suffix<S: Suffix>(self, suffix: S) -> WithSuffix<S, Self>
@@ -137,8 +140,11 @@ impl MetricName {
 }
 
 impl MetricNameEncoder for MetricName {
-    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+    fn encode_utf8(&self, b: &mut impl Write) -> std::io::Result<()> {
         b.write_all(self.0.as_bytes())
+    }
+    fn encode_len(&self) -> usize {
+        self.0.len()
     }
 }
 
@@ -152,11 +158,17 @@ impl MetricNameEncoder for MetricName {
 pub trait Suffix {
     /// Write `_` followed by the suffix value with to the underlying writer
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()>;
+
+    /// The length of the utf8 string this suffix encodes to.
+    fn encode_len(&self) -> usize;
 }
 
 impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for &T {
-    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
-        T::encode_text(self, b)
+    fn encode_utf8(&self, b: &mut impl Write) -> std::io::Result<()> {
+        T::encode_utf8(self, b)
+    }
+    fn encode_len(&self) -> usize {
+        T::encode_len(self)
     }
 }
 
@@ -188,10 +200,13 @@ impl<T> WithNamespace<T> {
 }
 
 impl<T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithNamespace<T> {
-    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+    fn encode_utf8(&self, b: &mut impl Write) -> std::io::Result<()> {
         b.write_all(self.namespace.0.as_bytes())?;
         b.write_all(b"_")?;
-        self.inner.encode_text(b)
+        self.inner.encode_utf8(b)
+    }
+    fn encode_len(&self) -> usize {
+        self.namespace.0.len() + 1 + self.inner.encode_len()
     }
 }
 
@@ -202,9 +217,12 @@ pub struct WithSuffix<S, T: ?Sized> {
 }
 
 impl<S: Suffix, T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithSuffix<S, T> {
-    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
-        self.metric_name.encode_text(b)?;
+    fn encode_utf8(&self, b: &mut impl Write) -> std::io::Result<()> {
+        self.metric_name.encode_utf8(b)?;
         self.suffix.encode_text(b)
+    }
+    fn encode_len(&self) -> usize {
+        self.metric_name.encode_len() + self.suffix.encode_len()
     }
 }
 
@@ -221,11 +239,17 @@ impl Suffix for Total {
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
         b.write_all(b"_total")
     }
+    fn encode_len(&self) -> usize {
+        6
+    }
 }
 
 impl Suffix for Count {
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
         b.write_all(b"_count")
+    }
+    fn encode_len(&self) -> usize {
+        6
     }
 }
 
@@ -233,10 +257,16 @@ impl Suffix for Sum {
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
         b.write_all(b"_sum")
     }
+    fn encode_len(&self) -> usize {
+        4
+    }
 }
 
 impl Suffix for Bucket {
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
         b.write_all(b"_bucket")
+    }
+    fn encode_len(&self) -> usize {
+        7
     }
 }

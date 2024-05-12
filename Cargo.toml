@@ -1,3 +1,10 @@
 [workspace]
-members = ["derive", "core", "process", "examples/*", "tokio"]
+members = [
+    "derive",
+    "core",
+    "process",
+    "examples/*",
+    "tokio",
+    "prometheus-proto",
+]
 resolver = "2"
