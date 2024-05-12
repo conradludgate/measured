@@ -14,59 +14,6 @@ use measured::{
 
 mod encoding;
 
-// impl ::prost::Message for MetricFamily {
-//     #[allow(unused_variables)]
-//     fn encode_raw<B>(&self, buf: &mut B)
-//     where
-//         B: ::prost::bytes::BufMut,
-//     {
-//         if let ::core::option::Option::Some(ref value) = self.name {
-//             ::prost::encoding::string::encode(1u32, value, buf);
-//         }
-//         if let ::core::option::Option::Some(ref value) = self.help {
-//             ::prost::encoding::string::encode(2u32, value, buf);
-//         }
-//         if let ::core::option::Option::Some(ref value) = self.r#type {
-//             ::prost::encoding::int32::encode(3u32, value, buf);
-//         }
-//         for msg in &self.metric {
-//             ::prost::encoding::message::encode(4u32, msg, buf);
-//         }
-//         if let ::core::option::Option::Some(ref value) = self.unit {
-//             ::prost::encoding::string::encode(5u32, value, buf);
-//         }
-//     }
-// }
-// impl ::prost::Message for Metric {
-//     #[allow(unused_variables)]
-//     fn encode_raw<B>(&self, buf: &mut B)
-//     where
-//         B: ::prost::bytes::BufMut,
-//     {
-//         for msg in &self.label {
-//             ::prost::encoding::message::encode(1u32, msg, buf);
-//         }
-//         if let Some(ref msg) = self.gauge {
-//             ::prost::encoding::message::encode(2u32, msg, buf);
-//         }
-//         if let Some(ref msg) = self.counter {
-//             ::prost::encoding::message::encode(3u32, msg, buf);
-//         }
-//         if let Some(ref msg) = self.summary {
-//             ::prost::encoding::message::encode(4u32, msg, buf);
-//         }
-//         if let Some(ref msg) = self.untyped {
-//             ::prost::encoding::message::encode(5u32, msg, buf);
-//         }
-//         if let ::core::option::Option::Some(ref value) = self.timestamp_ms {
-//             ::prost::encoding::int64::encode(6u32, value, buf);
-//         }
-//         if let Some(ref msg) = self.histogram {
-//             ::prost::encoding::message::encode(7u32, msg, buf);
-//         }
-//     }
-// }
-
 /// The prometheus text encoder helper
 pub struct ProtoEncoder<W> {
     state: State,
@@ -281,9 +228,7 @@ impl LabelGroupVisitor for GroupLenVisitor {
         label_pair_len += encoding::string::encoded_len(1, name.as_str());
         label_pair_len += x.visit(LenVisitor {});
 
-        self.len += key_len(1);
-        self.len += encoded_len_varint(label_pair_len as u64);
-        self.len += label_pair_len;
+        self.len += message_len(1, label_pair_len);
     }
 }
 
@@ -330,6 +275,10 @@ fn encode_message(
         message(buf);
         debug_assert_eq!(buf.len() - offset, len);
     }
+}
+
+fn message_len(tag: u32, len: usize) -> usize {
+    key_len(tag) + encoded_len_varint(len as u64) + len
 }
 
 struct GroupVisitor<'a> {
@@ -390,7 +339,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
 
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
         let count_len = encoding::double::encoded_len(1, &count);
-        metric_len += key_len(3) + encoded_len_varint(count_len as u64) + count_len;
+        metric_len += message_len(3, count_len);
 
         // repeated Metric     metric = 4;
         encode_message(4, metric_len, &mut enc.buf, |buf| {
@@ -535,15 +484,3 @@ mod tests {
         assert_eq!(actual, expected);
     }
 }
-
-// let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
-// assert_eq!(
-//     s,
-//     r#"# HELP http_request_total The total number of HTTP requests.
-// # TYPE http_request_total counter
-// http_request_total{method="post",code="200"} 1027
-// http_request_total{method="get",code="400"} 3
-// "#
-
-// b"\x8d\x01\n\x12http_request_total\x12\"The total number of HTTP requests.\x18\0\"(\n\x0e\n\x06method\x12\x04post\n\x0b\n\x04code\x12\x03200\x1a\t\t\0\0\0\0\0\x0c\x90@\"'\n\r\n\x06method\x12\x03get\n\x0b\n\x04code\x12\x03400\x1a\t\t\0\0\0\0\0\0\x08@"
-// b"\x8d\x01\n\x12http_request_total\x12\"The total number of HTTP requests.\x10\0\"(\n\x0e\n\x06method\x12\x04post\n\x0b\n\x04code\x12\x03200\x1a\t\t\0\0\0\0\0\x0c\x90@\"'\n\r\n\x06method\x12\x03get\n\x0b\n\x04code\x12\x03400\x1a\t\t\0\0\0\0\0\0\x08@"
