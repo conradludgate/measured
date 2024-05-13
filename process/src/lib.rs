@@ -31,9 +31,8 @@ use libc::pid_t;
 use measured::{
     label::NoLabels,
     metric::{
-        counter::CounterState,
-        gauge::GaugeState,
-        group::{Encoding, MetricValue},
+        gauge::{write_gauge, GaugeState},
+        group::Encoding,
         name::MetricName,
         MetricEncoding,
     },
@@ -76,7 +75,6 @@ impl ProcessCollector {
 
 impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector
 where
-    CounterState: MetricEncoding<Enc>,
     GaugeState: MetricEncoding<Enc>,
 {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
@@ -91,13 +89,13 @@ where
             if let Ok(fd_count) = p.fd_count() {
                 let fd = MetricName::from_str("open_fds");
                 enc.write_help(fd, "Number of open file descriptors.")?;
-                enc.write_metric_value(fd, NoLabels, MetricValue::Int(fd_count as i64))?;
+                write_gauge(enc, fd, NoLabels, fd_count as i64)?;
             }
             if let Ok(limits) = p.limits() {
                 if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
                     let fd = MetricName::from_str("max_fds");
                     enc.write_help(fd, "Maximum number of open file descriptors.")?;
-                    enc.write_metric_value(fd, NoLabels, MetricValue::Int(max as i64))?;
+                    write_gauge(enc, fd, NoLabels, max as i64)?;
                 }
             }
 
@@ -105,29 +103,26 @@ where
                 // memory
                 let vmm = MetricName::from_str("virtual_memory_bytes");
                 enc.write_help(vmm, "Virtual memory size in bytes.")?;
-                enc.write_metric_value(vmm, NoLabels, MetricValue::Int(stat.vsize as i64))?;
+                write_gauge(enc, vmm, NoLabels, stat.vsize as i64)?;
 
                 let rss = MetricName::from_str("resident_memory_bytes");
                 enc.write_help(rss, "Resident memory size in bytes.")?;
-                enc.write_metric_value(
-                    rss,
-                    NoLabels,
-                    MetricValue::Int((stat.rss as i64) * pagesize()),
-                )?;
+                write_gauge(enc, rss, NoLabels, (stat.rss as i64) * pagesize())?;
 
                 // cpu
                 let cpu = MetricName::from_str("cpu_seconds_total");
                 enc.write_help(cpu, "Total user and system CPU time spent in seconds.")?;
-                enc.write_metric_value(
+                write_gauge(
+                    enc,
                     cpu,
                     NoLabels,
-                    MetricValue::Int((stat.utime + stat.stime) as i64 / clk_tck()),
+                    (stat.utime + stat.stime) as i64 / clk_tck(),
                 )?;
 
                 // threads
                 let threads = MetricName::from_str("threads");
                 enc.write_help(threads, "Number of OS threads in the process.")?;
-                enc.write_metric_value(threads, NoLabels, MetricValue::Int(stat.num_threads))?;
+                write_gauge(enc, threads, NoLabels, stat.num_threads)?;
             }
 
             if let Some(start_time) = self.start_time {
@@ -136,7 +131,7 @@ where
                     name,
                     "Start time of the process since unix epoch in seconds.",
                 )?;
-                enc.write_metric_value(name, NoLabels, MetricValue::Int(start_time))?;
+                write_gauge(enc, name, NoLabels, start_time)?;
             }
         }
 

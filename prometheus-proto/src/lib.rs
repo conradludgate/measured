@@ -3,12 +3,7 @@ use std::io::Write;
 use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType::LengthDelimited};
 use measured::{
     label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
-    metric::{
-        counter::CounterState,
-        group::{Encoding, MetricValue},
-        name::MetricNameEncoder,
-        MetricEncoding,
-    },
+    metric::{counter::CounterState, group::Encoding, name::MetricNameEncoder, MetricEncoding},
     LabelGroup,
 };
 
@@ -101,92 +96,6 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
 
         self.state = State::Help;
 
-        Ok(())
-    }
-
-    /// Write the metric data
-    fn write_metric_value(
-        &mut self,
-        _name: impl MetricNameEncoder,
-        _labels: impl LabelGroup,
-        _value: MetricValue,
-    ) -> Result<(), std::io::Error> {
-        // struct Visitor<'a, W> {
-        //     writer: &'a mut W,
-        // }
-        // impl<W: Write> LabelVisitor for Visitor<'_, W> {
-        //     type Output = Result<(), std::io::Error>;
-        //     fn write_int(self, x: i64) -> Result<(), std::io::Error> {
-        //         self.write_str(itoa::Buffer::new().format(x))
-        //     }
-
-        //     fn write_float(self, x: f64) -> Result<(), std::io::Error> {
-        //         if x.is_infinite() {
-        //             if x.is_sign_positive() {
-        //                 self.write_str("+Inf")
-        //             } else {
-        //                 self.write_str("-Inf")
-        //             }
-        //         } else if x.is_nan() {
-        //             self.write_str("NaN")
-        //         } else {
-        //             self.write_str(ryu::Buffer::new().format(x))
-        //         }
-        //     }
-
-        //     fn write_str(self, x: &str) -> Result<(), std::io::Error> {
-        //         self.writer.write_all(b"=\"")?;
-        //         // write_label_str_value(x, &mut *self.writer)?;
-        //         self.writer.write_all(b"\"")?;
-        //         Ok(())
-        //     }
-        // }
-
-        // struct GroupVisitor<'a, W> {
-        //     first: bool,
-        //     writer: &'a mut W,
-        // }
-        // impl<W: Write> LabelGroupVisitor for GroupVisitor<'_, W> {
-        //     type Output = Result<(), std::io::Error>;
-        //     fn write_value(
-        //         &mut self,
-        //         name: &LabelName,
-        //         x: &impl LabelValue,
-        //     ) -> Result<(), std::io::Error> {
-        //         if self.first {
-        //             self.first = false;
-        //             self.writer.write_all(b"{")?;
-        //         } else {
-        //             self.writer.write_all(b",")?;
-        //         }
-        //         self.writer.write_all(name.as_str().as_bytes())?;
-        //         x.visit(Visitor {
-        //             writer: self.writer,
-        //         })
-        //     }
-        // }
-
-        // self.state = State::Metrics;
-        // name.encode_utf8(&mut self.writer)?;
-
-        // let mut visitor = GroupVisitor {
-        //     first: true,
-        //     writer: &mut self.writer,
-        // };
-        // labels.visit_values(&mut visitor);
-        // if !visitor.first {
-        //     self.writer.write_all(b"}")?;
-        // }
-        // self.writer.write_all(b" ")?;
-        // match value {
-        //     MetricValue::Int(x) => self
-        //         .writer
-        //         .write_all(itoa::Buffer::new().format(x).as_bytes())?,
-        //     MetricValue::Float(x) => self
-        //         .writer
-        //         .write_all(ryu::Buffer::new().format(x).as_bytes())?,
-        // }
-        // self.writer.write_all(b"\n")?;
         Ok(())
     }
 }

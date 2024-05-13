@@ -12,7 +12,7 @@ use crate::{
     label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
         counter::CounterState,
-        gauge::GaugeState,
+        gauge::{FloatGaugeState, GaugeState},
         group::{Encoding, MetricValue},
         histogram::{HistogramState, Thresholds},
         name::{Bucket, Count, MetricNameEncoder, Sum},
@@ -68,6 +68,50 @@ impl<W: Write> Encoding for TextEncoder<W> {
         self.writer.write_all(help.as_bytes())?;
         self.writer.write_all(b"\n")?;
         Ok(())
+    }
+}
+
+impl<W: Write> TextEncoder<W> {
+    /// Create a new text encoder.
+    ///
+    /// This should ideally be cached and re-used between collections to reduce re-allocating
+    pub fn new(w: W) -> Self {
+        Self {
+            state: State::Info,
+            writer: w,
+        }
+    }
+
+    /// Finish the text encoding and extract the bytes to send in a HTTP response.
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        self.state = State::Info;
+        self.writer.flush()
+    }
+
+    fn write_line(&mut self) -> std::io::Result<()> {
+        self.writer.write_all(b"\n")
+    }
+
+    /// Write the type line for a metric
+    pub fn write_type(
+        &mut self,
+        name: &impl MetricNameEncoder,
+        typ: MetricType,
+    ) -> Result<(), std::io::Error> {
+        if self.state == State::Metrics {
+            self.write_line()?;
+        }
+        self.state = State::Info;
+
+        self.writer.write_all(b"# TYPE ")?;
+        name.encode_utf8(&mut self.writer)?;
+        match typ {
+            MetricType::Counter => self.writer.write_all(b" counter\n"),
+            MetricType::Histogram => self.writer.write_all(b" histogram\n"),
+            MetricType::Gauge => self.writer.write_all(b" gauge\n"),
+            MetricType::Summary => self.writer.write_all(b" summary\n"),
+            MetricType::Untyped => self.writer.write_all(b" untyped\n"),
+        }
     }
 
     /// Write the metric data
@@ -154,50 +198,6 @@ impl<W: Write> Encoding for TextEncoder<W> {
         }
         self.writer.write_all(b"\n")?;
         Ok(())
-    }
-}
-
-impl<W: Write> TextEncoder<W> {
-    /// Create a new text encoder.
-    ///
-    /// This should ideally be cached and re-used between collections to reduce re-allocating
-    pub fn new(w: W) -> Self {
-        Self {
-            state: State::Info,
-            writer: w,
-        }
-    }
-
-    /// Finish the text encoding and extract the bytes to send in a HTTP response.
-    pub fn flush(&mut self) -> std::io::Result<()> {
-        self.state = State::Info;
-        self.writer.flush()
-    }
-
-    fn write_line(&mut self) -> std::io::Result<()> {
-        self.writer.write_all(b"\n")
-    }
-
-    /// Write the type line for a metric
-    pub fn write_type(
-        &mut self,
-        name: &impl MetricNameEncoder,
-        typ: MetricType,
-    ) -> Result<(), std::io::Error> {
-        if self.state == State::Metrics {
-            self.write_line()?;
-        }
-        self.state = State::Info;
-
-        self.writer.write_all(b"# TYPE ")?;
-        name.encode_utf8(&mut self.writer)?;
-        match typ {
-            MetricType::Counter => self.writer.write_all(b" counter\n"),
-            MetricType::Histogram => self.writer.write_all(b" histogram\n"),
-            MetricType::Gauge => self.writer.write_all(b" gauge\n"),
-            MetricType::Summary => self.writer.write_all(b" summary\n"),
-            MetricType::Untyped => self.writer.write_all(b" untyped\n"),
-        }
     }
 }
 
@@ -312,6 +312,24 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
     }
 }
 
+impl<W: Write> MetricEncoding<TextEncoder<W>> for FloatGaugeState {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.write_type(&name, MetricType::Gauge)
+    }
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut TextEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.write_metric_value(&name, labels, MetricValue::Float(self.count.get()))
+    }
+}
+
 /// The prometheus text encoder helper
 pub struct BufferedTextEncoder {
     inner: TextEncoder<BytesWriter>,
@@ -342,18 +360,6 @@ impl Encoding for BufferedTextEncoder {
     /// Write the help line for a metric
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {
         self.inner.write_help(name, help).unreachable()
-    }
-
-    /// Write the metric data
-    fn write_metric_value(
-        &mut self,
-        name: impl MetricNameEncoder,
-        labels: impl LabelGroup,
-        value: MetricValue,
-    ) -> Result<(), Infallible> {
-        self.inner
-            .write_metric_value(name, labels, value)
-            .unreachable()
     }
 }
 

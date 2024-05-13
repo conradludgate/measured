@@ -7,7 +7,7 @@ use std::{
 
 use parking_lot::RwLock;
 
-use super::{MetricLockGuard, MetricMut, MetricType};
+use super::{gauge::AtomicF64, MetricLockGuard, MetricMut, MetricType};
 use crate::{label::LabelGroupSet, Histogram, HistogramVec};
 
 /// The inner state of a histogram.
@@ -20,8 +20,8 @@ pub struct HistogramStateInner<const N: usize> {
     pub buckets: [AtomicU64; N],
     /// The number of observed values that are greater than described by [`Thresholds`]
     pub inf: AtomicU64,
-    /// The accumulated sum (encoded with [`f64::to_bits`])
-    pub sum: AtomicU64,
+    /// The accumulated sum
+    pub sum: AtomicF64,
 }
 
 impl<const N: usize> HistogramStateInner<N> {
@@ -33,11 +33,7 @@ impl<const N: usize> HistogramStateInner<N> {
         } else {
             self.inf.fetch_add(1, Ordering::Relaxed);
         }
-        self.sum
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                Some(f64::to_bits(f64::from_bits(v) + x))
-            })
-            .unwrap();
+        self.sum.inc_by(x);
     }
 
     /// Add a single observation to the [`Histogram`].
@@ -48,8 +44,8 @@ impl<const N: usize> HistogramStateInner<N> {
         } else {
             *self.inf.get_mut() += 1;
         }
-        let v = *self.sum.get_mut();
-        *self.sum.get_mut() = f64::to_bits(f64::from_bits(v) + x);
+        let v = self.sum.get_ex();
+        self.sum.set_mut(v + x);
     }
 
     pub(crate) fn sample(&mut self) -> ([u64; N], u64, f64) {
@@ -58,11 +54,7 @@ impl<const N: usize> HistogramStateInner<N> {
         for i in 0..N {
             output[i] = *self.buckets[i].get_mut();
         }
-        (
-            output,
-            *self.inf.get_mut(),
-            f64::from_bits(*self.sum.get_mut()),
-        )
+        (output, *self.inf.get_mut(), self.sum.get_ex())
     }
 }
 
@@ -87,7 +79,7 @@ impl<const N: usize> Default for HistogramState<N> {
             inner: RwLock::new(HistogramStateInner {
                 buckets: [ZERO; N],
                 inf: ZERO,
-                sum: ZERO,
+                sum: AtomicF64::ZERO,
             }),
         }
     }

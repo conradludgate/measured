@@ -31,8 +31,11 @@ use std::{borrow::Cow, sync::RwLock, time::Duration};
 use measured::{
     label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels},
     metric::{
-        group::{Encoding, MetricValue},
+        counter::{write_counter, CounterState},
+        gauge::{write_float_gauge, write_gauge, FloatGaugeState, GaugeState},
+        group::Encoding,
         name::{Bucket, Count, MetricName, Sum},
+        MetricEncoding,
     },
     FixedCardinalityLabel, LabelGroup, MetricGroup,
 };
@@ -81,7 +84,12 @@ impl Default for NamedRuntimesCollector {
     }
 }
 
-impl<Enc: Encoding> MetricGroup<Enc> for NamedRuntimesCollector {
+impl<Enc: Encoding> MetricGroup<Enc> for NamedRuntimesCollector
+where
+    CounterState: MetricEncoding<Enc>,
+    GaugeState: MetricEncoding<Enc>,
+    FloatGaugeState: MetricEncoding<Enc>,
+{
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), <Enc as Encoding>::Err> {
         collect(&self.runtimes.read().unwrap(), enc)
     }
@@ -134,7 +142,12 @@ fn histogram_le(rt: &RuntimeMetrics, bucket: usize) -> HistogramLabelLe {
     HistogramLabelLe { le }
 }
 
-fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Result<(), Enc::Err> {
+fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Result<(), Enc::Err>
+where
+    CounterState: MetricEncoding<Enc>,
+    GaugeState: MetricEncoding<Enc>,
+    FloatGaugeState: MetricEncoding<Enc>,
+{
     macro_rules! metric {
         ($name:literal, $help:literal, |$rt:ident| $expr:expr) => {{
             #![allow(unused_macros)]
@@ -142,35 +155,42 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
             enc.write_help(NAME, $help)?;
             for rt in runtimes {
                 let rt_name = &rt.name;
-                macro_rules! write_int {
+                macro_rules! write_counter {
                     ($labels:expr, $val:expr) => {
-                        enc.write_metric_value(
-                            NAME,
-                            ComposedGroup(rt_name, $labels),
-                            MetricValue::Int($val),
-                        )?
+                        write_counter(enc, NAME, ComposedGroup(rt_name, $labels), $val)?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        enc.write_metric_value(
+                        write_counter(
+                            enc,
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
-                            MetricValue::Int($val),
+                            $val,
                         )?
                     };
                 }
-                macro_rules! write_float {
+                macro_rules! write_gauge {
                     ($labels:expr, $val:expr) => {
-                        enc.write_metric_value(
-                            NAME,
-                            ComposedGroup(rt_name, $labels),
-                            MetricValue::Float($val),
-                        )?
+                        write_gauge(enc, NAME, ComposedGroup(rt_name, $labels), $val)?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        enc.write_metric_value(
+                        write_gauge(
+                            enc,
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
-                            MetricValue::Float($val),
+                            $val,
+                        )?
+                    };
+                }
+                macro_rules! write_float_gauge {
+                    ($labels:expr, $val:expr) => {
+                        write_float_gauge(enc, NAME, ComposedGroup(rt_name, $labels), $val)?
+                    };
+                    ($suffix:expr, $labels:expr, $val:expr) => {
+                        write_float_gauge(
+                            enc,
+                            NAME.with_suffix($suffix),
+                            ComposedGroup(rt_name, $labels),
+                            $val,
                         )?
                     };
                 }
@@ -181,30 +201,30 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
     }
 
     metric!("threads", "number of threads used by the runtime", |rt| {
-        write_int!(ThreadKind::Worker, rt.num_workers() as i64);
+        write_gauge!(ThreadKind::Worker, rt.num_workers() as i64);
         let idle = rt.num_idle_blocking_threads();
-        write_int!(
+        write_gauge!(
             ThreadKind::Blocking,
             rt.num_blocking_threads().saturating_sub(idle) as i64
         );
-        write_int!(ThreadKind::Idle, idle as i64);
+        write_gauge!(ThreadKind::Idle, idle as i64);
     });
 
     metric!(
         "active_tasks",
         "number of active tasks spawned in the runtime",
-        |rt| write_int!(NoLabels, rt.active_tasks_count() as i64)
+        |rt| write_gauge!(NoLabels, rt.active_tasks_count() as i64)
     );
 
     metric!(
         "queued_tasks",
         "number of tasks currently in a queue",
         |rt| {
-            write_int!(QueueKind::Blocking, rt.blocking_queue_depth() as i64);
-            write_int!(QueueKind::Injection, rt.injection_queue_depth() as i64);
+            write_gauge!(QueueKind::Blocking, rt.blocking_queue_depth() as i64);
+            write_gauge!(QueueKind::Injection, rt.injection_queue_depth() as i64);
             for worker in 0..rt.num_workers() {
                 let queue_depth = rt.worker_local_queue_depth(worker);
-                write_int!(QueueKind::Worker(worker), queue_depth as i64);
+                write_gauge!(QueueKind::Worker(worker), queue_depth as i64);
             }
         }
     );
@@ -214,18 +234,18 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         "total number of tasks scheduled into the runtime",
         |rt| {
             for worker in 0..rt.num_workers() {
-                write_int!(
+                write_counter!(
                     Worker(worker).compose_with(Overflow(false)),
-                    rt.worker_local_schedule_count(worker) as i64
+                    rt.worker_local_schedule_count(worker)
                 );
-                write_int!(
+                write_counter!(
                     Worker(worker).compose_with(Overflow(true)),
-                    rt.worker_overflow_count(worker) as i64
+                    rt.worker_overflow_count(worker)
                 );
             }
-            write_int!(
+            write_counter!(
                 Remote.compose_with(Overflow(true)),
-                rt.remote_schedule_count() as i64
+                rt.remote_schedule_count()
             );
         }
     );
@@ -233,7 +253,7 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
     metric!(
         "budget_forced_yield_count",
         "number of tasks forced to yield after exhausting their budget",
-        |rt| write_int!(NoLabels, rt.budget_forced_yield_count() as i64)
+        |rt| write_counter!(NoLabels, rt.budget_forced_yield_count())
     );
 
     metric!(
@@ -241,7 +261,7 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         "estimated weighted moving average of the poll time for this worker",
         |rt| for worker in 0..rt.num_workers() {
             let poll_time = rt.worker_mean_poll_time(worker);
-            write_float!(Worker(worker), poll_time.as_secs_f64());
+            write_float_gauge!(Worker(worker), poll_time.as_secs_f64());
         }
     );
 
@@ -250,7 +270,7 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         "number of times the given worker thread woke up with no work",
         |rt| for worker in 0..rt.num_workers() {
             let noops = rt.worker_noop_count(worker);
-            write_int!(Worker(worker), noops as i64);
+            write_counter!(Worker(worker), noops);
         }
     );
 
@@ -259,7 +279,7 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         "number of times the given worker thread has parked",
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_park_count(worker);
-            write_int!(Worker(worker), count as i64);
+            write_counter!(Worker(worker), count);
         }
     );
 
@@ -268,7 +288,7 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         "number of tasks the given worker thread has stolen",
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_steal_count(worker);
-            write_int!(Worker(worker), count as i64);
+            write_counter!(Worker(worker), count);
         }
     );
 
@@ -277,7 +297,7 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         "number of times the given worker thread has attempted to steal tasks",
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_steal_operations(worker);
-            write_int!(Worker(worker), count as i64);
+            write_counter!(Worker(worker), count);
         }
     );
 
@@ -292,13 +312,13 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
                 for bucket in 0..buckets {
                     let le = histogram_le(rt, bucket);
                     total += rt.poll_count_histogram_bucket_count(worker, bucket);
-                    write_int!(Bucket, worker_label.compose_with(le), total as i64);
+                    write_counter!(Bucket, worker_label.compose_with(le), total);
                 }
             }
             let count = rt.worker_poll_count(worker);
-            write_int!(Count, worker_label, count as i64);
+            write_counter!(Count, worker_label, count);
             let busy = rt.worker_total_busy_duration(worker);
-            write_float!(Sum, worker_label, busy.as_secs_f64());
+            write_float_gauge!(Sum, worker_label, busy.as_secs_f64());
         }
     );
 
@@ -307,24 +327,29 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         metric!(
             "registered_fds_total",
             "total number of file descriptors that have been registered in the runtime",
-            |rt| write_int!(NoLabels, rt.io_driver_fd_registered_count() as i64)
+            |rt| write_counter!(NoLabels, rt.io_driver_fd_registered_count())
         );
         metric!(
             "deregistered_fds_total",
             "total number of file descriptors that have been deregistered from the runtime",
-            |rt| write_int!(NoLabels, rt.io_driver_fd_deregistered_count() as i64)
+            |rt| write_counter!(NoLabels, rt.io_driver_fd_deregistered_count())
         );
         metric!(
             "io_ready_events_total",
             "total number of ready events the runtime's IO driver has processed",
-            |rt| write_int!(NoLabels, rt.io_driver_ready_count() as i64)
+            |rt| write_counter!(NoLabels, rt.io_driver_ready_count())
         );
     }
 
     Ok(())
 }
 
-impl<Enc: Encoding> MetricGroup<Enc> for RuntimeCollector {
+impl<Enc: Encoding> MetricGroup<Enc> for RuntimeCollector
+where
+    CounterState: MetricEncoding<Enc>,
+    GaugeState: MetricEncoding<Enc>,
+    FloatGaugeState: MetricEncoding<Enc>,
+{
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
         collect(std::slice::from_ref(self), enc)
     }

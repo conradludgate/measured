@@ -6,7 +6,10 @@
 extern crate alloc;
 
 use metric::{
-    counter::CounterState, gauge::GaugeState, histogram::HistogramState, Metric, MetricVec,
+    counter::CounterState,
+    gauge::{FloatGaugeState, GaugeState},
+    histogram::HistogramState,
+    Metric, MetricVec,
 };
 
 #[cfg(any(doc, test))]
@@ -435,3 +438,64 @@ pub type Gauge = Metric<GaugeState>;
 /// let bytes = text_encoder.finish();
 /// ```
 pub type GaugeVec<L> = MetricVec<GaugeState, L>;
+
+/// A [`Metric`] that represents a single numerical value that can go up or down over time.
+///
+/// ```
+/// use measured::FloatGauge;
+/// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
+/// use measured::text::BufferedTextEncoder;
+///
+/// // create a gauge
+/// let gauge = FloatGauge::new();
+/// // increment the gauge value
+/// gauge.get_metric().inc();
+///
+/// // sample the gauge and encode the value to a textual format.
+/// let mut text_encoder = BufferedTextEncoder::new();
+/// let name = MetricName::from_str("my_first_gauge");
+/// gauge.collect_family_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
+pub type FloatGauge = Metric<FloatGaugeState>;
+
+/// A collection of multiple [`FloatGauge`]s, keyed by [`LabelGroup`]s
+///
+/// ```
+/// use measured::{FloatGaugeVec, LabelGroup, FixedCardinalityLabel};
+/// use measured::label::StaticLabelSet;
+/// use measured::metric::name::MetricName;
+/// use measured::metric::MetricFamilyEncoding;
+/// use measured::text::BufferedTextEncoder;
+///
+/// // Define a fixed cardinality label
+///
+/// #[derive(FixedCardinalityLabel, Copy, Clone)]
+/// enum Operation {
+///     Create,
+///     Update,
+///     Delete,
+/// }
+///
+/// // Define a label group, consisting of 1 or more label values
+///
+/// #[derive(LabelGroup)]
+/// #[label(set = MyLabelGroupSet)]
+/// struct MyLabelGroup {
+///     operation: Operation,
+/// }
+///
+/// // create a gauge vec
+/// let gauges = FloatGaugeVec::with_label_set(MyLabelGroupSet::new());
+/// // increment the gauge at a given label
+/// gauges.inc(MyLabelGroup { operation: Operation::Create });
+/// gauges.inc(MyLabelGroup { operation: Operation::Delete });
+///
+/// // sample the gauges and encode the values to a textual format.
+/// let mut text_encoder = BufferedTextEncoder::new();
+/// let name = MetricName::from_str("my_first_gauge");
+/// gauges.collect_family_into(name, &mut text_encoder);
+/// let bytes = text_encoder.finish();
+/// ```
+pub type FloatGaugeVec<L> = MetricVec<FloatGaugeState, L>;

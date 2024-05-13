@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 pub use crate::label::ComposedGroup;
-use crate::LabelGroup;
 
 use super::{
     name::{MetricNameEncoder, WithNamespace},
@@ -24,29 +23,12 @@ pub trait Encoding {
 
     /// Write the help text for a metric
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err>;
-
-    /// Write the metric data
-    fn write_metric_value(
-        &mut self,
-        name: impl MetricNameEncoder,
-        labels: impl LabelGroup,
-        value: MetricValue,
-    ) -> Result<(), Self::Err>;
 }
 
 impl<E: Encoding> Encoding for &mut E {
     type Err = E::Err;
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
         E::write_help(self, name, help)
-    }
-
-    fn write_metric_value(
-        &mut self,
-        name: impl MetricNameEncoder,
-        labels: impl LabelGroup,
-        value: MetricValue,
-    ) -> Result<(), Self::Err> {
-        E::write_metric_value(self, name, labels, value)
     }
 }
 
@@ -116,23 +98,6 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
                 inner: name,
             },
             help,
-        )
-    }
-
-    fn write_metric_value(
-        &mut self,
-        name: impl MetricNameEncoder,
-        labels: impl LabelGroup,
-        value: MetricValue,
-    ) -> Result<(), Self::Err> {
-        E::write_metric_value(
-            &mut self.inner,
-            WithNamespace {
-                namespace: self.namespace,
-                inner: name,
-            },
-            labels,
-            value,
         )
     }
 }
