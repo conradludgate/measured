@@ -1,8 +1,9 @@
 use divan::black_box;
 use divan::Bencher;
 use lasso::{Spur, ThreadedRodeo};
-use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, LabelGroup, MetricGroup};
+use measured_prometheus_protobuf::ProtoEncoder;
+use prometheus::Encoder;
 use prometheus_client::encoding::EncodeLabelSet;
 
 fn main() {
@@ -30,11 +31,13 @@ fn measured<const N: usize>(bencher: Bencher) {
         });
     }
 
-    let mut enc = BufferedTextEncoder::new();
+    let mut enc = ProtoEncoder::new(vec![]);
 
     bencher.bench_local(|| {
+        enc.writer.clear();
         metrics.collect_group_into(&mut enc).unwrap();
-        enc.finish()
+        enc.flush().unwrap();
+        black_box(&enc.writer);
     });
 }
 
@@ -54,32 +57,15 @@ fn prometheus<const N: usize>(bencher: Bencher) {
         counter_vec.with_label_values(&[buf.format(i)]).inc();
     }
 
-    let mut enc = String::new();
+    let mut enc = Vec::new();
 
     bencher.bench_local(|| {
         enc.clear();
-        prometheus::TextEncoder::new()
-            .encode_utf8(&registry.gather(), &mut enc)
+        prometheus::ProtobufEncoder::new()
+            .encode(&registry.gather(), &mut enc)
             .unwrap();
         black_box(&enc);
     });
-}
-
-#[divan::bench(consts = SIZES)]
-fn metrics<const N: usize>(bencher: Bencher) {
-    let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
-
-    metrics::with_local_recorder(&recorder, || {
-        metrics::describe_counter!("counters", "help text");
-        let mut buf = itoa::Buffer::new();
-        for i in 0..N {
-            let labels = [("kind", buf.format(i).to_owned())];
-            metrics::counter!("counters", &labels).increment(1);
-        }
-    });
-
-    let handle = recorder.handle();
-    bencher.bench_local(|| handle.render());
 }
 
 #[divan::bench(consts = SIZES)]
@@ -87,6 +73,7 @@ fn prometheus_client<const N: usize>(bencher: Bencher) {
     use prometheus_client::metrics::counter::Counter;
     use prometheus_client::metrics::family::Family;
     use prometheus_client::registry::Registry;
+    use prost11::Message;
 
     let mut registry = <Registry>::default();
 
@@ -100,11 +87,14 @@ fn prometheus_client<const N: usize>(bencher: Bencher) {
         counter_vec.get_or_create(&GroupStatic { kind }).inc();
     }
 
-    let mut enc = String::new();
+    let mut enc = Vec::new();
 
     bencher.bench_local(|| {
         enc.clear();
-        prometheus_client::encoding::text::encode(&mut enc, &registry).unwrap();
+        prometheus_client::encoding::protobuf::encode(&registry)
+            .unwrap()
+            .encode(&mut enc)
+            .unwrap();
         black_box(&enc);
     });
 }

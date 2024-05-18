@@ -10,8 +10,23 @@ readme = "README.md"
 
 [dependencies]
 measured = { path = "../core", version = "0.0.21" }
-prost = "0.12"
-prost-types = "0.12"
 bytes = "1"
 ryu = "1"
 itoa = "1"
+
+[dev-dependencies]
+prost = "0.12"
+prost-types = "0.12"
+prost11 = { version = "0.11", package = "prost" }
+measured = { path = "../core", version = "0.0.21", features = ["lasso"] }
+fake = "2.9.2"
+divan = "0.1.14"
+prometheus = { version = "0.13.3", default-features = false, features = ["protobuf"] }
+prometheus-client = { version = "0.22.2", features = ["protobuf"] }
+rand = { version = "0.8", features = ["small_rng"] }
+ahash = "0.8"
+lasso = { version = "0.7", features = ["multi-threaded"] }
+
+[[bench]]
+name = "encoding"
+harness = false

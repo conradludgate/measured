@@ -177,7 +177,7 @@ mod fixed_cardinality {
     #[label(set = ErrorsSet)]
     struct Error<'a> {
         kind: ErrorKind,
-        #[label(fixed_with = RodeoReader<Spur, BuildHasherDefault<FxHasher>>)]
+        #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
         route: &'a str,
     }
 

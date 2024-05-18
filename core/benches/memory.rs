@@ -74,7 +74,7 @@ fn measured(bencher: Bencher) {
     let error_set = ErrorsSet {
         kind: StaticLabelSet::new(),
         route: Rodeo::from_iter(routes()).into_reader(),
-        user_name: ThreadedRodeo::with_hasher(Default::default()),
+        user_name: ThreadedRodeo::with_hasher(ahash::RandomState::new()),
     };
     let counter_vec = measured::CounterVec::with_label_set(error_set);
 
@@ -185,9 +185,9 @@ fn prometheus_client(bencher: Bencher) {
 #[label(set = ErrorsSet)]
 struct Error<'a> {
     kind: ErrorKind,
-    #[label(fixed_with = RodeoReader<Spur, BuildHasherDefault<FxHasher>>)]
+    #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
     route: &'a str,
-    #[label(dynamic_with = ThreadedRodeo<Spur, BuildHasherDefault<FxHasher>>)]
+    #[label(dynamic_with = ThreadedRodeo<Spur, ahash::RandomState>)]
     user_name: &'a str,
 }
 
