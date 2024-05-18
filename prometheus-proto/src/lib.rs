@@ -3,7 +3,13 @@ use std::io::Write;
 use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType::LengthDelimited};
 use measured::{
     label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
-    metric::{counter::CounterState, group::Encoding, name::MetricNameEncoder, MetricEncoding},
+    metric::{
+        counter::CounterState,
+        gauge::{FloatGaugeState, GaugeState},
+        group::Encoding,
+        name::MetricNameEncoder,
+        MetricEncoding,
+    },
     LabelGroup,
 };
 
@@ -255,9 +261,120 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
             labels.visit_values(&mut GroupVisitor { buf });
 
             // optional Counter   counter      = 3;
-            encode_key(3, LengthDelimited, buf);
-            encode_varint(count_len as u64, buf);
-            encoding::double::encode(1, &count, buf);
+            encode_message(3, count_len, buf, |buf| {
+                // optional double   value    = 1;
+                encoding::double::encode(1, &count, buf);
+            });
+        });
+
+        Ok(())
+    }
+}
+
+impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut ProtoEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.flush_buf()?;
+
+        if enc.state == State::Init {
+            // optional string     name   = 1;
+            encode_key(1, LengthDelimited, &mut enc.buf);
+            encode_varint(name.encode_len() as u64, &mut enc.buf);
+            name.encode_utf8(&mut enc.buf)?;
+        }
+
+        // optional MetricType type   = 3;
+        // GAUGE = 1;
+        encoding::int32::encode(3, &1, &mut enc.buf);
+
+        Ok(())
+    }
+
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        _name: impl MetricNameEncoder,
+        enc: &mut ProtoEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.state = State::Metrics;
+
+        let mut metric_len = 0;
+
+        let mut label_pairs_len = GroupLenVisitor { len: 0 };
+        labels.visit_values(&mut label_pairs_len);
+        metric_len += label_pairs_len.len;
+
+        let gauge = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
+        let gauge_len = encoding::double::encoded_len(1, &gauge);
+        metric_len += message_len(3, gauge_len);
+
+        // repeated Metric     metric = 4;
+        encode_message(4, metric_len, &mut enc.buf, |buf| {
+            labels.visit_values(&mut GroupVisitor { buf });
+
+            // optional Gauge   gauge      = 2;
+            encode_message(2, gauge_len, buf, |buf| {
+                // optional double   value    = 1;
+                encoding::double::encode(1, &gauge, buf);
+            });
+        });
+
+        Ok(())
+    }
+}
+
+impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
+    fn write_type(
+        name: impl MetricNameEncoder,
+        enc: &mut ProtoEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.flush_buf()?;
+
+        if enc.state == State::Init {
+            // optional string     name   = 1;
+            encode_key(1, LengthDelimited, &mut enc.buf);
+            encode_varint(name.encode_len() as u64, &mut enc.buf);
+            name.encode_utf8(&mut enc.buf)?;
+        }
+
+        // optional MetricType type   = 3;
+        // GAUGE = 1;
+        encoding::int32::encode(3, &1, &mut enc.buf);
+
+        Ok(())
+    }
+
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        _name: impl MetricNameEncoder,
+        enc: &mut ProtoEncoder<W>,
+    ) -> Result<(), std::io::Error> {
+        enc.state = State::Metrics;
+
+        let mut metric_len = 0;
+
+        let mut label_pairs_len = GroupLenVisitor { len: 0 };
+        labels.visit_values(&mut label_pairs_len);
+        metric_len += label_pairs_len.len;
+
+        let gauge = self.count.get();
+        let gauge_len = encoding::double::encoded_len(1, &gauge);
+        metric_len += message_len(3, gauge_len);
+
+        // repeated Metric     metric = 4;
+        encode_message(4, metric_len, &mut enc.buf, |buf| {
+            labels.visit_values(&mut GroupVisitor { buf });
+
+            // optional Gauge   gauge      = 2;
+            encode_message(2, gauge_len, buf, |buf| {
+                // optional double   value    = 1;
+                encoding::double::encode(1, &gauge, buf);
+            });
         });
 
         Ok(())
@@ -278,12 +395,12 @@ mod tests {
             name::{MetricName, Total},
             MetricFamilyEncoding,
         },
-        CounterVec,
+        CounterVec, GaugeVec,
     };
     use prost::Message;
 
     use crate::{
-        generated::{Counter, LabelPair, Metric, MetricFamily, MetricType},
+        generated::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType},
         ProtoEncoder,
     };
 
@@ -376,6 +493,86 @@ mod tests {
                         exemplar: None,
                         created_timestamp: None,
                     }),
+                    summary: None,
+                    untyped: None,
+                    histogram: None,
+                    timestamp_ms: None,
+                },
+            ],
+            unit: None,
+        };
+        let mut expected_msg = BytesMut::new();
+        expected.encode_length_delimited(&mut expected_msg).unwrap();
+
+        assert_eq!(actual_msg, expected_msg);
+
+        let actual = MetricFamily::decode_length_delimited(actual_msg).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn gauge() {
+        let requests = GaugeVec::<RequestLabelSet>::new();
+
+        let labels = RequestLabels {
+            method: Method::Post,
+            code: StatusCode::Ok,
+        };
+        requests.inc_by(labels, 1027);
+
+        let labels = RequestLabels {
+            method: Method::Get,
+            code: StatusCode::BadRequest,
+        };
+        requests.inc_by(labels, 3);
+
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+
+        let name = MetricName::from_str("http_request").with_suffix(Total);
+        enc.write_help(&name, "The total number of HTTP requests.")
+            .unwrap();
+        requests.collect_family_into(&name, &mut enc).unwrap();
+        enc.flush().unwrap();
+        let actual_msg = enc.writer.into_inner();
+
+        let expected = MetricFamily {
+            name: Some("http_request_total".to_string()),
+            help: Some("The total number of HTTP requests.".to_string()),
+            r#type: Some(MetricType::Gauge as i32),
+            metric: vec![
+                Metric {
+                    label: vec![
+                        LabelPair {
+                            name: Some("method".to_owned()),
+                            value: Some("post".to_owned()),
+                        },
+                        LabelPair {
+                            name: Some("code".to_owned()),
+                            value: Some("200".to_owned()),
+                        },
+                    ],
+                    gauge: Some(Gauge {
+                        value: Some(1027.0),
+                    }),
+                    counter: None,
+                    summary: None,
+                    untyped: None,
+                    histogram: None,
+                    timestamp_ms: None,
+                },
+                Metric {
+                    label: vec![
+                        LabelPair {
+                            name: Some("method".to_owned()),
+                            value: Some("get".to_owned()),
+                        },
+                        LabelPair {
+                            name: Some("code".to_owned()),
+                            value: Some("400".to_owned()),
+                        },
+                    ],
+                    gauge: Some(Gauge { value: Some(3.0) }),
+                    counter: None,
                     summary: None,
                     untyped: None,
                     histogram: None,
