@@ -87,6 +87,22 @@ impl<W: Write> Encoding for TextEncoder<W> {
 
         Ok(())
     }
+
+    fn write_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: f64,
+    ) -> Result<(), Self::Err> {
+        if self.state == State::Info {
+            self.write_type(&name, MetricType::Gauge)?;
+            self.state = State::Metrics;
+        }
+
+        self.write_metric_value(&name, labels, MetricValue::Float(x))?;
+
+        Ok(())
+    }
 }
 
 impl<W: Write> TextEncoder<W> {
@@ -289,46 +305,6 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
     }
 }
 
-impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
-    // fn write_type(
-    //     name: impl MetricNameEncoder,
-    //     enc: &mut TextEncoder<W>,
-    // ) -> Result<(), std::io::Error> {
-    //     enc.write_type(&name, MetricType::Gauge)
-    // }
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(
-            &name,
-            labels,
-            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed)),
-        )
-    }
-}
-
-impl<W: Write> MetricEncoding<TextEncoder<W>> for FloatGaugeState {
-    // fn write_type(
-    //     name: impl MetricNameEncoder,
-    //     enc: &mut TextEncoder<W>,
-    // ) -> Result<(), std::io::Error> {
-    //     enc.write_type(&name, MetricType::Gauge)
-    // }
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(&name, labels, MetricValue::Float(self.count.get()))
-    }
-}
-
 /// The prometheus text encoder helper
 pub struct BufferedTextEncoder {
     inner: TextEncoder<BytesWriter>,
@@ -357,7 +333,11 @@ impl Encoding for BufferedTextEncoder {
     type Err = Infallible;
 
     /// Write the help line for a metric
-    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Infallible> {
+    fn start_metric(
+        &mut self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+    ) -> Result<(), Infallible> {
         self.inner.start_metric(name, help).unreachable()
     }
 
@@ -368,6 +348,15 @@ impl Encoding for BufferedTextEncoder {
         x: u64,
     ) -> Result<(), Self::Err> {
         self.inner.write_counter(name, labels, x).unreachable()
+    }
+
+    fn write_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: f64,
+    ) -> Result<(), Self::Err> {
+        self.inner.write_gauge(name, labels, x).unreachable()
     }
 }
 

@@ -24,7 +24,11 @@ pub trait Encoding {
     type Err;
 
     /// Write the help text for a metric
-    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Self::Err>;
+    fn start_metric(
+        &mut self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+    ) -> Result<(), Self::Err>;
 
     fn write_counter(
         &mut self,
@@ -32,11 +36,22 @@ pub trait Encoding {
         labels: impl LabelGroup,
         x: u64,
     ) -> Result<(), Self::Err>;
+
+    fn write_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: f64,
+    ) -> Result<(), Self::Err>;
 }
 
 impl<E: Encoding> Encoding for &mut E {
     type Err = E::Err;
-    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Self::Err> {
+    fn start_metric(
+        &mut self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+    ) -> Result<(), Self::Err> {
         E::start_metric(self, name, help)
     }
 
@@ -47,6 +62,15 @@ impl<E: Encoding> Encoding for &mut E {
         x: u64,
     ) -> Result<(), Self::Err> {
         E::write_counter(self, name, labels, x)
+    }
+
+    fn write_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: f64,
+    ) -> Result<(), Self::Err> {
+        E::write_gauge(self, name, labels, x)
     }
 }
 
@@ -109,7 +133,11 @@ impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Arc<M> {
 
 impl<E: Encoding> Encoding for WithNamespace<E> {
     type Err = E::Err;
-    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Self::Err> {
+    fn start_metric(
+        &mut self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+    ) -> Result<(), Self::Err> {
         self.inner.start_metric(
             WithNamespace {
                 namespace: self.namespace,
@@ -126,6 +154,21 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
         x: u64,
     ) -> Result<(), Self::Err> {
         self.inner.write_counter(
+            WithNamespace {
+                namespace: self.namespace,
+                inner: name,
+            },
+            labels,
+            x,
+        )
+    }
+    fn write_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: f64,
+    ) -> Result<(), Self::Err> {
+        self.inner.write_gauge(
             WithNamespace {
                 namespace: self.namespace,
                 inner: name,

@@ -373,3 +373,31 @@ where
     }
     .collect_into(&(), labels, name, enc)
 }
+
+impl<E: Encoding> MetricEncoding<E> for GaugeState {
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_gauge(
+            name,
+            labels,
+            self.count.load(std::sync::atomic::Ordering::Relaxed) as f64,
+        )
+    }
+}
+
+impl<E: Encoding> MetricEncoding<E> for FloatGaugeState {
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_gauge(name, labels, self.count.get())
+    }
+}

@@ -3,12 +3,7 @@ use std::io::Write;
 use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType::LengthDelimited};
 use measured::{
     label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
-    metric::{
-        gauge::{FloatGaugeState, GaugeState},
-        group::Encoding,
-        name::MetricNameEncoder,
-        MetricEncoding,
-    },
+    metric::{group::Encoding, name::MetricNameEncoder},
     LabelGroup,
 };
 
@@ -141,6 +136,42 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
 
         Ok(())
     }
+
+    fn write_gauge(
+        &mut self,
+        _name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: f64,
+    ) -> Result<(), Self::Err> {
+        if self.state == State::NeedsType {
+            // optional MetricType type   = 3;
+            // GAUGE = 1;
+            encoding::int32::encode(3, &1, &mut self.buf);
+            self.state = State::Metrics;
+        }
+
+        let mut metric_len = 0;
+
+        let mut label_pairs_len = GroupLenVisitor { len: 0 };
+        labels.visit_values(&mut label_pairs_len);
+        metric_len += label_pairs_len.len;
+
+        let gauge_len = encoding::double::encoded_len(1, &value);
+        metric_len += message_len(3, gauge_len);
+
+        // repeated Metric     metric = 4;
+        encode_message(4, metric_len, &mut self.buf, |buf| {
+            labels.visit_values(&mut GroupVisitor { buf });
+
+            // optional Gauge     gauge        = 2;
+            encode_message(2, gauge_len, buf, |buf| {
+                // optional double   value    = 1;
+                encoding::double::encode(1, &value, buf);
+            });
+        });
+
+        Ok(())
+    }
 }
 
 struct LenVisitor {}
@@ -250,76 +281,6 @@ impl LabelGroupVisitor for GroupVisitor<'_> {
 
             x.visit(Visitor { buf });
         });
-    }
-}
-
-impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        _name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.state = State::Metrics;
-
-        let mut metric_len = 0;
-
-        let mut label_pairs_len = GroupLenVisitor { len: 0 };
-        labels.visit_values(&mut label_pairs_len);
-        metric_len += label_pairs_len.len;
-
-        let gauge = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
-        let gauge_len = encoding::double::encoded_len(1, &gauge);
-        metric_len += message_len(3, gauge_len);
-
-        // repeated Metric     metric = 4;
-        encode_message(4, metric_len, &mut enc.buf, |buf| {
-            labels.visit_values(&mut GroupVisitor { buf });
-
-            // optional Gauge   gauge      = 2;
-            encode_message(2, gauge_len, buf, |buf| {
-                // optional double   value    = 1;
-                encoding::double::encode(1, &gauge, buf);
-            });
-        });
-
-        Ok(())
-    }
-}
-
-impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        _name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.state = State::Metrics;
-
-        let mut metric_len = 0;
-
-        let mut label_pairs_len = GroupLenVisitor { len: 0 };
-        labels.visit_values(&mut label_pairs_len);
-        metric_len += label_pairs_len.len;
-
-        let gauge = self.count.get();
-        let gauge_len = encoding::double::encoded_len(1, &gauge);
-        metric_len += message_len(3, gauge_len);
-
-        // repeated Metric     metric = 4;
-        encode_message(4, metric_len, &mut enc.buf, |buf| {
-            labels.visit_values(&mut GroupVisitor { buf });
-
-            // optional Gauge   gauge      = 2;
-            encode_message(2, gauge_len, buf, |buf| {
-                // optional double   value    = 1;
-                encoding::double::encode(1, &gauge, buf);
-            });
-        });
-
-        Ok(())
     }
 }
 
