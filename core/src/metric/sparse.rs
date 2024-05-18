@@ -1,5 +1,5 @@
 use core::hash::Hash;
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::HashTable;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{
     hash::{BuildHasher, BuildHasherDefault},
@@ -16,7 +16,8 @@ pub(super) struct ShardedMap<K, V> {
     // hasher: BuildHasherDefault<twox_hash::Xxh3Hash64>,
     // hasher: BuildHasherDefault<ahash::AHasher>,
     // hasher: std::hash::RandomState,
-    pub(super) shards: Box<[RwLock<HashMap<K, V, ()>>]>,
+    #[allow(clippy::type_complexity)]
+    pub(super) shards: Box<[RwLock<HashTable<(K, V)>>]>,
     shift: u32,
 }
 
@@ -34,7 +35,7 @@ impl<M: MetricType, U: Hash + Eq> ShardedMap<U, M> {
     pub(super) fn new() -> Self {
         let shards = default_shard_amount();
         let mut vec = Vec::with_capacity(shards);
-        vec.resize_with(shards, || RwLock::new(HashMap::with_hasher(())));
+        vec.resize_with(shards, || RwLock::new(HashTable::new()));
         ShardedMap {
             hasher: Default::default(),
             shards: vec.into_boxed_slice(),
@@ -49,10 +50,7 @@ impl<M: MetricType, U: Hash + Eq + Copy> ShardedMap<U, M> {
 
         {
             let mapped = RwLockReadGuard::try_map(shard.read(), |shard| {
-                shard
-                    .raw_table()
-                    .get(id.hash, |(k, _v)| *k == id.id)
-                    .map(|(_, v)| v)
+                shard.find(id.hash, |(k, _v)| *k == id.id).map(|(_, v)| v)
             });
             if let Ok(mapped) = mapped {
                 return mapped;
@@ -61,22 +59,23 @@ impl<M: MetricType, U: Hash + Eq + Copy> ShardedMap<U, M> {
 
         let shard = {
             let mut shard = shard.write();
-            let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
+            let entry = shard.find_entry(id.hash, |(k, _)| *k == id.id);
             match entry {
-                RawEntryMut::Occupied(_) => {}
-                RawEntryMut::Vacant(v) => {
-                    v.insert_with_hasher(id.hash, id.id, M::default(), |k| self.hasher.hash_one(k));
+                Ok(_) => {}
+                Err(_) => {
+                    shard.insert_unique(id.hash, (id.id, M::default()), |(k, _)| {
+                        self.hasher.hash_one(k)
+                    });
                 }
             }
             RwLockWriteGuard::downgrade(shard)
         };
 
         RwLockReadGuard::map(shard, |shard| {
-            &shard
-                        .raw_table()
-                        .get(id.hash, |(k, _v)| *k == id.id)
-                        .expect("the entry was just inserted into the map without allowing any writes inbetween")
-                        .1
+            let (_, v) = shard.find(id.hash, |(k, _v)| *k == id.id).expect(
+                "the entry was just inserted into the map without allowing any writes inbetween",
+            );
+            v
         })
     }
 
@@ -84,25 +83,25 @@ impl<M: MetricType, U: Hash + Eq + Copy> ShardedMap<U, M> {
         let shard = &self.shards[((id.hash as usize) << 7) >> self.shift];
 
         let mut shard = shard.write();
-        let entry = shard.raw_entry_mut().from_hash(id.hash, |k| *k == id.id);
+        let entry = shard.find_entry(id.hash, |(k, _)| *k == id.id);
         match entry {
-            RawEntryMut::Occupied(x) => Some(x.remove()),
-            RawEntryMut::Vacant(_) => None,
+            Ok(x) => Some(x.remove().0 .1),
+            Err(_) => None,
         }
     }
 
     pub(super) fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
         let shard = &mut self.shards[((id.hash as usize) << 7) >> self.shift];
 
-        let entry = shard
-            .get_mut()
-            .raw_entry_mut()
-            .from_hash(id.hash, |k| *k == id.id);
+        let entry = shard.get_mut().find_entry(id.hash, |(k, _)| *k == id.id);
         let (_, v) = match entry {
-            RawEntryMut::Occupied(o) => o.into_key_value(),
-            RawEntryMut::Vacant(v) => {
-                v.insert_with_hasher(id.hash, id.id, M::default(), |k| self.hasher.hash_one(k))
-            }
+            Ok(o) => o.into_mut(),
+            Err(v) => v
+                .into_table()
+                .insert_unique(id.hash, (id.id, M::default()), |(k, _)| {
+                    self.hasher.hash_one(k)
+                })
+                .into_mut(),
         };
 
         v
