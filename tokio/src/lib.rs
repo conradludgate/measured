@@ -152,7 +152,7 @@ where
         ($name:literal, $help:literal, |$rt:ident| $expr:expr) => {{
             #![allow(unused_macros)]
             const NAME: &MetricName = MetricName::from_str($name);
-            enc.write_help(NAME, $help)?;
+            enc.start_metric(NAME, Some($help))?;
             for rt in runtimes {
                 let rt_name = &rt.name;
                 macro_rules! write_counter {

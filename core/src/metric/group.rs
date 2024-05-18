@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 pub use crate::label::ComposedGroup;
+use crate::LabelGroup;
 
 use super::{
     name::{MetricNameEncoder, WithNamespace},
@@ -12,6 +13,7 @@ use super::{
 /// Values that prometheus supports in the text format
 #[derive(Clone, Copy, Debug)]
 pub enum MetricValue {
+    UInt(u64),
     Int(i64),
     Float(f64),
 }
@@ -22,13 +24,29 @@ pub trait Encoding {
     type Err;
 
     /// Write the help text for a metric
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err>;
+    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Self::Err>;
+
+    fn write_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: u64,
+    ) -> Result<(), Self::Err>;
 }
 
 impl<E: Encoding> Encoding for &mut E {
     type Err = E::Err;
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
-        E::write_help(self, name, help)
+    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Self::Err> {
+        E::start_metric(self, name, help)
+    }
+
+    fn write_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: u64,
+    ) -> Result<(), Self::Err> {
+        E::write_counter(self, name, labels, x)
     }
 }
 
@@ -91,8 +109,8 @@ impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Arc<M> {
 
 impl<E: Encoding> Encoding for WithNamespace<E> {
     type Err = E::Err;
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
-        self.inner.write_help(
+    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Self::Err> {
+        self.inner.start_metric(
             WithNamespace {
                 namespace: self.namespace,
                 inner: name,
@@ -100,51 +118,55 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
             help,
         )
     }
-}
 
-impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut WithNamespace<E>) -> Result<(), E::Err> {
-        M::write_type(
+    fn write_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: u64,
+    ) -> Result<(), Self::Err> {
+        self.inner.write_counter(
             WithNamespace {
-                namespace: enc.namespace,
+                namespace: self.namespace,
                 inner: name,
             },
-            &mut enc.inner,
-        )
-    }
-    fn collect_into(
-        &self,
-        metadata: &M::Metadata,
-        labels: impl crate::label::LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut WithNamespace<E>,
-    ) -> Result<(), E::Err> {
-        self.collect_into(
-            metadata,
             labels,
-            WithNamespace {
-                namespace: enc.namespace,
-                inner: name,
-            },
-            &mut enc.inner,
+            x,
         )
     }
 }
 
-impl<'a, M: MetricEncoding<E>, E: Encoding> MetricEncoding<&'a mut E> for M {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut &'a mut E) -> Result<(), E::Err> {
-        M::write_type(name, *enc)
-    }
-    fn collect_into(
-        &self,
-        metadata: &M::Metadata,
-        labels: impl crate::label::LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut &'a mut E,
-    ) -> Result<(), E::Err> {
-        self.collect_into(metadata, labels, name, *enc)
-    }
-}
+// impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
+//     fn collect_into(
+//         &self,
+//         metadata: &M::Metadata,
+//         labels: impl crate::label::LabelGroup,
+//         name: impl MetricNameEncoder,
+//         enc: &mut WithNamespace<E>,
+//     ) -> Result<(), E::Err> {
+//         self.collect_into(
+//             metadata,
+//             labels,
+//             WithNamespace {
+//                 namespace: enc.namespace,
+//                 inner: name,
+//             },
+//             &mut enc.inner,
+//         )
+//     }
+// }
+
+// impl<'a, M: MetricEncoding<E>, E: Encoding> MetricEncoding<&'a mut E> for M {
+//     fn collect_into(
+//         &self,
+//         metadata: &M::Metadata,
+//         labels: impl crate::label::LabelGroup,
+//         name: impl MetricNameEncoder,
+//         enc: &mut &'a mut E,
+//     ) -> Result<(), E::Err> {
+//         self.collect_into(metadata, labels, name, *enc)
+//     }
+// }
 
 #[cfg(all(feature = "lasso", test))]
 mod tests {

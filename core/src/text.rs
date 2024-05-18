@@ -11,7 +11,6 @@ use memchr::memchr3_iter;
 use crate::{
     label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
-        counter::CounterState,
         gauge::{FloatGaugeState, GaugeState},
         group::{Encoding, MetricValue},
         histogram::{HistogramState, Thresholds},
@@ -52,21 +51,40 @@ impl<W: Write> Encoding for TextEncoder<W> {
     type Err = std::io::Error;
 
     /// Write the help line for a metric
-    fn write_help(
+    fn start_metric(
         &mut self,
         name: impl MetricNameEncoder,
-        help: &str,
+        help: Option<&str>,
     ) -> Result<(), std::io::Error> {
         if self.state == State::Metrics {
             self.write_line()?;
         }
         self.state = State::Info;
 
-        self.writer.write_all(b"# HELP ")?;
-        name.encode_utf8(&mut self.writer)?;
-        self.writer.write_all(b" ")?;
-        self.writer.write_all(help.as_bytes())?;
-        self.writer.write_all(b"\n")?;
+        if let Some(help) = help {
+            self.writer.write_all(b"# HELP ")?;
+            name.encode_utf8(&mut self.writer)?;
+            self.writer.write_all(b" ")?;
+            self.writer.write_all(help.as_bytes())?;
+            self.writer.write_all(b"\n")?;
+        }
+
+        Ok(())
+    }
+
+    fn write_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: u64,
+    ) -> Result<(), Self::Err> {
+        if self.state == State::Info {
+            self.write_type(&name, MetricType::Counter)?;
+            self.state = State::Metrics;
+        }
+
+        self.write_metric_value(&name, labels, MetricValue::UInt(x))?;
+
         Ok(())
     }
 }
@@ -189,6 +207,9 @@ impl<W: Write> TextEncoder<W> {
         }
         self.writer.write_all(b" ")?;
         match value {
+            MetricValue::UInt(x) => self
+                .writer
+                .write_all(itoa::Buffer::new().format(x).as_bytes())?,
             MetricValue::Int(x) => self
                 .writer
                 .write_all(itoa::Buffer::new().format(x).as_bytes())?,
@@ -202,12 +223,12 @@ impl<W: Write> TextEncoder<W> {
 }
 
 impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState<N> {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Histogram)
-    }
+    // fn write_type(
+    //     name: impl MetricNameEncoder,
+    //     enc: &mut TextEncoder<W>,
+    // ) -> Result<(), std::io::Error> {
+    //     enc.write_type(&name, MetricType::Histogram)
+    // }
     fn collect_into(
         &self,
         metadata: &Thresholds<N>,
@@ -268,35 +289,13 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
     }
 }
 
-impl<W: Write> MetricEncoding<TextEncoder<W>> for CounterState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Counter)
-    }
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(
-            &name,
-            labels,
-            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
-        )
-    }
-}
-
 impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Gauge)
-    }
+    // fn write_type(
+    //     name: impl MetricNameEncoder,
+    //     enc: &mut TextEncoder<W>,
+    // ) -> Result<(), std::io::Error> {
+    //     enc.write_type(&name, MetricType::Gauge)
+    // }
     fn collect_into(
         &self,
         _m: &(),
@@ -313,12 +312,12 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
 }
 
 impl<W: Write> MetricEncoding<TextEncoder<W>> for FloatGaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Gauge)
-    }
+    // fn write_type(
+    //     name: impl MetricNameEncoder,
+    //     enc: &mut TextEncoder<W>,
+    // ) -> Result<(), std::io::Error> {
+    //     enc.write_type(&name, MetricType::Gauge)
+    // }
     fn collect_into(
         &self,
         _m: &(),
@@ -358,8 +357,17 @@ impl Encoding for BufferedTextEncoder {
     type Err = Infallible;
 
     /// Write the help line for a metric
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {
-        self.inner.write_help(name, help).unreachable()
+    fn start_metric(&mut self, name: impl MetricNameEncoder, help: Option<&str>) -> Result<(), Infallible> {
+        self.inner.start_metric(name, help).unreachable()
+    }
+
+    fn write_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: u64,
+    ) -> Result<(), Self::Err> {
+        self.inner.write_counter(name, labels, x).unreachable()
     }
 }
 
@@ -382,24 +390,24 @@ impl BufferedTextEncoder {
     }
 }
 
-impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEncoder> for T {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
-        Self::write_type(name, &mut enc.inner).unreachable()
-    }
-    fn collect_into(
-        &self,
-        metadata: &T::Metadata,
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
-        self.collect_into(metadata, labels, name, &mut enc.inner)
-            .unreachable()
-    }
-}
+// impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEncoder> for T {
+//     // fn write_type(
+//     //     name: impl MetricNameEncoder,
+//     //     enc: &mut BufferedTextEncoder,
+//     // ) -> Result<(), Infallible> {
+//     //     Self::write_type(name, &mut enc.inner).unreachable()
+//     // }
+//     fn collect_into(
+//         &self,
+//         metadata: &T::Metadata,
+//         labels: impl LabelGroup,
+//         name: impl MetricNameEncoder,
+//         enc: &mut BufferedTextEncoder,
+//     ) -> Result<(), Infallible> {
+//         self.collect_into(metadata, labels, name, &mut enc.inner)
+//             .unreachable()
+//     }
+// }
 
 pub(crate) fn write_label_str_value(s: &str, b: &mut impl Write) -> io::Result<()> {
     let mut i = 0;
@@ -516,7 +524,7 @@ This is on a new line"#,
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
         encoder
-            .write_help(&name, "The total number of HTTP requests.")
+            .start_metric(&name, Some("The total number of HTTP requests."))
             .unwrap();
         requests.collect_family_into(name, &mut encoder).unwrap();
 
@@ -545,7 +553,7 @@ http_request_total{method="get",code="400"} 3
 
         let name = MetricName::from_str("http_request_duration_seconds");
         encoder
-            .write_help(name, "A histogram of the request duration.")
+            .start_metric(name, Some("A histogram of the request duration."))
             .unwrap();
         histogram.collect_family_into(name, &mut encoder).unwrap();
 

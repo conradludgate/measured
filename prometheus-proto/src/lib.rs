@@ -4,7 +4,6 @@ use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType:
 use measured::{
     label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
-        counter::CounterState,
         gauge::{FloatGaugeState, GaugeState},
         group::Encoding,
         name::MetricNameEncoder,
@@ -28,7 +27,7 @@ impl<W: Write> ProtoEncoder<W> {
     /// This should ideally be cached and re-used between collections to reduce re-allocating
     pub fn new(w: W) -> Self {
         Self {
-            state: State::Init,
+            state: State::NeedsStart,
             writer: w,
             buf: Vec::new(),
         }
@@ -41,8 +40,8 @@ impl<W: Write> ProtoEncoder<W> {
     }
 
     fn flush_buf(&mut self) -> Result<(), std::io::Error> {
-        if self.state == State::Metrics {
-            self.state = State::Init;
+        if self.state != State::NeedsStart {
+            self.state = State::NeedsStart;
 
             let len = self.buf.len() - 10;
             let varint_len = encoded_len_varint(len as u64);
@@ -61,8 +60,8 @@ impl<W: Write> ProtoEncoder<W> {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum State {
-    Init,
-    Help,
+    NeedsStart,
+    NeedsType,
     Metrics,
 }
 
@@ -84,11 +83,10 @@ pub enum MetricType {
 impl<W: Write> Encoding for ProtoEncoder<W> {
     type Err = std::io::Error;
 
-    /// Write the help line for a metric
-    fn write_help(
+    fn start_metric(
         &mut self,
         name: impl MetricNameEncoder,
-        help: &str,
+        help: Option<&str>,
     ) -> Result<(), std::io::Error> {
         self.flush_buf()?;
 
@@ -97,10 +95,49 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
         encode_varint(name.encode_len() as u64, &mut self.buf);
         name.encode_utf8(&mut self.buf)?;
 
-        // optional string     help   = 2;
-        encoding::string::encode(2, help, &mut self.buf);
+        if let Some(help) = help {
+            // optional string     help   = 2;
+            encoding::string::encode(2, help, &mut self.buf);
+        }
 
-        self.state = State::Help;
+        self.state = State::NeedsType;
+
+        Ok(())
+    }
+
+    fn write_counter(
+        &mut self,
+        _name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        x: u64,
+    ) -> Result<(), Self::Err> {
+        if self.state == State::NeedsType {
+            // optional MetricType type   = 3;
+            // COUNTER = 0;
+            encoding::int32::encode(3, &0, &mut self.buf);
+            self.state = State::Metrics;
+        }
+
+        let mut metric_len = 0;
+
+        let mut label_pairs_len = GroupLenVisitor { len: 0 };
+        labels.visit_values(&mut label_pairs_len);
+        metric_len += label_pairs_len.len;
+
+        let count = x as f64;
+        let count_len = encoding::double::encoded_len(1, &count);
+        metric_len += message_len(3, count_len);
+
+        // repeated Metric     metric = 4;
+        encode_message(4, metric_len, &mut self.buf, |buf| {
+            labels.visit_values(&mut GroupVisitor { buf });
+
+            // optional Counter   counter      = 3;
+            encode_message(3, count_len, buf, |buf| {
+                // optional double   value    = 1;
+                encoding::double::encode(1, &count, buf);
+            });
+        });
 
         Ok(())
     }
@@ -216,82 +253,7 @@ impl LabelGroupVisitor for GroupVisitor<'_> {
     }
 }
 
-impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.flush_buf()?;
-
-        if enc.state == State::Init {
-            // optional string     name   = 1;
-            encode_key(1, LengthDelimited, &mut enc.buf);
-            encode_varint(name.encode_len() as u64, &mut enc.buf);
-            name.encode_utf8(&mut enc.buf)?;
-        }
-
-        // optional MetricType type   = 3;
-        // COUNTER = 0;
-        encoding::int32::encode(3, &0, &mut enc.buf);
-
-        Ok(())
-    }
-
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        _name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.state = State::Metrics;
-
-        let mut metric_len = 0;
-
-        let mut label_pairs_len = GroupLenVisitor { len: 0 };
-        labels.visit_values(&mut label_pairs_len);
-        metric_len += label_pairs_len.len;
-
-        let count = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
-        let count_len = encoding::double::encoded_len(1, &count);
-        metric_len += message_len(3, count_len);
-
-        // repeated Metric     metric = 4;
-        encode_message(4, metric_len, &mut enc.buf, |buf| {
-            labels.visit_values(&mut GroupVisitor { buf });
-
-            // optional Counter   counter      = 3;
-            encode_message(3, count_len, buf, |buf| {
-                // optional double   value    = 1;
-                encoding::double::encode(1, &count, buf);
-            });
-        });
-
-        Ok(())
-    }
-}
-
 impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.flush_buf()?;
-
-        if enc.state == State::Init {
-            // optional string     name   = 1;
-            encode_key(1, LengthDelimited, &mut enc.buf);
-            encode_varint(name.encode_len() as u64, &mut enc.buf);
-            name.encode_utf8(&mut enc.buf)?;
-        }
-
-        // optional MetricType type   = 3;
-        // GAUGE = 1;
-        encoding::int32::encode(3, &1, &mut enc.buf);
-
-        Ok(())
-    }
-
     fn collect_into(
         &self,
         _m: &(),
@@ -327,26 +289,6 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
 }
 
 impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.flush_buf()?;
-
-        if enc.state == State::Init {
-            // optional string     name   = 1;
-            encode_key(1, LengthDelimited, &mut enc.buf);
-            encode_varint(name.encode_len() as u64, &mut enc.buf);
-            name.encode_utf8(&mut enc.buf)?;
-        }
-
-        // optional MetricType type   = 3;
-        // GAUGE = 1;
-        encoding::int32::encode(3, &1, &mut enc.buf);
-
-        Ok(())
-    }
-
     fn collect_into(
         &self,
         _m: &(),
@@ -443,7 +385,7 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
-        enc.write_help(&name, "The total number of HTTP requests.")
+        enc.start_metric(&name, Some("The total number of HTTP requests."))
             .unwrap();
         requests.collect_family_into(&name, &mut enc).unwrap();
         enc.flush().unwrap();
@@ -529,7 +471,7 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
-        enc.write_help(&name, "The total number of HTTP requests.")
+        enc.start_metric(&name, Some("The total number of HTTP requests."))
             .unwrap();
         requests.collect_family_into(&name, &mut enc).unwrap();
         enc.flush().unwrap();

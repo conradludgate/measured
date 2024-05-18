@@ -404,8 +404,8 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
 
 /// Defines the encoding of a metric
 pub trait MetricEncoding<T: Encoding>: MetricType {
-    /// Write the type information for this metric into the encoder
-    fn write_type(name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
+    // /// Write the type information for this metric into the encoder
+    // fn write_type(name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
     /// Sample this metric into the encoder
     fn collect_into(
         &self,
@@ -434,7 +434,7 @@ impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Option
 impl<M: MetricEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Metric<M> {
     /// Collect this metric value into the given encoder with the given metric name
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
-        M::write_type(&name, enc)?;
+        // M::write_type(&name, enc)?;
         self.metric
             .collect_into(&self.metadata, NoLabels, name, enc)
     }
@@ -444,7 +444,7 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T
     for MetricVec<M, L>
 {
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
-        M::write_type(&name, enc)?;
+        // M::write_type(&name, enc)?;
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {

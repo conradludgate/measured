@@ -115,3 +115,19 @@ where
     }
     .collect_into(&(), labels, name, enc)
 }
+
+impl<E: Encoding> MetricEncoding<E> for CounterState {
+    fn collect_into(
+        &self,
+        _m: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_counter(
+            name,
+            labels,
+            self.count.load(std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+}

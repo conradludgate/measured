@@ -55,11 +55,15 @@ impl ToTokens for MetricGroup {
                     let name_string = rename.as_ref().map_or_else(|| name.to_string(), |l| l.value());
                     let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
 
-                    let help = attrs.docs.as_deref().map(|doc|{
-                        let doc = doc.trim();
-                        quote_spanned!(x.span => {
-                            <#enc as #krate::metric::group::Encoding>::write_help(enc, #ident, #doc)?;
-                        })
+                    let help_text = match attrs.docs.as_deref() {
+                        Some(doc) => {
+                            let doc = doc.trim();
+                            quote!(::core::option::Option::Some(#doc))
+                        }
+                        None => quote!(::core::option::Option::None)
+                    };
+                    let help = quote_spanned!(x.span => {
+                        <#enc as #krate::metric::group::Encoding>::start_metric(enc, #ident, #help_text)?;
                     });
 
                     quote_spanned! { x.span =>
