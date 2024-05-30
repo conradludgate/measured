@@ -36,8 +36,8 @@ phf = { version = "0.11", optional = true }
 fake = "2.9.2"
 divan = "0.1.14"
 prometheus = { version = "0.13.3", default-features = false }
-metrics = "0.22.3"
-metrics-exporter-prometheus = { version = "0.14.0", default-features = false }
+metrics = "0.23.0"
+metrics-exporter-prometheus = { version = "0.15.0", default-features = false }
 prometheus-client = "0.22.2"
 rand = { version = "0.8", features = ["small_rng"] }
 phf = { version = "0.11", features = ["macros"] }

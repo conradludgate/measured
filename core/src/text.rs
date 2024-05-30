@@ -241,26 +241,26 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
             let le = metadata.get()[i];
             val += buckets[i];
             enc.write_metric_value(
-                &name.by_ref().with_suffix(Bucket),
+                name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
                 MetricValue::Int(val as i64),
             )?;
         }
         let count = val + inf;
         enc.write_metric_value(
-            &name.by_ref().with_suffix(Bucket),
+            name.by_ref().with_suffix(Bucket),
             labels
                 .by_ref()
                 .compose_with(HistogramLabelLe { le: f64::INFINITY }),
             MetricValue::Int(count as i64),
         )?;
         enc.write_metric_value(
-            &name.by_ref().with_suffix(Sum),
+            name.by_ref().with_suffix(Sum),
             labels.by_ref(),
             MetricValue::Float(sum),
         )?;
         enc.write_metric_value(
-            &name.by_ref().with_suffix(Count),
+            name.by_ref().with_suffix(Count),
             labels,
             MetricValue::Int(count as i64),
         )?;

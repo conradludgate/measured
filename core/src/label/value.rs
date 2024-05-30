@@ -42,11 +42,8 @@ impl<T: FixedCardinalityLabel> LabelSet for StaticLabelSet<T> {
     }
 }
 
-impl<T: LabelSet> LabelGroupSet for T
-where
-    for<'a> T::Value<'a>: LabelGroup,
-{
-    type Group<'a> = T::Value<'a>;
+impl<T: FixedCardinalityLabel + LabelGroup> LabelGroupSet for StaticLabelSet<T> {
+    type Group<'a> = T;
 
     fn cardinality(&self) -> Option<usize> {
         LabelSet::dynamic_cardinality(self)

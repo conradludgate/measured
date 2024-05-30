@@ -1,11 +1,5 @@
 // Copyright Dan Burkert & Tokio Team - Apache 2 License
 // <https://github.com/tokio-rs/prost/blob/26405ab8754219f101f489fe7bb2b74432b9b4b8/prost/src/encoding.rs>
-//
-
-//! Utility functions and types for encoding and decoding Protobuf types.
-use core::str;
-use core::u32;
-use core::usize;
 
 use ::bytes::BufMut;
 
