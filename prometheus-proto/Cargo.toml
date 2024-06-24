@@ -1,6 +1,6 @@
 [package]
 name = "measured-prometheus-protobuf"
-version = "0.0.21"
+version = "0.0.22"
 edition = "2021"
 description = "Tokio metrics for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -9,7 +9,7 @@ repository = "https://github.com/conradludgate/measured"
 readme = "README.md"
 
 [dependencies]
-measured = { path = "../core", version = "0.0.21" }
+measured = { path = "../core", version = "0.0.22" }
 bytes = "1"
 ryu = "1"
 itoa = "1"
@@ -18,7 +18,7 @@ itoa = "1"
 prost = "0.12"
 prost-types = "0.12"
 prost11 = { version = "0.11", package = "prost" }
-measured = { path = "../core", version = "0.0.21", features = ["lasso"] }
+measured = { path = "../core", version = "0.0.22", features = ["lasso"] }
 fake = "2.9.2"
 divan = "0.1.14"
 prometheus = { version = "0.13.3", default-features = false, features = ["protobuf"] }

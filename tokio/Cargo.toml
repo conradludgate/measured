@@ -1,6 +1,6 @@
 [package]
 name = "measured-tokio"
-version = "0.0.21"
+version = "0.0.22"
 edition = "2021"
 description = "Tokio metrics for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -15,8 +15,8 @@ default = []
 net = ["tokio/net"]
 
 [dependencies]
-measured = { path = "../core", version = "0.0.21" }
-tokio = { version = "1.37", features = ["rt"] }
+measured = { path = "../core", version = "0.0.22" }
+tokio = { version = "1.38", features = ["rt"] }
 itoa = "1"
 
 [dev-dependencies]

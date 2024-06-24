@@ -658,7 +658,7 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "measured"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "ahash",
  "bytes",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "measured-derive"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "measured-process"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "libc",
  "measured",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "measured-prometheus-protobuf"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "ahash",
  "bytes",
@@ -723,7 +723,7 @@ dependencies = [
 
 [[package]]
 name = "measured-tokio"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "itoa",
  "measured",
@@ -1453,9 +1453,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.37.0"
+version = "1.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1adbebffeca75fcfd058afa480fb6c0b81e165a0323f9c9d39c9697e37c46787"
+checksum = "ba4f4a02a7a80d6f274636f0aa95c7e383b912d41fe721a31f29e29698585a4a"
 dependencies = [
  "backtrace",
  "bytes",
@@ -1472,9 +1472,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-macros"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b8a1e28f2deaa14e508979454cb3a223b10b938b45af148bc0986de36f1923b"
+checksum = "5f5ae998a069d4b5aba8ee9dad856af7d520c3699e6159b185c2acd48155d39a"
 dependencies = [
  "proc-macro2",
  "quote",

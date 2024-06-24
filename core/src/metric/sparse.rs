@@ -1,4 +1,5 @@
 use core::hash::Hash;
+use crossbeam_utils::CachePadded;
 use hashbrown::HashTable;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{
@@ -17,7 +18,7 @@ pub(super) struct ShardedMap<K, V> {
     // hasher: BuildHasherDefault<ahash::AHasher>,
     // hasher: std::hash::RandomState,
     #[allow(clippy::type_complexity)]
-    pub(super) shards: Box<[RwLock<HashTable<(K, V)>>]>,
+    pub(super) shards: Box<[CachePadded<RwLock<HashTable<(K, V)>>>]>,
     shift: u32,
 }
 
@@ -35,7 +36,7 @@ impl<M: MetricType, U: Hash + Eq> ShardedMap<U, M> {
     pub(super) fn new() -> Self {
         let shards = default_shard_amount();
         let mut vec = Vec::with_capacity(shards);
-        vec.resize_with(shards, || RwLock::new(HashTable::new()));
+        vec.resize_with(shards, || CachePadded::new(RwLock::new(HashTable::new())));
         ShardedMap {
             hasher: Default::default(),
             shards: vec.into_boxed_slice(),
