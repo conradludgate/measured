@@ -247,15 +247,14 @@ mod no_cardinality {
             .unwrap()
             .build_recorder();
 
-        metrics::with_local_recorder(&recorder, || {
+        let h = metrics::with_local_recorder(&recorder, || {
             metrics::describe_histogram!("http_request_errors", "help text");
+            metrics::histogram!("http_request_errors")
         });
 
         bencher.bench(|| {
-            metrics::with_local_recorder(&recorder, || {
-                let start = Instant::now();
-                metrics::histogram!("http_request_errors").record(start.elapsed().as_secs_f64());
-            });
+            let start = Instant::now();
+            h.record(start.elapsed().as_secs_f64());
         });
     }
 
