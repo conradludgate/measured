@@ -96,6 +96,18 @@ mod fixed_cardinality {
             .unwrap()
             .build_recorder();
 
+        let h = recorder.handle();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || loop {
+            if rx
+                .recv_timeout(std::time::Duration::from_millis(200))
+                .is_ok()
+            {
+                return;
+            }
+            h.run_upkeep();
+        });
+
         metrics::with_local_recorder(&recorder, || {
             metrics::describe_histogram!("http_request_errors", "help text");
         });
@@ -111,6 +123,8 @@ mod fixed_cardinality {
                 metrics::histogram!("http_request_errors", &labels).record(latency);
             });
         });
+
+        _ = tx.send(());
     }
 
     #[divan::bench]
@@ -247,6 +261,18 @@ mod no_cardinality {
             .unwrap()
             .build_recorder();
 
+        let h = recorder.handle();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || loop {
+            if rx
+                .recv_timeout(std::time::Duration::from_millis(200))
+                .is_ok()
+            {
+                return;
+            }
+            h.run_upkeep();
+        });
+
         let h = metrics::with_local_recorder(&recorder, || {
             metrics::describe_histogram!("http_request_errors", "help text");
             metrics::histogram!("http_request_errors")
@@ -256,6 +282,8 @@ mod no_cardinality {
             let start = Instant::now();
             h.record(start.elapsed().as_secs_f64());
         });
+
+        _ = tx.send(());
     }
 
     #[divan::bench]
