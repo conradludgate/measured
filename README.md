@@ -42,19 +42,19 @@ counters              fastest       │ slowest       │ median        │ mean
 #### Linux Ryzen 9 7950x (32 Threads)
 
 ```
-Timer precision: 2.36 µs
+Timer precision: 10 ns
 histograms               fastest       │ slowest       │ median        │ mean          │ samples │ iters
 ├─ fixed_cardinality                   │               │               │               │         │
-│  ├─ measured           296 ns        │ 464.6 ns      │ 380.6 ns      │ 381.1 ns      │ 512     │ 51200000
-│  ├─ measured_sparse    457.1 ns      │ 621.2 ns      │ 523.4 ns      │ 522 ns        │ 512     │ 51200000
-│  ├─ metrics            4.146 µs      │ 4.867 µs      │ 4.314 µs      │ 4.346 µs      │ 512     │ 51200000
-│  ├─ prometheus         1.43 µs       │ 1.872 µs      │ 1.525 µs      │ 1.546 µs      │ 512     │ 51200000
-│  ╰─ prometheus_client  2.196 µs      │ 2.753 µs      │ 2.551 µs      │ 2.549 µs      │ 512     │ 51200000
+│  ├─ measured           212.4 ns      │ 402.9 ns      │ 346.6 ns      │ 342.5 ns      │ 512     │ 51200000
+│  ├─ measured_sparse    382.5 ns      │ 586.6 ns      │ 510 ns        │ 506.3 ns      │ 512     │ 51200000
+│  ├─ metrics            745.5 ns      │ 998.9 ns      │ 847.1 ns      │ 848.7 ns      │ 512     │ 51200000
+│  ├─ prometheus         1.509 µs      │ 1.779 µs      │ 1.662 µs      │ 1.654 µs      │ 512     │ 51200000
+│  ╰─ prometheus_client  1.701 µs      │ 2.556 µs      │ 2.442 µs      │ 2.413 µs      │ 512     │ 51200000
 ╰─ no_cardinality                      │               │               │               │         │
-   ├─ measured           7.211 µs      │ 12.88 µs      │ 7.283 µs      │ 7.685 µs      │ 512     │ 51200000
-   ├─ metrics            11.68 µs      │ 12.67 µs      │ 11.81 µs      │ 11.89 µs      │ 512     │ 51200000
-   ├─ prometheus         7.202 µs      │ 8.017 µs      │ 7.322 µs      │ 7.362 µs      │ 512     │ 51200000
-   ╰─ prometheus_client  109.5 µs      │ 113.1 µs      │ 111.4 µs      │ 111.4 µs      │ 512     │ 51200000
+   ├─ measured           2.8 µs        │ 3.532 µs      │ 3.331 µs      │ 3.264 µs      │ 512     │ 51200000
+   ├─ metrics            1.072 µs      │ 1.328 µs      │ 1.204 µs      │ 1.201 µs      │ 512     │ 51200000
+   ├─ prometheus         2.645 µs      │ 3.531 µs      │ 3.242 µs      │ 3.21 µs       │ 512     │ 51200000
+   ╰─ prometheus_client  22.61 µs      │ 23.15 µs      │ 23 µs         │ 22.97 µs      │ 512     │ 51200000
 ```
 
 #### Macbook Pro M2 Max (12 Threads)
