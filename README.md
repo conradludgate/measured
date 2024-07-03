@@ -63,16 +63,16 @@ histograms               fastest       │ slowest       │ median        │ m
 Timer precision: 41 ns
 histograms               fastest       │ slowest       │ median        │ mean          │ samples │ iters
 ├─ fixed_cardinality                   │               │               │               │         │
-│  ├─ measured           325.1 ns      │ 433.4 ns      │ 417.7 ns      │ 414.4 ns      │ 504     │ 50400000
-│  ├─ measured_sparse    503.3 ns      │ 690 ns        │ 580.1 ns      │ 579.6 ns      │ 504     │ 50400000
-│  ├─ metrics            1.147 µs      │ 1.462 µs      │ 1.275 µs      │ 1.275 µs      │ 504     │ 50400000
-│  ├─ prometheus         4.055 µs      │ 4.297 µs      │ 4.247 µs      │ 4.235 µs      │ 504     │ 50400000
-│  ╰─ prometheus_client  3.913 µs      │ 4.186 µs      │ 4.14 µs       │ 4.129 µs      │ 504     │ 50400000
+│  ├─ measured           132.8 ns      │ 444 ns        │ 409.6 ns      │ 401.3 ns      │ 504     │ 50400000
+│  ├─ measured_sparse    320.9 ns      │ 565.4 ns      │ 492.9 ns      │ 491.1 ns      │ 504     │ 50400000
+│  ├─ metrics            1.064 µs      │ 1.43 µs       │ 1.258 µs      │ 1.256 µs      │ 504     │ 50400000
+│  ├─ prometheus         3.2 µs        │ 4.248 µs      │ 4.181 µs      │ 4.142 µs      │ 504     │ 50400000
+│  ╰─ prometheus_client  2.799 µs      │ 4.5 µs        │ 4.387 µs      │ 4.302 µs      │ 504     │ 50400000
 ╰─ no_cardinality                      │               │               │               │         │
-   ├─ measured           4.829 µs      │ 5.187 µs      │ 5.133 µs      │ 5.122 µs      │ 504     │ 50400000
-   ├─ metrics            5.753 µs      │ 7.257 µs      │ 6.971 µs      │ 6.937 µs      │ 504     │ 50400000
-   ├─ prometheus         4.639 µs      │ 5.309 µs      │ 5.125 µs      │ 5.108 µs      │ 504     │ 50400000
-   ╰─ prometheus_client  2.092 µs      │ 2.471 µs      │ 2.352 µs      │ 2.344 µs      │ 504     │ 50400000
+   ├─ measured           3.636 µs      │ 7.291 µs      │ 7.143 µs      │ 6.945 µs      │ 504     │ 50400000
+   ├─ metrics            1.733 µs      │ 2.053 µs      │ 2 µs          │ 1.988 µs      │ 504     │ 50400000
+   ├─ prometheus         1.81 µs       │ 5.23 µs       │ 5.121 µs      │ 4.882 µs      │ 504     │ 50400000
+   ╰─ prometheus_client  1.813 µs      │ 2.271 µs      │ 2.194 µs      │ 2.169 µs      │ 504     │ 50400000
 ```
 
 ### Memory
