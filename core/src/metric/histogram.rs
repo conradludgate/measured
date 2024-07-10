@@ -155,8 +155,7 @@ impl<const N: usize> Thresholds<N> {
 impl<const N: usize> HistogramLockGuard<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
-        let bucket = self.metadata().le.partition_point(|le| x > *le);
-        self.inner.read().observe(bucket, x);
+        HistogramState::observe(&*self, self.metadata(), x)
     }
 
     /// Observe the duration in seconds
@@ -169,6 +168,14 @@ impl<const N: usize> HistogramLockGuard<'_, N> {
         let d = since.elapsed();
         self.observe_duration(d);
         d
+    }
+}
+
+impl<const N: usize> HistogramState<N> {
+    /// Add a single observation to the [`Histogram`].
+    pub fn observe(&self, metadata: &Thresholds<N>, x: f64) {
+        let bucket = metadata.le.partition_point(|le| x > *le);
+        self.inner.read().observe(bucket, x);
     }
 }
 
@@ -210,7 +217,7 @@ impl<const N: usize> Histogram<N> {
 impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
     /// Add a single observation to the [`Histogram`], keyed by the label group.
     pub fn observe(&self, label: L::Group<'_>, y: f64) {
-        self.get_metric(self.with_labels(label)).observe(y);
+        self.with_metric(self.with_labels(label), |h| h.observe(self.metadata(), y));
     }
 
     /// Create a [`HistogramVecTimer`] object that automatically observes a duration when the timer is dropped.
