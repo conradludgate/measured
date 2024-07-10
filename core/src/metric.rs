@@ -18,6 +18,7 @@ pub mod group;
 pub mod histogram;
 pub mod name;
 mod sparse;
+mod sparse2;
 
 /// Defines a metric
 pub trait MetricType: Default {
@@ -124,6 +125,7 @@ pub struct MetricVec<M: MetricType, L: LabelGroupSet> {
 enum VecInner<U: Hash + Eq, M: MetricType> {
     Dense(Box<[CachePadded<OnceLock<M>>]>),
     Sparse(sparse::ShardedMap<U, M>),
+    Sparse2(sparse2::ShardedMap<U, M>),
 }
 
 impl<M: MetricType> Metric<M>
@@ -241,6 +243,17 @@ where
 }
 
 impl<M: MetricType, U: Hash + Eq + Copy> VecInner<U, M> {
+    fn with_metric<R>(&self, id: LabelIdInner<U>, f: impl FnOnce(&M) -> R) -> R {
+        match self {
+            VecInner::Dense(metrics) => f(metrics[id.hash as usize].get_or_init(M::default)),
+            VecInner::Sparse(metrics) => f(&*metrics.get_metric(id)),
+            VecInner::Sparse2(m) => {
+                let guard = m.guard();
+                f(m.get_metric(id, &guard))
+            }
+        }
+    }
+
     fn get_metric(&self, id: LabelIdInner<U>) -> MetricLockGuardRepr<'_, M> {
         match self {
             VecInner::Dense(metrics) => {
@@ -248,6 +261,7 @@ impl<M: MetricType, U: Hash + Eq + Copy> VecInner<U, M> {
                 MetricLockGuardRepr::Dense(m)
             }
             VecInner::Sparse(metrics) => MetricLockGuardRepr::Sparse(metrics.get_metric(id)),
+            VecInner::Sparse2(_) => todo!(),
         }
     }
 
@@ -262,6 +276,7 @@ impl<M: MetricType, U: Hash + Eq + Copy> VecInner<U, M> {
                 m.get_mut().unwrap()
             }
             VecInner::Sparse(metrics) => metrics.get_metric_mut(id),
+            VecInner::Sparse2(_) => todo!(),
         }
     }
 }
@@ -298,6 +313,15 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     pub fn sparse_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         Self {
             metrics: VecInner::Sparse(sparse::ShardedMap::new()),
+            metadata,
+            label_set,
+        }
+    }
+
+    /// Create a new sparse metric vec. Useful if you have a fixed cardinality vec but the cardinality is quite high
+    pub fn sparse2_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
+        Self {
+            metrics: VecInner::Sparse2(sparse2::ShardedMap::new()),
             metadata,
             label_set,
         }
@@ -348,6 +372,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 index as u64
             }
             VecInner::Sparse(metrics) => metrics.hasher.hash_one(id),
+            VecInner::Sparse2(_) => 0,
         };
 
         Some(LabelId(LabelIdInner { id, hash }))
@@ -359,6 +384,14 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
     pub fn get_metric(&self, id: LabelId<L>) -> MetricLockGuard<'_, M> {
         MetricLockGuard(self.metrics.get_metric(id.0), &self.metadata)
+    }
+
+    /// Get the individual metric at the given identifier.
+    ///
+    /// # Panics
+    /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
+    pub fn with_metric<R>(&self, id: LabelId<L>, f: impl FnOnce(&M) -> R) -> R {
+        self.metrics.with_metric(id.0, f)
     }
 
     /// Remove the metric with the given label, returning it's inner state.
@@ -374,6 +407,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         match &self.metrics {
             VecInner::Dense(_) => None,
             VecInner::Sparse(metrics) => metrics.remove_metric(id.0),
+            VecInner::Sparse2(_) => todo!(),
         }
     }
 
@@ -393,6 +427,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
                 Some(x.len()),
             ),
             VecInner::Sparse(x) => (x.get_cardinality(), self.label_set.cardinality()),
+            VecInner::Sparse2(x) => (x.get_cardinality(), self.label_set.cardinality()),
         }
     }
 
@@ -463,6 +498,12 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T
                     for (k, v) in shard.read().iter() {
                         v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc)?;
                     }
+                }
+            }
+            VecInner::Sparse2(m) => {
+                let guard = m.map.guard();
+                for (k, v) in m.map.iter(&guard) {
+                    v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc)?;
                 }
             }
         }

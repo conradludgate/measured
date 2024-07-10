@@ -55,12 +55,12 @@ impl CounterMut<'_> {
 impl<L: LabelGroupSet> CounterVec<L> {
     /// Increment the counter value by 1, keyed by the label group
     pub fn inc(&self, label: L::Group<'_>) {
-        self.get_metric(self.with_labels(label)).inc();
+        self.with_metric(self.with_labels(label), |x| x.inc());
     }
 
     /// Increment the counter value by `y`, keyed by the label group
     pub fn inc_by(&self, label: L::Group<'_>, y: u64) {
-        self.get_metric(self.with_labels(label)).inc_by(y);
+        self.with_metric(self.with_labels(label), |x| x.inc_by(y));
     }
 
     /// Increment the counter value by 1, keyed by the label group

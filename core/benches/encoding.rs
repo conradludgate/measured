@@ -39,6 +39,32 @@ fn measured<const N: usize>(bencher: Bencher) {
 }
 
 #[divan::bench(consts = SIZES)]
+fn measured_papaya<const N: usize>(bencher: Bencher) {
+    let metrics = Metrics {
+        counters: measured::CounterVec::sparse2_with_label_set_and_metadata(
+            GroupSet {
+                kind: ThreadedRodeo::with_hasher(ahash::RandomState::new()),
+            },
+            (),
+        ),
+    };
+
+    let mut buf = itoa::Buffer::new();
+    for i in 0..N {
+        metrics.counters.inc(Group {
+            kind: buf.format(i),
+        });
+    }
+
+    let mut enc = BufferedTextEncoder::new();
+
+    bencher.bench_local(|| {
+        metrics.collect_group_into(&mut enc).unwrap();
+        enc.finish()
+    });
+}
+
+#[divan::bench(consts = SIZES)]
 fn prometheus<const N: usize>(bencher: Bencher) {
     let registry = prometheus::Registry::new();
     let counter_vec = prometheus::register_int_counter_vec_with_registry!(
