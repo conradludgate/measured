@@ -9,7 +9,7 @@
 //!
 //! ## Minimal allocations
 //!
-//! Most other prometheus/metrics crates make use of many `String` and `Arc` allocations for labels and metrics respecively.
+//! Most other prometheus/metrics crates make use of many `String` and `Arc` allocations for labels and metrics respectively.
 //! These all end up being small allocations and can make the allocator struggle, as well as cause a lot more cache misses.
 //!
 //! `measured` recommends you store string-based labels in large allocations based on [`lasso`], and all metrics are stored back-to-back
@@ -25,12 +25,12 @@
 //! In `metrics`, the only way to use a metric with a label is via `counter!("counter_name", "label1" => "value1")`. If you need to manipulate
 //! that metric in multiple places, there is no 'source of truth' for what labels should be set.
 //!
-//! In `measured`, all metric vecs are typed to include their `LabelGroup` type. This consitently defines _all_ labels that are needed, and it is
+//! In `measured`, all metric vecs are typed to include their `LabelGroup` type. This consistently defines _all_ labels that are needed, and it is
 //! impossible thanks to Rust to forget to init a field, or to init them in the wrong order.
 //!
 //! ## Labels as integers
 //!
-//! Most prometheus/metrics crates back metric vecs with a HashMap from labels to the individial metric value.
+//! Most prometheus/metrics crates back metric vecs with a HashMap from labels to the individual metric value.
 //! They all try to hash the list of label strings in such a way to reduce overhead of the hashmap.
 //!
 //! `measured` does not need any hashing step and instead encodes label values directly to integers in a one-to-one mapping.
@@ -93,7 +93,7 @@
 //! }
 //! ```
 //!
-//! So, if we have a counter vec with 3 different labels, and a totel of 24 unique label groups, then we will have
+//! So, if we have a counter vec with 3 different labels, and a total of 24 unique label groups, then we will have
 //!
 //! * 1 allocation for the `MetricVec` `Arc`
 //! * 1 allocation for the `MetricVecCore` `HashMap`

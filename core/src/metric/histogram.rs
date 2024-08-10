@@ -124,7 +124,7 @@ impl<const N: usize> Thresholds<N> {
     pub fn linear_buckets(start: f64, width: f64) -> Self {
         assert!(
             width > 0.0,
-            "linear_buckets needs a width greate than 0, width: {width}",
+            "linear_buckets needs a width greater than 0, width: {width}",
         );
 
         let buckets = core::array::from_fn(|i| start + width * i as f64);
