@@ -138,7 +138,7 @@ pub use label::FixedCardinalityLabel;
 
 /// Implement [`LabelGroup`] on a `struct`
 ///
-/// A [`LabelGroup`] is a collection of named [`LabelValue`](label::LabelValue)s. Additonally to the label group,
+/// A [`LabelGroup`] is a collection of named [`LabelValue`](label::LabelValue)s. Additionally to the label group,
 /// there is also a [`LabelGroupSet`](label::LabelGroupSet) that is created by this macro.
 /// The set provides additional information needed to encode the values in the group.
 ///

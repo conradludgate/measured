@@ -10,7 +10,7 @@
 //!
 //! For instance:
 //! * Total number of HTTP requests
-//! * Total number of error reponses
+//! * Total number of error responses
 //!
 //! When sampled over time, the increase can be used to calculate the rate-per-second of each event.
 //!
