@@ -59,6 +59,25 @@ fn measured_sparse(bencher: Bencher) {
 }
 
 #[divan::bench]
+fn measured_papaya(bencher: Bencher) {
+    let error_set = ErrorsSet {
+        kind: StaticLabelSet::new(),
+        route: Rodeo::from_iter(routes()).into_reader(),
+    };
+    let counter_vec = measured::CounterVec::sparse2_with_label_set_and_metadata(error_set, ());
+
+    thread_local! {
+        static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+    }
+
+    bencher
+        .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
+        .bench_values(|(kind, route)| {
+            counter_vec.inc(Error { kind, route });
+        });
+}
+
+#[divan::bench]
 fn prometheus(bencher: Bencher) {
     let registry = prometheus::Registry::new();
     let counter_vec = prometheus::register_int_counter_vec_with_registry!(
