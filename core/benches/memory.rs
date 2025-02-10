@@ -14,7 +14,7 @@ use std::{cell::RefCell, hash::BuildHasher};
 use divan::{black_box, Bencher};
 use fake::{faker::name::raw::Name, locales::EN, Fake};
 use foldhash::fast::{FixedState, RandomState};
-use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
+use lasso::{Rodeo, RodeoReader, Spur};
 use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use metrics::SharedString;
@@ -66,33 +66,8 @@ impl ErrorKind {
 }
 
 #[divan::bench]
-fn measured_lasso(bencher: Bencher) {
+fn measured(bencher: Bencher) {
     let error_set = ErrorsSet {
-        kind: StaticLabelSet::new(),
-        route: Rodeo::from_iter(routes()).into_reader(),
-        user_name: ThreadedRodeo::with_hasher(RandomState::default()),
-    };
-    let counter_vec = measured::CounterVec::with_label_set(error_set);
-
-    thread_local! {
-        static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
-    }
-
-    bencher
-        .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
-        .bench_values(|(kind, route, name)| {
-            counter_vec.inc(Error {
-                kind,
-                route,
-                user_name: &name,
-            });
-            name
-        });
-}
-
-#[divan::bench]
-fn measured_paracord(bencher: Bencher) {
-    let error_set = ErrorsSet2 {
         kind: StaticLabelSet::new(),
         route: Rodeo::from_iter(routes()).into_reader(),
         user_name: ParaCord::default(),
@@ -106,7 +81,7 @@ fn measured_paracord(bencher: Bencher) {
     bencher
         .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
         .bench_values(|(kind, route, name)| {
-            counter_vec.inc(Error2 {
+            counter_vec.inc(Error {
                 kind,
                 route,
                 user_name: &name,
@@ -205,16 +180,6 @@ fn prometheus_client(bencher: Bencher) {
 #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
 #[label(set = ErrorsSet)]
 struct Error<'a> {
-    kind: ErrorKind,
-    #[label(fixed_with = RodeoReader<Spur, RandomState>)]
-    route: &'a str,
-    #[label(dynamic_with = ThreadedRodeo<Spur, RandomState>)]
-    user_name: &'a str,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
-#[label(set = ErrorsSet2)]
-struct Error2<'a> {
     kind: ErrorKind,
     #[label(fixed_with = RodeoReader<Spur, RandomState>)]
     route: &'a str,
