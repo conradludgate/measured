@@ -1,8 +1,9 @@
 use std::cell::RefCell;
-use std::hash::{BuildHasher, BuildHasherDefault};
+use std::hash::BuildHasher;
 
 use divan::black_box;
 use divan::Bencher;
+use foldhash::fast::{FixedState, RandomState};
 use lasso::{Rodeo, RodeoReader, Spur};
 use measured::label::StaticLabelSet;
 use measured_derive::FixedCardinalityLabel;
@@ -10,7 +11,6 @@ use measured_derive::LabelGroup;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::encoding::EncodeLabelValue;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use rustc_hash::FxHasher;
 
 fn main() {
     divan::Divan::from_args()
@@ -135,9 +135,7 @@ fn prometheus_client(bencher: Bencher) {
 }
 
 fn thread_rng() -> SmallRng {
-    SmallRng::seed_from_u64(
-        BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()),
-    )
+    SmallRng::seed_from_u64(FixedState::with_seed(0).hash_one(std::thread::current().id()))
 }
 
 fn get(rng: &mut impl Rng) -> (ErrorKind, &'static str) {
@@ -182,7 +180,7 @@ impl ErrorKind {
 #[label(set = ErrorsSet)]
 struct Error<'a> {
     kind: ErrorKind,
-    #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
+    #[label(fixed_with = RodeoReader<Spur, RandomState>)]
     route: &'a str,
 }
 

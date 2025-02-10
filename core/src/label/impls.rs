@@ -105,11 +105,11 @@ impl LabelSet for paracord::ParaCord {
     }
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
-        Some(self.intern(value).into_repr() as usize)
+        Some(self.get_or_intern(value).into_repr() as usize)
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
-        self.get(paracord::Key::try_from_repr(u32::try_from(value).unwrap()).unwrap())
+        self.resolve(paracord::Key::try_from_repr(u32::try_from(value).unwrap()).unwrap())
     }
 }
 
@@ -262,6 +262,30 @@ mod tests {
         use lasso::Spur;
 
         let set = lasso::ThreadedRodeo::<Spur>::new();
+
+        // make sure it's repeatable
+        for _ in 0..2 {
+            assert_eq!(set.encode("loop"), Some(0));
+            assert_eq!(set.decode(0), "loop");
+
+            assert_eq!(set.encode("continue"), Some(1));
+            assert_eq!(set.decode(1), "continue");
+
+            assert_eq!(set.encode("break"), Some(2));
+            assert_eq!(set.decode(2), "break");
+
+            assert_eq!(set.encode("fn"), Some(3));
+            assert_eq!(set.decode(3), "fn");
+
+            assert_eq!(set.encode("extern"), Some(4));
+            assert_eq!(set.decode(4), "extern");
+        }
+    }
+
+    #[cfg(feature = "paracord")]
+    #[test]
+    fn paracord() {
+        let set = paracord::ParaCord::default();
 
         // make sure it's repeatable
         for _ in 0..2 {

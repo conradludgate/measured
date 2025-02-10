@@ -1,5 +1,6 @@
 use divan::black_box;
 use divan::Bencher;
+use foldhash::fast::RandomState;
 use lasso::{Spur, ThreadedRodeo};
 use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, LabelGroup, MetricGroup};
@@ -20,7 +21,7 @@ const SIZES: &[usize] = &[100, 1000, 10000, 100000];
 fn measured_lasso<const N: usize>(bencher: Bencher) {
     let metrics = Metrics {
         counters: measured::CounterVec::with_label_set(GroupSet {
-            kind: ThreadedRodeo::with_hasher(ahash::RandomState::new()),
+            kind: ThreadedRodeo::with_hasher(RandomState::default()),
         }),
     };
 
@@ -142,7 +143,7 @@ struct Metrics {
 #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
 #[label(set = GroupSet)]
 struct Group<'a> {
-    #[label(dynamic_with = ThreadedRodeo<Spur, ahash::RandomState>)]
+    #[label(dynamic_with = ThreadedRodeo<Spur, RandomState>)]
     kind: &'a str,
 }
 

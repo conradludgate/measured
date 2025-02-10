@@ -73,7 +73,7 @@ fn prometheus_client<const N: usize>(bencher: Bencher) {
     use prometheus_client::metrics::counter::Counter;
     use prometheus_client::metrics::family::Family;
     use prometheus_client::registry::Registry;
-    use prost11::Message;
+    use prost12::Message;
 
     let mut registry = <Registry>::default();
 

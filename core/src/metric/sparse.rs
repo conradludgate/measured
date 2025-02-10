@@ -2,16 +2,13 @@ use core::hash::Hash;
 use crossbeam_utils::CachePadded;
 use hashbrown::HashTable;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::{
-    hash::{BuildHasher, BuildHasherDefault},
-    sync::OnceLock,
-};
+use std::{hash::BuildHasher, sync::OnceLock};
 
 use super::{LabelIdInner, MetricType};
 
 pub(super) struct ShardedMap<K, V> {
     // FxHasher performed the fastest in all my benchmarks.
-    pub(super) hasher: BuildHasherDefault<rustc_hash::FxHasher>,
+    pub(super) hasher: foldhash::fast::RandomState,
     // hasher: BuildHasherDefault<fnv::FnvHasher>,
     // hasher: BuildHasherDefault<twox_hash::XxHash64>,
     // hasher: BuildHasherDefault<twox_hash::Xxh3Hash64>,

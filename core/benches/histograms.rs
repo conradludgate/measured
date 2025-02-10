@@ -4,19 +4,16 @@ fn main() {
 
 #[divan::bench_group(sample_size = 100000, sample_count = 500)]
 mod fixed_cardinality {
-    use std::{
-        cell::RefCell,
-        hash::{BuildHasher, BuildHasherDefault},
-    };
+    use std::{cell::RefCell, hash::BuildHasher};
 
     use divan::{black_box, Bencher};
+    use foldhash::fast::{FixedState, RandomState};
     use lasso::{Rodeo, RodeoReader, Spur};
     use measured::{label::StaticLabelSet, metric::histogram::Thresholds};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
     use rand::{rngs::SmallRng, Rng, SeedableRng};
-    use rustc_hash::FxHasher;
 
     const N: usize = 8;
 
@@ -161,9 +158,7 @@ mod fixed_cardinality {
     }
 
     fn thread_rng() -> SmallRng {
-        SmallRng::seed_from_u64(
-            BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()),
-        )
+        SmallRng::seed_from_u64(FixedState::with_seed(0).hash_one(std::thread::current().id()))
     }
 
     fn get(rng: &mut impl Rng) -> (ErrorKind, &'static str, f64) {
@@ -191,7 +186,7 @@ mod fixed_cardinality {
     #[label(set = ErrorsSet)]
     struct Error<'a> {
         kind: ErrorKind,
-        #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
+        #[label(fixed_with = RodeoReader<Spur, RandomState>)]
         route: &'a str,
     }
 

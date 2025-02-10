@@ -9,13 +9,11 @@ fn main() {
         .run_benches();
 }
 
-use std::{
-    cell::RefCell,
-    hash::{BuildHasher, BuildHasherDefault},
-};
+use std::{cell::RefCell, hash::BuildHasher};
 
 use divan::{black_box, Bencher};
 use fake::{faker::name::raw::Name, locales::EN, Fake};
+use foldhash::fast::{FixedState, RandomState};
 use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
 use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
@@ -23,12 +21,9 @@ use metrics::SharedString;
 use paracord::ParaCord;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use rustc_hash::FxHasher;
 
 fn thread_rng() -> SmallRng {
-    SmallRng::seed_from_u64(
-        BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()),
-    )
+    SmallRng::seed_from_u64(FixedState::with_seed(0).hash_one(std::thread::current().id()))
 }
 
 fn get(rng: &mut impl Rng) -> (ErrorKind, &'static str, String) {
@@ -75,7 +70,7 @@ fn measured_lasso(bencher: Bencher) {
     let error_set = ErrorsSet {
         kind: StaticLabelSet::new(),
         route: Rodeo::from_iter(routes()).into_reader(),
-        user_name: ThreadedRodeo::with_hasher(ahash::RandomState::new()),
+        user_name: ThreadedRodeo::with_hasher(RandomState::default()),
     };
     let counter_vec = measured::CounterVec::with_label_set(error_set);
 
@@ -211,9 +206,9 @@ fn prometheus_client(bencher: Bencher) {
 #[label(set = ErrorsSet)]
 struct Error<'a> {
     kind: ErrorKind,
-    #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
+    #[label(fixed_with = RodeoReader<Spur, RandomState>)]
     route: &'a str,
-    #[label(dynamic_with = ThreadedRodeo<Spur, ahash::RandomState>)]
+    #[label(dynamic_with = ThreadedRodeo<Spur, RandomState>)]
     user_name: &'a str,
 }
 
@@ -221,7 +216,7 @@ struct Error<'a> {
 #[label(set = ErrorsSet2)]
 struct Error2<'a> {
     kind: ErrorKind,
-    #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
+    #[label(fixed_with = RodeoReader<Spur, RandomState>)]
     route: &'a str,
     #[label(dynamic_with = ParaCord)]
     user_name: &'a str,
