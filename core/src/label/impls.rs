@@ -93,6 +93,26 @@ impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> Label
     }
 }
 
+#[cfg(feature = "paracord")]
+impl DynamicLabelSet for paracord::ParaCord {}
+
+#[cfg(feature = "paracord")]
+impl LabelSet for paracord::ParaCord {
+    type Value<'a> = &'a str;
+
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        None
+    }
+
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
+        Some(self.intern(value).into_repr() as usize)
+    }
+
+    fn decode(&self, value: usize) -> Self::Value<'_> {
+        self.get(paracord::Key::try_from_repr(u32::try_from(value).unwrap()).unwrap())
+    }
+}
+
 #[cfg(feature = "phf")]
 impl LabelSet for phf::OrderedSet<&'static str> {
     type Value<'a> = &'a str;

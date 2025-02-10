@@ -12,6 +12,7 @@ readme = "../README.md"
 
 [features]
 default = []
+paracord = ["dep:paracord"]
 lasso = ["dep:lasso"]
 indexmap = ["dep:indexmap"]
 phf = ["dep:phf"]
@@ -30,6 +31,7 @@ measured-derive = { path = "../derive", version = "0.0.22" }
 
 indexmap = { version = "2", optional = true }
 lasso = { version = "0.7", optional = true, features = ["multi-threaded"] }
+paracord = { git = "https://github.com/conradludgate/paracord", branch = "main", optional = true }
 phf = { version = "0.11", optional = true }
 
 [dev-dependencies]

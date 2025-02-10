@@ -17,6 +17,7 @@ use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
 use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use metrics::SharedString;
+use paracord::ParaCord;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use rustc_hash::FxHasher;
@@ -67,7 +68,7 @@ impl ErrorKind {
 }
 
 #[divan::bench]
-fn measured(bencher: Bencher) {
+fn measured_lasso(bencher: Bencher) {
     let error_set = ErrorsSet {
         kind: StaticLabelSet::new(),
         route: Rodeo::from_iter(routes()).into_reader(),
@@ -83,6 +84,31 @@ fn measured(bencher: Bencher) {
         .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
         .bench_values(|(kind, route, name)| {
             counter_vec.inc(Error {
+                kind,
+                route,
+                user_name: &name,
+            });
+            name
+        });
+}
+
+#[divan::bench]
+fn measured_paracord(bencher: Bencher) {
+    let error_set = ErrorsSet2 {
+        kind: StaticLabelSet::new(),
+        route: Rodeo::from_iter(routes()).into_reader(),
+        user_name: ParaCord::default(),
+    };
+    let counter_vec = measured::CounterVec::with_label_set(error_set);
+
+    thread_local! {
+        static RNG: RefCell<SmallRng> = RefCell::new(thread_rng());
+    }
+
+    bencher
+        .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
+        .bench_values(|(kind, route, name)| {
+            counter_vec.inc(Error2 {
                 kind,
                 route,
                 user_name: &name,
@@ -185,6 +211,16 @@ struct Error<'a> {
     #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
     route: &'a str,
     #[label(dynamic_with = ThreadedRodeo<Spur, ahash::RandomState>)]
+    user_name: &'a str,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
+#[label(set = ErrorsSet2)]
+struct Error2<'a> {
+    kind: ErrorKind,
+    #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
+    route: &'a str,
+    #[label(dynamic_with = ParaCord)]
     user_name: &'a str,
 }
 
