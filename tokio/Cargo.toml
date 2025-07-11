@@ -16,7 +16,7 @@ default = []
 net = ["tokio/net"]
 
 [dependencies]
-measured = { path = "../core", version = "0.0.22" }
+measured = { path = "../core", version = "0.0.23" }
 tokio = { version = "1.43.1", features = ["rt"] }
 itoa = "1"
 

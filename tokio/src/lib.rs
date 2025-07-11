@@ -14,7 +14,7 @@
 //!     tokio: measured_tokio::RuntimeCollector,
 //!
 //!     // other metrics
-//! }}
+//! }
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -71,10 +71,7 @@ impl NamedRuntimesCollector {
     /// `EnterGuard`. Calling this from within a thread created by `std::thread::spawn` (for example)
     /// will cause a panic unless that thread has an active `EnterGuard`.
     pub fn add_current(&self, name: impl Into<Cow<'static, str>>) {
-        self.runtimes
-            .write()
-            .unwrap()
-            .push(RuntimeCollector::current().with_name(name))
+        self.add(tokio::runtime::Handle::current().metrics(), name);
     }
 }
 

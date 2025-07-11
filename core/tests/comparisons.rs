@@ -1,3 +1,5 @@
+#![cfg(feature = "lasso")]
+
 use lasso::{Rodeo, RodeoReader};
 use measured::{CounterVec, FixedCardinalityLabel, LabelGroup, MetricGroup, label::StaticLabelSet};
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};

@@ -1,6 +1,6 @@
 [package]
 name = "measured-process"
-version = "0.0.22"
+version = "0.0.23"
 edition = "2024"
 description = "Linux process metrics for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -15,7 +15,7 @@ rust-version = "1.88"
 default = []
 
 [dependencies]
-measured = { path = "../core", version = "0.0.22" }
+measured = { path = "../core", version = "0.0.23" }
 libc = { version = "^0.2" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
