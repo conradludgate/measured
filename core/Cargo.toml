@@ -49,22 +49,27 @@ ahash = "0.8"
 [[bench]]
 name = "counters"
 harness = false
+required-features = ["lasso"]
 
 [[bench]]
 name = "histograms"
 harness = false
+required-features = ["lasso"]
 
 [[bench]]
 name = "memory"
 harness = false
+required-features = ["paracord"]
 
 [[bench]]
 name = "high_cardinality"
 harness = false
+required-features = ["lasso", "paracord"]
 
 [[bench]]
 name = "encoding"
 harness = false
+required-features = ["paracord"]
 
 # Properly document all features on docs.rs
 [package.metadata.docs.rs]
