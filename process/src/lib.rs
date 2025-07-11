@@ -29,11 +29,9 @@ use std::sync::OnceLock;
 
 use libc::pid_t;
 use measured::{
-    label::NoLabels,
     metric::{
         gauge::{write_gauge, GaugeState},
         group::Encoding,
-        name::MetricName,
         MetricEncoding,
     },
     MetricGroup,
@@ -80,6 +78,9 @@ where
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
         #[cfg(target_os = "linux")]
         {
+            use measured::label::NoLabels;
+            use measured::metric::name::MetricName;
+
             let Ok(p) = procfs::process::Process::new(self.pid) else {
                 // we can't construct a Process object, so there's no stats to gather
                 return Ok(());

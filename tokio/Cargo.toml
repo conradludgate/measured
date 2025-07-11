@@ -1,6 +1,6 @@
 [package]
 name = "measured-tokio"
-version = "0.0.22"
+version = "0.0.23"
 edition = "2021"
 description = "Tokio metrics for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -16,7 +16,7 @@ net = ["tokio/net"]
 
 [dependencies]
 measured = { path = "../core", version = "0.0.22" }
-tokio = { version = "1.38", features = ["rt"] }
+tokio = { version = "1.43.1", features = ["rt"] }
 itoa = "1"
 
 [dev-dependencies]
@@ -25,3 +25,6 @@ tokio = { version = "1.37", features = ["rt", "rt-multi-thread"] }
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg=tokio_unstable"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }

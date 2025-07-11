@@ -26,15 +26,15 @@
 //! }
 //! ```
 
-use std::{borrow::Cow, sync::RwLock, time::Duration};
+use std::{borrow::Cow, sync::RwLock};
 
 use measured::{
     label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels},
     metric::{
-        counter::{write_counter, CounterState},
-        gauge::{write_float_gauge, write_gauge, FloatGaugeState, GaugeState},
+        counter::CounterState,
+        gauge::{FloatGaugeState, GaugeState},
         group::Encoding,
-        name::{Bucket, Count, MetricName, Sum},
+        name::MetricName,
         MetricEncoding,
     },
     FixedCardinalityLabel, LabelGroup, MetricGroup,
@@ -132,9 +132,10 @@ impl RuntimeCollector {
     }
 }
 
+#[cfg(tokio_unstable)]
 fn histogram_le(rt: &RuntimeMetrics, bucket: usize) -> HistogramLabelLe {
-    let le = rt.poll_count_histogram_bucket_range(bucket).end;
-    let le = if le == Duration::from_nanos(u64::MAX) {
+    let le = rt.poll_time_histogram_bucket_range(bucket).end;
+    let le = if le == std::time::Duration::from_nanos(u64::MAX) {
         f64::INFINITY
     } else {
         le.as_secs_f64()
@@ -157,10 +158,15 @@ where
                 let rt_name = &rt.name;
                 macro_rules! write_counter {
                     ($labels:expr, $val:expr) => {
-                        write_counter(enc, NAME, ComposedGroup(rt_name, $labels), $val)?
+                        measured::metric::counter::write_counter(
+                            enc,
+                            NAME,
+                            ComposedGroup(rt_name, $labels),
+                            $val,
+                        )?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        write_counter(
+                        measured::metric::counter::write_counter(
                             enc,
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
@@ -170,10 +176,15 @@ where
                 }
                 macro_rules! write_gauge {
                     ($labels:expr, $val:expr) => {
-                        write_gauge(enc, NAME, ComposedGroup(rt_name, $labels), $val)?
+                        measured::metric::gauge::write_gauge(
+                            enc,
+                            NAME,
+                            ComposedGroup(rt_name, $labels),
+                            $val,
+                        )?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        write_gauge(
+                        measured::metric::gauge::write_gauge(
                             enc,
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
@@ -183,10 +194,15 @@ where
                 }
                 macro_rules! write_float_gauge {
                     ($labels:expr, $val:expr) => {
-                        write_float_gauge(enc, NAME, ComposedGroup(rt_name, $labels), $val)?
+                        measured::metric::gauge::write_float_gauge(
+                            enc,
+                            NAME,
+                            ComposedGroup(rt_name, $labels),
+                            $val,
+                        )?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        write_float_gauge(
+                        measured::metric::gauge::write_float_gauge(
                             enc,
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
@@ -200,28 +216,48 @@ where
         }};
     }
 
-    metric!("threads", "number of threads used by the runtime", |rt| {
-        write_gauge!(ThreadKind::Worker, rt.num_workers() as i64);
-        let idle = rt.num_idle_blocking_threads();
-        write_gauge!(
-            ThreadKind::Blocking,
-            rt.num_blocking_threads().saturating_sub(idle) as i64
-        );
-        write_gauge!(ThreadKind::Idle, idle as i64);
-    });
+    metric!(
+        "threads_total",
+        "number of threads used by the runtime",
+        |rt| {
+            write_gauge!(ThreadKind::Worker, rt.num_workers() as i64);
+
+            #[cfg(tokio_unstable)]
+            let idle = rt.num_idle_blocking_threads();
+
+            // we subtract here so that `sum(threads)` actually gives the total number of threads.
+            #[cfg(tokio_unstable)]
+            write_gauge!(
+                ThreadKind::Blocking,
+                rt.num_blocking_threads().saturating_sub(idle) as i64
+            );
+
+            #[cfg(tokio_unstable)]
+            write_gauge!(ThreadKind::BlockingIdle, idle as i64);
+        }
+    );
 
     metric!(
-        "active_tasks",
-        "number of active tasks spawned in the runtime",
-        |rt| write_gauge!(NoLabels, rt.active_tasks_count() as i64)
+        "alive_tasks",
+        "number of live tasks spawned in the runtime",
+        |rt| write_gauge!(NoLabels, rt.num_alive_tasks() as i64)
     );
+
+    #[cfg(tokio_unstable)]
+    metric!("tasks_total", "number of tasks", |rt| {
+        write_counter!(NoLabels, rt.spawned_tasks_count());
+    });
 
     metric!(
         "queued_tasks",
         "number of tasks currently in a queue",
         |rt| {
+            #[cfg(tokio_unstable)]
             write_gauge!(QueueKind::Blocking, rt.blocking_queue_depth() as i64);
-            write_gauge!(QueueKind::Injection, rt.injection_queue_depth() as i64);
+
+            write_gauge!(QueueKind::Global, rt.global_queue_depth() as i64);
+
+            #[cfg(tokio_unstable)]
             for worker in 0..rt.num_workers() {
                 let queue_depth = rt.worker_local_queue_depth(worker);
                 write_gauge!(QueueKind::Worker(worker), queue_depth as i64);
@@ -229,10 +265,29 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
         "scheduled_tasks_total",
         "total number of tasks scheduled into the runtime",
         |rt| {
+            struct Overflow(bool);
+
+            impl LabelGroup for Overflow {
+                fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
+                    const OVERFLOW: &LabelName = LabelName::from_str("overflow");
+                    v.write_value(OVERFLOW, if self.0 { &Str("true") } else { &Str("false") });
+                }
+            }
+
+            struct Remote;
+
+            impl LabelGroup for Remote {
+                fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
+                    const LE: &LabelName = LabelName::from_str("worker");
+                    v.write_value(LE, &Str("remote"));
+                }
+            }
+
             for worker in 0..rt.num_workers() {
                 write_counter!(
                     Worker(worker).compose_with(Overflow(false)),
@@ -250,12 +305,14 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
-        "budget_forced_yield_count",
+        "budget_forced_yield_total",
         "number of tasks forced to yield after exhausting their budget",
         |rt| write_counter!(NoLabels, rt.budget_forced_yield_count())
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
         "worker_mean_poll_time_seconds",
         "estimated weighted moving average of the poll time for this worker",
@@ -265,8 +322,9 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
-        "worker_noop_count",
+        "worker_noop_total",
         "number of times the given worker thread woke up with no work",
         |rt| for worker in 0..rt.num_workers() {
             let noops = rt.worker_noop_count(worker);
@@ -274,8 +332,9 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
-        "worker_park_count",
+        "worker_park_total",
         "number of times the given worker thread has parked",
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_park_count(worker);
@@ -283,8 +342,9 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
-        "worker_steal_count",
+        "worker_steal_total",
         "number of tasks the given worker thread has stolen",
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_steal_count(worker);
@@ -292,8 +352,9 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
-        "worker_steal_operations_count",
+        "worker_steal_operations_total",
         "number of times the given worker thread has attempted to steal tasks",
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_steal_operations(worker);
@@ -301,17 +362,20 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     metric!(
         "worker_poll_time_seconds",
         "time this runtime thread has spent polling tasks",
         |rt| for worker in 0..rt.num_workers() {
+            use measured::metric::name::{Bucket, Count, Sum};
+
             let worker_label = Worker(worker);
-            if rt.poll_count_histogram_enabled() {
-                let buckets = rt.poll_count_histogram_num_buckets();
+            if rt.poll_time_histogram_enabled() {
+                let buckets = rt.poll_time_histogram_num_buckets();
                 let mut total = 0;
                 for bucket in 0..buckets {
                     let le = histogram_le(rt, bucket);
-                    total += rt.poll_count_histogram_bucket_count(worker, bucket);
+                    total += rt.poll_time_histogram_bucket_count(worker, bucket);
                     write_counter!(Bucket, worker_label.compose_with(le), total);
                 }
             }
@@ -322,6 +386,7 @@ where
         }
     );
 
+    #[cfg(tokio_unstable)]
     #[cfg(feature = "net")]
     {
         metric!(
@@ -355,23 +420,31 @@ where
     }
 }
 
+#[cfg(tokio_unstable)]
 struct I64(i64);
+
+#[cfg(tokio_unstable)]
 impl LabelValue for I64 {
     fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
         v.write_int(self.0)
     }
 }
 
+#[cfg(tokio_unstable)]
 struct F64(f64);
+
+#[cfg(tokio_unstable)]
 impl LabelValue for F64 {
     fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
         v.write_float(self.0)
     }
 }
 
+#[cfg(tokio_unstable)]
 #[derive(Copy, Clone)]
 struct Worker(usize);
 
+#[cfg(tokio_unstable)]
 impl LabelGroup for Worker {
     fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
         const LE: &LabelName = LabelName::from_str("worker");
@@ -379,20 +452,12 @@ impl LabelGroup for Worker {
     }
 }
 
-#[derive(Copy, Clone)]
-struct Remote;
-
-impl LabelGroup for Remote {
-    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
-        const LE: &LabelName = LabelName::from_str("worker");
-        v.write_value(LE, &Str("remote"));
-    }
-}
-
+#[cfg(tokio_unstable)]
 struct HistogramLabelLe {
     le: f64,
 }
 
+#[cfg(tokio_unstable)]
 impl LabelGroup for HistogramLabelLe {
     fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
         const LE: &LabelName = LabelName::from_str("le");
@@ -420,27 +485,19 @@ impl LabelGroup for RuntimeName {
     }
 }
 
-struct Overflow(bool);
-
-impl LabelGroup for Overflow {
-    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
-        const OVERFLOW: &LabelName = LabelName::from_str("overflow");
-        v.write_value(OVERFLOW, if self.0 { &Str("true") } else { &Str("false") });
-    }
-}
-
 #[derive(FixedCardinalityLabel, Clone, Copy)]
 #[label(singleton = "kind")]
 enum ThreadKind {
     Worker,
-    Idle,
+    BlockingIdle,
     Blocking,
 }
 
+#[allow(unused)]
 enum QueueKind {
     Worker(usize),
     Blocking,
-    Injection,
+    Global,
 }
 
 #[automatically_derived]
@@ -449,7 +506,7 @@ impl LabelValue for QueueKind {
         match self {
             QueueKind::Worker(i) => v.write_str(itoa::Buffer::new().format(*i)),
             QueueKind::Blocking => v.write_str("blocking"),
-            QueueKind::Injection => v.write_str("injection"),
+            QueueKind::Global => v.write_str("global"),
         }
     }
 }
