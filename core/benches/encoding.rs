@@ -1,8 +1,8 @@
 use divan::Bencher;
 use divan::black_box;
-use lasso::{Spur, ThreadedRodeo};
 use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, LabelGroup, MetricGroup};
+use paracord::ParaCord;
 use prometheus_client::encoding::EncodeLabelSet;
 
 fn main() {
@@ -19,7 +19,7 @@ const SIZES: &[usize] = &[100, 1000, 10000, 100000];
 fn measured<const N: usize>(bencher: Bencher) {
     let metrics = Metrics {
         counters: measured::CounterVec::with_label_set(GroupSet {
-            kind: ThreadedRodeo::with_hasher(ahash::RandomState::new()),
+            kind: ParaCord::default(),
         }),
     };
 
@@ -118,7 +118,7 @@ struct Metrics {
 #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
 #[label(set = GroupSet)]
 struct Group<'a> {
-    #[label(dynamic_with = ThreadedRodeo<Spur, ahash::RandomState>)]
+    #[label(dynamic_with = ParaCord)]
     kind: &'a str,
 }
 

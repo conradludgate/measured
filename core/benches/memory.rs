@@ -16,10 +16,10 @@ use std::{
 
 use divan::{Bencher, black_box};
 use fake::{Fake, faker::name::raw::Name, locales::EN};
-use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
 use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use metrics::SharedString;
+use paracord::ParaCord;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use rustc_hash::FxHasher;
@@ -73,8 +73,8 @@ impl ErrorKind {
 fn measured(bencher: Bencher) {
     let error_set = ErrorsSet {
         kind: StaticLabelSet::new(),
-        route: Rodeo::from_iter(routes()).into_reader(),
-        user_name: ThreadedRodeo::with_hasher(ahash::RandomState::new()),
+        route: ParaCord::from_iter(routes()),
+        user_name: ParaCord::default(),
     };
     let counter_vec = measured::CounterVec::with_label_set(error_set);
 
@@ -185,9 +185,9 @@ fn prometheus_client(bencher: Bencher) {
 #[label(set = ErrorsSet)]
 struct Error<'a> {
     kind: ErrorKind,
-    #[label(fixed_with = RodeoReader<Spur, ahash::RandomState>)]
+    #[label(dynamic_with = ParaCord)]
     route: &'a str,
-    #[label(dynamic_with = ThreadedRodeo<Spur, ahash::RandomState>)]
+    #[label(dynamic_with = ParaCord)]
     user_name: &'a str,
 }
 

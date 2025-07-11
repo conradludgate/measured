@@ -12,7 +12,8 @@ rust-version = "1.88"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["lasso"]
+default = []
+paracord = ["dep:paracord"]
 lasso = ["dep:lasso"]
 indexmap = ["dep:indexmap"]
 phf = ["dep:phf"]
@@ -31,6 +32,7 @@ measured-derive = { path = "../derive", version = "0.0.22" }
 
 indexmap = { version = "2", optional = true }
 lasso = { version = "0.7", optional = true, features = ["multi-threaded"] }
+paracord = { version = "0.1", optional = true }
 phf = { version = "0.11", optional = true }
 
 [dev-dependencies]

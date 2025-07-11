@@ -48,6 +48,31 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
     }
 }
 
+#[cfg(feature = "paracord")]
+impl<S: core::hash::BuildHasher> DynamicLabelSet for paracord::ParaCord<S> {}
+
+#[cfg(feature = "paracord")]
+impl<S: core::hash::BuildHasher> LabelSet for paracord::ParaCord<S> {
+    type Value<'a> = &'a str;
+
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        Some(self.len())
+    }
+
+    fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
+        Some(self.get_or_intern(value).into_repr() as usize)
+    }
+
+    fn decode(&self, value: usize) -> Self::Value<'_> {
+        self.resolve(
+            u32::try_from(value)
+                .ok()
+                .and_then(paracord::Key::try_from_repr)
+                .unwrap(),
+        )
+    }
+}
+
 #[cfg(feature = "lasso")]
 impl<K: lasso::Key, S: core::hash::BuildHasher> FixedCardinalitySet for lasso::RodeoReader<K, S> {}
 
@@ -242,6 +267,30 @@ mod tests {
         use lasso::Spur;
 
         let set = lasso::ThreadedRodeo::<Spur>::new();
+
+        // make sure it's repeatable
+        for _ in 0..2 {
+            assert_eq!(set.encode("loop"), Some(0));
+            assert_eq!(set.decode(0), "loop");
+
+            assert_eq!(set.encode("continue"), Some(1));
+            assert_eq!(set.decode(1), "continue");
+
+            assert_eq!(set.encode("break"), Some(2));
+            assert_eq!(set.decode(2), "break");
+
+            assert_eq!(set.encode("fn"), Some(3));
+            assert_eq!(set.decode(3), "fn");
+
+            assert_eq!(set.encode("extern"), Some(4));
+            assert_eq!(set.decode(4), "extern");
+        }
+    }
+
+    #[cfg(feature = "paracord")]
+    #[test]
+    fn paracord() {
+        let set = paracord::ParaCord::default();
 
         // make sure it's repeatable
         for _ in 0..2 {
