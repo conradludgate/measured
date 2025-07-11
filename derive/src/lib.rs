@@ -1,5 +1,5 @@
 use quote::ToTokens;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{DeriveInput, parse_macro_input};
 
 mod label_group;
 mod metric_group;

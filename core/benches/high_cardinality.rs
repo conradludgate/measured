@@ -11,14 +11,14 @@ use std::{
     hash::{BuildHasher, BuildHasherDefault},
 };
 
-use divan::{black_box, Bencher};
-use fake::{faker::name::raw::Name, locales::EN, Fake};
+use divan::{Bencher, black_box};
+use fake::{Fake, faker::name::raw::Name, locales::EN};
 use lasso::{Rodeo, RodeoReader, Spur, ThreadedRodeo};
 use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use metrics::SharedString;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 use rustc_hash::FxHasher;
 
 fn thread_rng() -> SmallRng {

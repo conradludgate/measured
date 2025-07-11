@@ -29,12 +29,12 @@ use std::sync::OnceLock;
 
 use libc::pid_t;
 use measured::{
-    metric::{
-        gauge::{write_gauge, GaugeState},
-        group::Encoding,
-        MetricEncoding,
-    },
     MetricGroup,
+    metric::{
+        MetricEncoding,
+        gauge::{GaugeState, write_gauge},
+        group::Encoding,
+    },
 };
 
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.

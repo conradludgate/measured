@@ -2,11 +2,11 @@
 
 use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
-use crate::{label::LabelGroupSet, FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup};
+use crate::{FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup, label::LabelGroupSet};
 
 use super::{
-    group::Encoding, name::MetricNameEncoder, MetricEncoding, MetricLockGuard, MetricMut,
-    MetricType,
+    MetricEncoding, MetricLockGuard, MetricMut, MetricType, group::Encoding,
+    name::MetricNameEncoder,
 };
 
 #[derive(Default)]

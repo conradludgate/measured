@@ -9,13 +9,13 @@ mod fixed_cardinality {
         hash::{BuildHasher, BuildHasherDefault},
     };
 
-    use divan::{black_box, Bencher};
+    use divan::{Bencher, black_box};
     use lasso::{Rodeo, RodeoReader, Spur};
     use measured::{label::StaticLabelSet, metric::histogram::Thresholds};
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::SmallRng};
     use rustc_hash::FxHasher;
 
     const N: usize = 8;
@@ -98,14 +98,16 @@ mod fixed_cardinality {
 
         let h = recorder.handle();
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        std::thread::spawn(move || loop {
-            if rx
-                .recv_timeout(std::time::Duration::from_millis(200))
-                .is_ok()
-            {
-                return;
+        std::thread::spawn(move || {
+            loop {
+                if rx
+                    .recv_timeout(std::time::Duration::from_millis(200))
+                    .is_ok()
+                {
+                    return;
+                }
+                h.run_upkeep();
             }
-            h.run_upkeep();
         });
 
         metrics::with_local_recorder(&recorder, || {
@@ -130,8 +132,8 @@ mod fixed_cardinality {
     #[divan::bench]
     fn prometheus_client(bencher: Bencher) {
         use prometheus_client::metrics::family::Family;
-        use prometheus_client::metrics::histogram::exponential_buckets;
         use prometheus_client::metrics::histogram::Histogram;
+        use prometheus_client::metrics::histogram::exponential_buckets;
         use prometheus_client::registry::Registry;
 
         let mut registry = <Registry>::default();
@@ -169,7 +171,7 @@ mod fixed_cardinality {
     fn get(rng: &mut impl Rng) -> (ErrorKind, &'static str, f64) {
         let route = rng.gen_range(0..routes().len());
         let error = rng.gen_range(0..errors().len());
-        (errors()[error], routes()[route], rng.gen())
+        (errors()[error], routes()[route], rng.r#gen())
     }
 
     fn routes() -> &'static [&'static str] {
@@ -263,14 +265,16 @@ mod no_cardinality {
 
         let h = recorder.handle();
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        std::thread::spawn(move || loop {
-            if rx
-                .recv_timeout(std::time::Duration::from_millis(200))
-                .is_ok()
-            {
-                return;
+        std::thread::spawn(move || {
+            loop {
+                if rx
+                    .recv_timeout(std::time::Duration::from_millis(200))
+                    .is_ok()
+                {
+                    return;
+                }
+                h.run_upkeep();
             }
-            h.run_upkeep();
         });
 
         let h = metrics::with_local_recorder(&recorder, || {
@@ -288,8 +292,8 @@ mod no_cardinality {
 
     #[divan::bench]
     fn prometheus_client(bencher: Bencher) {
-        use prometheus_client::metrics::histogram::exponential_buckets;
         use prometheus_client::metrics::histogram::Histogram;
+        use prometheus_client::metrics::histogram::exponential_buckets;
         use prometheus_client::registry::Registry;
 
         let mut registry = <Registry>::default();

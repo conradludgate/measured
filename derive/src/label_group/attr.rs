@@ -124,7 +124,7 @@ impl LabelGroupFieldAttrs {
         }
 
         let kind = kind.unwrap_or(LabelGroupFieldAttrsKind::Fixed);
-        let default = default.map_or(false, |()| true);
+        let default = default.is_some();
 
         // fixed implies default
         let default = default || matches!(kind, LabelGroupFieldAttrsKind::Fixed);

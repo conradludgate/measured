@@ -1,11 +1,12 @@
 [package]
 name = "measured-derive"
 version = "0.0.22"
-edition = "2021"
+edition = "2024"
 description = "A better way to measure your application statistics"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/conradludgate/measured"
+rust-version = "1.88"
 
 [lib]
 proc-macro = true

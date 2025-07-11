@@ -1,3 +1,5 @@
+#![allow(clippy::cast_precision_loss)]
+
 use std::io::Write;
 
 use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType::LengthDelimited};
@@ -98,7 +100,7 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
         name.encode_utf8(&mut self.buf)?;
 
         // optional string     help   = 2;
-        encoding::string::encode(2, help, &mut self.buf);
+        encoding::encode_str(2, help, &mut self.buf);
 
         self.state = State::Help;
 
@@ -110,25 +112,25 @@ struct LenVisitor {}
 impl LabelVisitor for LenVisitor {
     type Output = usize;
     fn write_int(self, x: i64) -> usize {
-        encoding::string::encoded_len(2, itoa::Buffer::new().format(x))
+        encoding::encoded_len_str(2, itoa::Buffer::new().format(x))
     }
 
     fn write_float(self, x: f64) -> usize {
         if x.is_infinite() {
             if x.is_sign_positive() {
-                encoding::string::encoded_len(2, "+Inf")
+                encoding::encoded_len_str(2, "+Inf")
             } else {
-                encoding::string::encoded_len(2, "-Inf")
+                encoding::encoded_len_str(2, "-Inf")
             }
         } else if x.is_nan() {
-            encoding::string::encoded_len(2, "NaN")
+            encoding::encoded_len_str(2, "NaN")
         } else {
-            encoding::string::encoded_len(2, ryu::Buffer::new().format(x))
+            encoding::encoded_len_str(2, ryu::Buffer::new().format(x))
         }
     }
 
     fn write_str(self, x: &str) -> usize {
-        encoding::string::encoded_len(2, x)
+        encoding::encoded_len_str(2, x)
     }
 }
 
@@ -140,7 +142,7 @@ impl LabelGroupVisitor for GroupLenVisitor {
     fn write_value(&mut self, name: &LabelName, x: &impl LabelValue) {
         let mut label_pair_len = 0;
 
-        label_pair_len += encoding::string::encoded_len(1, name.as_str());
+        label_pair_len += encoding::encoded_len_str(1, name.as_str());
         label_pair_len += x.visit(LenVisitor {});
 
         self.len += message_len(1, label_pair_len);
@@ -153,26 +155,26 @@ struct Visitor<'a> {
 impl LabelVisitor for Visitor<'_> {
     type Output = ();
     fn write_int(self, x: i64) {
-        self.write_str(itoa::Buffer::new().format(x))
+        self.write_str(itoa::Buffer::new().format(x));
     }
 
     fn write_float(self, x: f64) {
         if x.is_infinite() {
             if x.is_sign_positive() {
-                self.write_str("+Inf")
+                self.write_str("+Inf");
             } else {
-                self.write_str("-Inf")
+                self.write_str("-Inf");
             }
         } else if x.is_nan() {
-            self.write_str("NaN")
+            self.write_str("NaN");
         } else {
-            self.write_str(ryu::Buffer::new().format(x))
+            self.write_str(ryu::Buffer::new().format(x));
         }
     }
 
     fn write_str(self, x: &str) {
         // optional string value = 2;
-        encoding::string::encode(2, x, self.buf);
+        encoding::encode_str(2, x, self.buf);
     }
 }
 
@@ -203,13 +205,13 @@ impl LabelGroupVisitor for GroupVisitor<'_> {
     type Output = ();
     fn write_value(&mut self, name: &LabelName, x: &impl LabelValue) {
         let mut label_pair_len = 0;
-        label_pair_len += encoding::string::encoded_len(1, name.as_str());
+        label_pair_len += encoding::encoded_len_str(1, name.as_str());
         label_pair_len += x.visit(LenVisitor {});
 
         // repeated LabelPair label        = 1;
         encode_message(1, label_pair_len, self.buf, |buf| {
             // optional string name  = 1;
-            encoding::string::encode(1, name.as_str(), buf);
+            encoding::encode_str(1, name.as_str(), buf);
 
             x.visit(Visitor { buf });
         });
@@ -232,7 +234,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
 
         // optional MetricType type   = 3;
         // COUNTER = 0;
-        encoding::int32::encode(3, &0, &mut enc.buf);
+        encoding::encode_i32(3, 0, &mut enc.buf);
 
         Ok(())
     }
@@ -253,7 +255,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
         metric_len += label_pairs_len.len;
 
         let count = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
-        let count_len = encoding::double::encoded_len(1, &count);
+        let count_len = encoding::encoded_len_f64(1, count);
         metric_len += message_len(3, count_len);
 
         // repeated Metric     metric = 4;
@@ -263,7 +265,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
             // optional Counter   counter      = 3;
             encode_message(3, count_len, buf, |buf| {
                 // optional double   value    = 1;
-                encoding::double::encode(1, &count, buf);
+                encoding::encode_f64(1, count, buf);
             });
         });
 
@@ -287,7 +289,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
 
         // optional MetricType type   = 3;
         // GAUGE = 1;
-        encoding::int32::encode(3, &1, &mut enc.buf);
+        encoding::encode_i32(3, 1, &mut enc.buf);
 
         Ok(())
     }
@@ -308,7 +310,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
         metric_len += label_pairs_len.len;
 
         let gauge = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
-        let gauge_len = encoding::double::encoded_len(1, &gauge);
+        let gauge_len = encoding::encoded_len_f64(1, gauge);
         metric_len += message_len(3, gauge_len);
 
         // repeated Metric     metric = 4;
@@ -318,7 +320,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
             // optional Gauge   gauge      = 2;
             encode_message(2, gauge_len, buf, |buf| {
                 // optional double   value    = 1;
-                encoding::double::encode(1, &gauge, buf);
+                encoding::encode_f64(1, gauge, buf);
             });
         });
 
@@ -342,7 +344,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
 
         // optional MetricType type   = 3;
         // GAUGE = 1;
-        encoding::int32::encode(3, &1, &mut enc.buf);
+        encoding::encode_i32(3, 1, &mut enc.buf);
 
         Ok(())
     }
@@ -363,7 +365,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
         metric_len += label_pairs_len.len;
 
         let gauge = self.count.get();
-        let gauge_len = encoding::double::encoded_len(1, &gauge);
+        let gauge_len = encoding::encoded_len_f64(1, gauge);
         metric_len += message_len(3, gauge_len);
 
         // repeated Metric     metric = 4;
@@ -373,7 +375,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
             // optional Gauge   gauge      = 2;
             encode_message(2, gauge_len, buf, |buf| {
                 // optional double   value    = 1;
-                encoding::double::encode(1, &gauge, buf);
+                encoding::encode_f64(1, gauge, buf);
             });
         });
 

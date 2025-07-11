@@ -11,12 +11,12 @@ use memchr::memchr3_iter;
 use crate::{
     label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
+        MetricEncoding,
         counter::CounterState,
         gauge::{FloatGaugeState, GaugeState},
         group::{Encoding, MetricValue},
         histogram::{HistogramState, Thresholds},
         name::{Bucket, Count, MetricNameEncoder, Sum},
-        MetricEncoding,
     },
 };
 
@@ -342,14 +342,14 @@ impl Default for BufferedTextEncoder {
 }
 
 trait Unreachable<T> {
-    fn unreachable(self) -> Result<T, Infallible>;
+    fn unreachable(self) -> T;
 }
 
 impl<T, E: std::fmt::Debug> Unreachable<T> for Result<T, E> {
-    fn unreachable(self) -> Result<T, Infallible> {
+    fn unreachable(self) -> T {
         match self {
-            Ok(t) => Ok(t),
-            Err(e) => unreachable!("{e:?}"),
+            Ok(t) => t,
+            Err(e) => unreachable!("BytesMut should not error when writing: {e:?}"),
         }
     }
 }
@@ -359,7 +359,8 @@ impl Encoding for BufferedTextEncoder {
 
     /// Write the help line for a metric
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {
-        self.inner.write_help(name, help).unreachable()
+        self.inner.write_help(name, help).unreachable();
+        Ok(())
     }
 }
 
@@ -377,7 +378,7 @@ impl BufferedTextEncoder {
 
     /// Finish the text encoding and extract the bytes to send in a HTTP response.
     pub fn finish(&mut self) -> Bytes {
-        self.inner.flush().unreachable().unwrap();
+        self.inner.flush().unreachable();
         self.inner.writer.buf.split().freeze()
     }
 }
@@ -387,7 +388,8 @@ impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEnc
         name: impl MetricNameEncoder,
         enc: &mut BufferedTextEncoder,
     ) -> Result<(), Infallible> {
-        Self::write_type(name, &mut enc.inner).unreachable()
+        Self::write_type(name, &mut enc.inner).unreachable();
+        Ok(())
     }
     fn collect_into(
         &self,
@@ -397,7 +399,8 @@ impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEnc
         enc: &mut BufferedTextEncoder,
     ) -> Result<(), Infallible> {
         self.collect_into(metadata, labels, name, &mut enc.inner)
-            .unreachable()
+            .unreachable();
+        Ok(())
     }
 }
 
@@ -444,17 +447,17 @@ mod tests {
     use bytes::{BufMut, BytesMut};
 
     use crate::{
+        CounterVec, Histogram,
         label::StaticLabelSet,
         metric::{
+            MetricFamilyEncoding,
             group::Encoding,
             histogram::Thresholds,
             name::{MetricName, Total},
-            MetricFamilyEncoding,
         },
-        CounterVec, Histogram,
     };
 
-    use super::{write_label_str_value, BufferedTextEncoder};
+    use super::{BufferedTextEncoder, write_label_str_value};
 
     #[test]
     fn write_encoded_str() {

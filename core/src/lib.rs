@@ -2,14 +2,19 @@
 //!
 //! Getting started? See [`docs`]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation
+)]
 
 extern crate alloc;
 
 use metric::{
+    Metric, MetricVec,
     counter::CounterState,
     gauge::{FloatGaugeState, GaugeState},
     histogram::HistogramState,
-    Metric, MetricVec,
 };
 
 #[cfg(any(doc, test))]

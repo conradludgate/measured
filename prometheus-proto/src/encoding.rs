@@ -64,47 +64,37 @@ pub fn key_len(tag: u32) -> usize {
     encoded_len_varint(u64::from(tag << 3))
 }
 
-pub mod int32 {
-    use crate::encoding::*;
-    pub fn encode<B>(tag: u32, value: &i32, buf: &mut B)
-    where
-        B: BufMut,
-    {
-        encode_key(tag, WireType::Varint, buf);
-        encode_varint(*value as u64, buf);
-    }
+pub fn encode_i32<B>(tag: u32, value: i32, buf: &mut B)
+where
+    B: BufMut,
+{
+    encode_key(tag, WireType::Varint, buf);
+    encode_varint(value as u64, buf);
 }
 
-pub mod double {
-    use crate::encoding::*;
-    pub fn encode<B>(tag: u32, value: &f64, buf: &mut B)
-    where
-        B: BufMut,
-    {
-        encode_key(tag, WireType::SixtyFourBit, buf);
-        buf.put_f64_le(*value);
-    }
-
-    #[inline]
-    pub fn encoded_len(tag: u32, _: &f64) -> usize {
-        key_len(tag) + 8
-    }
+pub fn encode_f64<B>(tag: u32, value: f64, buf: &mut B)
+where
+    B: BufMut,
+{
+    encode_key(tag, WireType::SixtyFourBit, buf);
+    buf.put_f64_le(value);
 }
 
-pub mod string {
-    use super::*;
+#[inline]
+pub fn encoded_len_f64(tag: u32, _: f64) -> usize {
+    key_len(tag) + 8
+}
 
-    pub fn encode<B>(tag: u32, value: &str, buf: &mut B)
-    where
-        B: BufMut,
-    {
-        encode_key(tag, WireType::LengthDelimited, buf);
-        encode_varint(value.len() as u64, buf);
-        buf.put_slice(value.as_bytes());
-    }
+pub fn encode_str<B>(tag: u32, value: &str, buf: &mut B)
+where
+    B: BufMut,
+{
+    encode_key(tag, WireType::LengthDelimited, buf);
+    encode_varint(value.len() as u64, buf);
+    buf.put_slice(value.as_bytes());
+}
 
-    #[inline]
-    pub fn encoded_len(tag: u32, value: &str) -> usize {
-        key_len(tag) + encoded_len_varint(value.len() as u64) + value.len()
-    }
+#[inline]
+pub fn encoded_len_str(tag: u32, value: &str) -> usize {
+    key_len(tag) + encoded_len_varint(value.len() as u64) + value.len()
 }

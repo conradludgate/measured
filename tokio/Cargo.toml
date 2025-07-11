@@ -1,12 +1,13 @@
 [package]
 name = "measured-tokio"
 version = "0.0.23"
-edition = "2021"
+edition = "2024"
 description = "Tokio metrics for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/conradludgate/measured"
 readme = "README.md"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

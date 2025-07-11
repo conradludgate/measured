@@ -1,6 +1,6 @@
 use syn::{
-    parse::{Parse, ParseStream},
     Attribute, LitStr, Token,
+    parse::{Parse, ParseStream},
 };
 
 use crate::Krate;

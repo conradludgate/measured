@@ -1,10 +1,10 @@
-use syn::{spanned::Spanned, Data, DeriveInput, Fields, Lit, Variant};
+use syn::{Data, DeriveInput, Fields, Lit, Variant, spanned::Spanned};
 
 use crate::Krate;
 
 use super::{
-    attr::{ContainerAttrs, VariantAttrs},
     FixedCardinalityLabel, FixedCardinalityLabelVariant,
+    attr::{ContainerAttrs, VariantAttrs},
 };
 
 impl TryFrom<Variant> for FixedCardinalityLabelVariant {
@@ -15,7 +15,7 @@ impl TryFrom<Variant> for FixedCardinalityLabelVariant {
 
         match input.fields {
             Fields::Named(_) | Fields::Unnamed(_) => {
-                return Err(syn::Error::new(span, "variants with values not supported"))
+                return Err(syn::Error::new(span, "variants with values not supported"));
             }
             Fields::Unit => {}
         }

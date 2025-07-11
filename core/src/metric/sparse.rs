@@ -86,7 +86,7 @@ impl<M: MetricType, U: Hash + Eq + Copy> ShardedMap<U, M> {
         let mut shard = shard.write();
         let entry = shard.find_entry(id.hash, |(k, _)| *k == id.id);
         match entry {
-            Ok(x) => Some(x.remove().0 .1),
+            Ok(x) => Some(x.remove().0.1),
             Err(_) => None,
         }
     }

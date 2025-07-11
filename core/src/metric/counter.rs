@@ -2,11 +2,11 @@
 
 use core::sync::atomic::AtomicU64;
 
-use crate::{label::LabelGroupSet, Counter, CounterVec, LabelGroup};
+use crate::{Counter, CounterVec, LabelGroup, label::LabelGroupSet};
 
 use super::{
-    group::Encoding, name::MetricNameEncoder, MetricEncoding, MetricLockGuard, MetricMut,
-    MetricType,
+    MetricEncoding, MetricLockGuard, MetricMut, MetricType, group::Encoding,
+    name::MetricNameEncoder,
 };
 
 #[derive(Default)]

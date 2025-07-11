@@ -100,12 +100,12 @@ impl MetricName {
     /// # Panics
     /// Will panic if the string contains invalid characters
     #[must_use]
-    pub const fn from_str(value: &'static str) -> &Self {
+    pub const fn from_str(value: &'static str) -> &'static Self {
         const_assert_metric_name(value);
 
         // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
-        unsafe { &*(value as *const str as *const MetricName) }
+        unsafe { &*(std::ptr::from_ref(value) as *const MetricName) }
     }
 
     /// Construct a [`MetricName`] from a string
@@ -117,7 +117,7 @@ impl MetricName {
 
         // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
         // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
-        Ok(unsafe { &*(value as *const str as *const MetricName) })
+        Ok(unsafe { &*(std::ptr::from_ref(value) as *const MetricName) })
     }
 
     /// Add a namespace prefix to this metric name.

@@ -1,5 +1,5 @@
-use divan::black_box;
 use divan::Bencher;
+use divan::black_box;
 use lasso::{Spur, ThreadedRodeo};
 use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, LabelGroup, MetricGroup};

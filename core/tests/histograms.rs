@@ -1,4 +1,4 @@
-use measured::metric::{group::Encoding, histogram::Thresholds, MetricFamilyEncoding};
+use measured::metric::{MetricFamilyEncoding, group::Encoding, histogram::Thresholds};
 use prometheus::exponential_buckets;
 
 #[test]
@@ -118,7 +118,7 @@ http_request_errors_count 17
 #[test]
 fn prometheus_client() {
     use prometheus_client::encoding::text::encode;
-    use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
+    use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
     use prometheus_client::registry::Registry;
 
     let mut registry = Registry::default();

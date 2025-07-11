@@ -29,15 +29,15 @@
 use std::{borrow::Cow, sync::RwLock};
 
 use measured::{
+    FixedCardinalityLabel, LabelGroup, MetricGroup,
     label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels},
     metric::{
+        MetricEncoding,
         counter::CounterState,
         gauge::{FloatGaugeState, GaugeState},
         group::Encoding,
         name::MetricName,
-        MetricEncoding,
     },
-    FixedCardinalityLabel, LabelGroup, MetricGroup,
 };
 use tokio::runtime::RuntimeMetrics;
 

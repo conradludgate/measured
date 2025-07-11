@@ -1,4 +1,4 @@
-use syn::{spanned::Spanned, Data, DeriveInput, Field, Fields};
+use syn::{Data, DeriveInput, Field, Fields, spanned::Spanned};
 
 use crate::Krate;
 
@@ -48,7 +48,7 @@ impl TryFrom<DeriveInput> for LabelGroup {
                     .map(LabelGroupField::try_from)
                     .collect::<Result<Vec<_>, syn::Error>>()?,
                 Fields::Unnamed(_) => {
-                    return Err(syn::Error::new(span, "tuple structs not supported"))
+                    return Err(syn::Error::new(span, "tuple structs not supported"));
                 }
                 Fields::Unit => return Err(syn::Error::new(span, "unit structs not supported")),
             },

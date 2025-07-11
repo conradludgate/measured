@@ -1,11 +1,11 @@
 use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, quote_spanned, ToTokens};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{parse_quote, parse_quote_spanned};
 
 use super::{
-    attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind},
     MetricGroup, MetricGroupField,
+    attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind},
 };
 
 impl ToTokens for MetricGroup {
@@ -100,12 +100,11 @@ impl ToTokens for MetricGroup {
                 match &attrs.init {
                     Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: #init,),
                     Some(MetricGroupFieldAttrsInit::Metric { metadata, label_set }) => {
-                        let default: syn::Expr = parse_quote!{::core::default::Default::default()};
-                        let metadata = metadata.as_ref().unwrap_or(&default);
-                        if let Some(ls) = label_set {
-                            quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #metadata),)
-                        } else {
-                            quote_spanned!(x.span => #name: <#ty>::with_metadata(#metadata),)
+                        match (label_set, metadata) {
+                            (Some(ls), Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #meta),),
+                            (Some(ls), None) => quote_spanned!(x.span => #name: <#ty>::with_label_set(#ls),),
+                            (None, Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_metadata(#meta),),
+                            (None, None) => quote_spanned!(x.span => #name: <#ty>::new(),),
                         }
                     }
                     None => quote_spanned!(x.span => #name: <#ty as ::core::default::Default>::default(),),

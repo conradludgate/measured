@@ -7,8 +7,8 @@ use std::{
 
 use parking_lot::RwLock;
 
-use super::{gauge::AtomicF64, MetricLockGuard, MetricMut, MetricType};
-use crate::{label::LabelGroupSet, Histogram, HistogramVec};
+use super::{MetricLockGuard, MetricMut, MetricType, gauge::AtomicF64};
+use crate::{Histogram, HistogramVec, label::LabelGroupSet};
 
 /// The inner state of a histogram.
 ///
@@ -249,7 +249,7 @@ pub struct HistogramVecTimer<'a, L: LabelGroupSet, const N: usize> {
     start: std::time::Instant,
 }
 
-impl<'a, L: LabelGroupSet, const N: usize> HistogramVecTimer<'a, L, N> {
+impl<L: LabelGroupSet, const N: usize> HistogramVecTimer<'_, L, N> {
     /// Discard the timer, do not observe the duration.
     pub fn forget(mut self) {
         self.vec = None;

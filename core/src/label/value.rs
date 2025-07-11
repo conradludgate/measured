@@ -196,6 +196,8 @@ pub trait LabelSet {
 
 #[cfg(test)]
 mod tests {
+    #![allow(dead_code)]
+
     use measured_derive::MetricGroup;
 
     use crate::CounterVec;

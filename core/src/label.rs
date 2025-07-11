@@ -15,7 +15,7 @@ pub use value::{
 
 #[cfg(all(test, feature = "lasso"))]
 mod tests {
-    use fake::{faker::name::raw::Name, locales::EN, Fake};
+    use fake::{Fake, faker::name::raw::Name, locales::EN};
     use lasso::{Rodeo, RodeoReader, ThreadedRodeo};
 
     use super::LabelGroupSet;

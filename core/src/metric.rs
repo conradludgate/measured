@@ -381,7 +381,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     ///
     /// # Panics
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
-    pub fn get_metric_mut(&mut self, id: LabelId<L>) -> MetricMut<M> {
+    pub fn get_metric_mut(&mut self, id: LabelId<L>) -> MetricMut<'_, M> {
         MetricMut(self.metrics.get_metric_mut(id.0), &self.metadata)
     }
 
@@ -459,7 +459,7 @@ impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T
                 }
             }
             VecInner::Sparse(m) => {
-                for shard in m.shards.iter() {
+                for shard in &m.shards {
                     for (k, v) in shard.read().iter() {
                         v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc)?;
                     }
@@ -576,7 +576,7 @@ mod tests {
     #[cfg(feature = "lasso")]
     #[test]
     fn dynamic_labels() {
-        use fake::{faker::name::raw::Name, locales::EN, Fake};
+        use fake::{Fake, faker::name::raw::Name, locales::EN};
 
         use crate::GaugeVec;
 

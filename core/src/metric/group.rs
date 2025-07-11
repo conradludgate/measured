@@ -5,8 +5,8 @@ use std::sync::Arc;
 pub use crate::label::ComposedGroup;
 
 use super::{
-    name::{MetricNameEncoder, WithNamespace},
     MetricEncoding,
+    name::{MetricNameEncoder, WithNamespace},
 };
 
 /// Values that prometheus supports in the text format
@@ -153,8 +153,8 @@ mod tests {
     use prometheus_client::encoding::EncodeLabelValue;
 
     use crate::{
-        metric::histogram::Thresholds, text::BufferedTextEncoder, Counter, CounterVec, Gauge,
-        Histogram,
+        Counter, CounterVec, Gauge, Histogram, metric::histogram::Thresholds,
+        text::BufferedTextEncoder,
     };
 
     use super::MetricGroup;
