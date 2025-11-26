@@ -156,6 +156,15 @@ impl<M: MetricType> Metric<M> {
     }
 }
 
+impl super::Counter {
+    pub const fn const_new() -> Self {
+        Self {
+            metric: counter::CounterState::new(0),
+            metadata: (),
+        }
+    }
+}
+
 fn new_dense<M: MetricType>(c: usize) -> Box<[CachePadded<OnceLock<M>>]> {
     let mut vec = Vec::with_capacity(c);
     vec.resize_with(c, CachePadded::<OnceLock<M>>::default);

@@ -21,7 +21,7 @@ pub type CounterLockGuard<'a> = MetricLockGuard<'a, CounterState>;
 pub type CounterMut<'a> = MetricMut<'a, CounterState>;
 
 impl CounterState {
-    pub fn new(value: u64) -> Self {
+    pub const fn new(value: u64) -> Self {
         Self {
             count: AtomicU64::new(value),
         }
