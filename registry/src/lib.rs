@@ -24,7 +24,7 @@ impl<M: MetricFamilyEncoding<BufferedTextEncoder>> MetricEncoding for M {
 
 pub struct Metric {
     name: &'static MetricName,
-    description: &'static str,
+    description: Option<&'static str>,
     metric: &'static dyn MetricEncoding,
 }
 
@@ -33,17 +33,21 @@ inventory::collect!(Metric);
 #[macro_export]
 macro_rules! metric {
     ($(
-        #[doc = $doc:literal]
+        $(#[doc = $doc:literal])?
         $vis:vis static $name:ident: $ty:ty = $value:expr;
     )*) => {
         $(
-            #[doc = $doc]
+            $(#[doc = $doc])?
             #[allow(non_upper_case_globals)]
             $vis static $name: $ty = $value;
 
             $crate::__private::submit!($crate::Metric {
                 name: $crate::__private::MetricName::from_str(stringify!($name)),
-                description: $doc.trim(),
+                description: 'desc: {
+                    $(break 'desc Some($doc.trim());)?
+                    #[allow(unreachable_code)]
+                    None
+                },
                 metric: &$name,
             });
         )*
@@ -55,7 +59,9 @@ pub struct GlobalRegistry;
 impl MetricGroup<BufferedTextEncoder> for GlobalRegistry {
     fn collect_group_into(&self, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
         for metric in inventory::iter::<Metric> {
-            enc.write_help(metric.name, metric.description)?;
+            if let Some(desc) = metric.description {
+                enc.write_help(metric.name, desc)?;
+            }
             metric.metric.collect_family_into(metric.name, enc);
         }
         Ok(())
