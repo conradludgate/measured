@@ -50,7 +50,8 @@ macro_rules! metric {
     };
 }
 
-pub struct GlobalRegistry;
+#[derive(Default, Clone)]
+pub struct GlobalRegistry(());
 
 impl MetricGroup<BufferedTextEncoder> for GlobalRegistry {
     fn collect_group_into(&self, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
@@ -80,6 +81,13 @@ mod tests {
         pub static http_errors: measured::Counter = measured::Counter::const_new();
     );
 
+    #[derive(MetricGroup)]
+    #[metric(new())]
+    struct MyMetrics {
+        #[metric(flatten)]
+        global: GlobalRegistry,
+    }
+
     #[test]
     fn test_http_requests() {
         http_requests.inc();
@@ -96,7 +104,7 @@ mod tests {
 
     fn encode() -> Bytes {
         let mut text_encoder = BufferedTextEncoder::new();
-        let Ok(()) = GlobalRegistry.collect_group_into(&mut text_encoder);
+        let Ok(()) = MyMetrics::new().collect_group_into(&mut text_encoder);
         text_encoder.finish()
     }
 
