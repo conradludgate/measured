@@ -33,7 +33,7 @@ inventory::collect!(Metric);
 #[macro_export]
 macro_rules! metric {
     ($(
-        $(#[doc = $doc:literal])?
+        $(#[doc = $doc:expr])?
         $vis:vis static $name:ident: $ty:ty = $value:expr;
     )*) => {
         $(
@@ -43,11 +43,7 @@ macro_rules! metric {
 
             $crate::__private::submit!($crate::Metric {
                 name: $crate::__private::MetricName::from_str(stringify!($name)),
-                description: 'desc: {
-                    $(break 'desc Some($doc.trim());)?
-                    #[allow(unreachable_code)]
-                    None
-                },
+                description: ($(Some($doc.trim()),)? None::<&'static str>,).0,
                 metric: &$name,
             });
         )*
