@@ -87,11 +87,24 @@ mod tests {
     #[test]
     fn test_http_requests() {
         http_requests.inc();
+        http_requests.inc();
+        http_errors.inc();
 
+        let metrics = encode();
+
+        check_sections(metrics, &[
+            b"# HELP http_errors The number of HTTP errors\n# TYPE http_errors counter\nhttp_errors 1\n",
+            b"# HELP http_requests The number of HTTP requests\n# TYPE http_requests counter\nhttp_requests 2\n",
+        ]);
+    }
+
+    fn encode() -> Bytes {
         let mut text_encoder = BufferedTextEncoder::new();
         let Ok(()) = GlobalRegistry.collect_group_into(&mut text_encoder);
-        let mut bytes = text_encoder.finish();
+        text_encoder.finish()
+    }
 
+    fn check_sections(mut bytes: Bytes, expected: &[&'static [u8]]) {
         let mut sections = Vec::new();
         while let Some(pos) = bytes.find(b"\n\n") {
             sections.push(bytes.split_to(pos + 1));
@@ -99,17 +112,10 @@ mod tests {
         }
         sections.push(bytes);
 
-        let expected_errors = Bytes::from_static(b"# HELP http_errors The number of HTTP errors\n# TYPE http_errors counter\nhttp_errors 0\n");
-        let expected_requests = Bytes::from_static(b"# HELP http_requests The number of HTTP requests\n# TYPE http_requests counter\nhttp_requests 1\n");
-
-        assert_eq!(sections.len(), 2);
-        assert!(
-            sections.contains(&expected_errors),
-            "sections: {sections:?}",
-        );
-        assert!(
-            sections.contains(&expected_requests),
-            "sections: {sections:?}",
-        );
+        assert_eq!(sections.len(), expected.len());
+        for e in expected {
+            let e = Bytes::from_static(e);
+            assert!(sections.contains(&e), "sections: {sections:?}");
+        }
     }
 }
