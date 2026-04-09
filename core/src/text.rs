@@ -51,6 +51,8 @@ pub enum MetricType {
 impl<W: Write> Encoding for TextEncoder<W> {
     type Err = std::io::Error;
 
+    const MIME_TYPE: &'static str = "text/plain; version=0.0.4";
+
     /// Write the help line for a metric
     fn write_help(
         &mut self,
@@ -356,6 +358,8 @@ impl<T, E: std::fmt::Debug> Unreachable<T> for Result<T, E> {
 
 impl Encoding for BufferedTextEncoder {
     type Err = Infallible;
+
+    const MIME_TYPE: &'static str = TextEncoder::<BytesWriter>::MIME_TYPE;
 
     /// Write the help line for a metric
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {

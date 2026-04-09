@@ -86,6 +86,8 @@ pub enum MetricType {
 impl<W: Write> Encoding for ProtoEncoder<W> {
     type Err = std::io::Error;
 
+    const MIME_TYPE: &'static str = "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited";
+
     /// Write the help line for a metric
     fn write_help(
         &mut self,

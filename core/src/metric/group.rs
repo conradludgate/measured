@@ -21,12 +21,19 @@ pub trait Encoding {
     /// The error type that this type might produce when encoding metric values.
     type Err;
 
+    /// The prometheus Content-Type that this Encoding exports as
+    /// https://prometheus.io/docs/instrumenting/content_negotiation/#protocol-headers
+    const MIME_TYPE: &'static str;
+
     /// Write the help text for a metric
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err>;
 }
 
 impl<E: Encoding> Encoding for &mut E {
     type Err = E::Err;
+
+    const MIME_TYPE: &'static str = E::MIME_TYPE;
+
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
         E::write_help(self, name, help)
     }
@@ -91,6 +98,9 @@ impl<M: MetricGroup<T>, T: Encoding> MetricGroup<T> for Arc<M> {
 
 impl<E: Encoding> Encoding for WithNamespace<E> {
     type Err = E::Err;
+
+    const MIME_TYPE: &'static str = E::MIME_TYPE;
+
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
         self.inner.write_help(
             WithNamespace {
