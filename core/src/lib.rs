@@ -24,6 +24,10 @@ pub mod label;
 pub mod metric;
 pub mod text;
 
+/// Reexport of lasso when feature is enabled
+#[cfg(feature = "lasso")]
+pub use lasso;
+
 /// Implement [`FixedCardinalityLabel`] on an `enum`
 ///
 /// # Container attributes
@@ -173,7 +177,7 @@ pub use label::FixedCardinalityLabel;
 /// # Example
 ///
 /// ```
-/// use lasso::{RodeoReader, ThreadedRodeo};
+/// use measured::lasso::{RodeoReader, ThreadedRodeo};
 ///
 /// #[derive(measured::LabelGroup)]
 /// #[label(set = ResponseSet)]
@@ -197,7 +201,7 @@ pub use label::FixedCardinalityLabel;
 /// }
 ///
 /// let set = ResponseSet::new(
-///     ["/foo/bar", "/home"].into_iter().collect::<lasso::Rodeo>().into_reader(),
+///     ["/foo/bar", "/home"].into_iter().collect::<measured::lasso::Rodeo>().into_reader(),
 /// );
 ///
 /// use measured::label::LabelGroupSet as _;

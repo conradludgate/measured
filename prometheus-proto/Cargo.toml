@@ -24,7 +24,6 @@ prometheus = { version = "0.14.0", default-features = false, features = ["protob
 prometheus-client = { version = "0.24.0", features = ["protobuf"] }
 rand = { version = "0.8", features = ["small_rng"] }
 ahash = "0.8"
-lasso = { version = "0.7", features = ["multi-threaded"] }
 
 [[bench]]
 name = "encoding"

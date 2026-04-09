@@ -1,6 +1,6 @@
 use divan::black_box;
 use divan::Bencher;
-use lasso::{Spur, ThreadedRodeo};
+use measured::lasso::{Spur, ThreadedRodeo};
 use measured::{CounterVec, LabelGroup, MetricGroup};
 use measured_prometheus_protobuf::ProtoEncoder;
 use prometheus::Encoder;
