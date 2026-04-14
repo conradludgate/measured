@@ -709,7 +709,6 @@ dependencies = [
  "divan",
  "fake 2.9.2",
  "itoa",
- "lasso",
  "measured",
  "prometheus",
  "prometheus-client",
