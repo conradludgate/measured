@@ -1,6 +1,6 @@
 [package]
 name = "measured"
-version = "0.0.24"
+version = "0.0.25"
 edition = "2024"
 description = "A better way to measure your application statistics"
 authors = ["Conrad Ludgate <conradludgate@gmail.com"]
@@ -29,7 +29,7 @@ parking_lot = "0.12"
 crossbeam-utils = "0.8.0"
 serde = "1"
 
-measured-derive = { path = "../derive", version = "0.0.24" }
+measured-derive = { path = "../derive", version = "0.0.25" }
 
 indexmap = { version = "2", optional = true }
 lasso = { version = "0.7", optional = true, features = ["multi-threaded"] }
