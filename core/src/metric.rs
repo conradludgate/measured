@@ -4,7 +4,7 @@ use core::hash::Hash;
 use std::{
     hash::BuildHasher,
     ops::{Deref, DerefMut},
-    sync::OnceLock,
+    sync::{LazyLock, OnceLock},
 };
 
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
@@ -153,6 +153,15 @@ impl<M: MetricType> Metric<M> {
     /// Get a mut ref to the metric
     pub fn get_metric_mut(&mut self) -> MetricMut<'_, M> {
         MetricMut(&mut self.metric, &self.metadata)
+    }
+}
+
+impl super::Counter {
+    pub const fn const_new() -> Self {
+        Self {
+            metric: counter::CounterState::new(0),
+            metadata: (),
+        }
     }
 }
 
@@ -427,6 +436,24 @@ impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Option
         if let Some(this) = self {
             this.collect_family_into(name, enc)?;
         }
+        Ok(())
+    }
+}
+
+impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for OnceLock<M> {
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
+        if let Some(this) = self.get() {
+            this.collect_family_into(name, enc)?;
+        }
+        Ok(())
+    }
+}
+
+impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for LazyLock<M> {
+    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
+        // fixme: use LazyLock::get when stable
+        LazyLock::force(self).collect_family_into(name, enc)?;
+
         Ok(())
     }
 }

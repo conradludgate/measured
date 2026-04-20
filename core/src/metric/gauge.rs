@@ -16,7 +16,7 @@ pub struct GaugeState {
 }
 
 impl GaugeState {
-    pub fn new(value: i64) -> Self {
+    pub const fn new(value: i64) -> Self {
         Self {
             count: AtomicI64::new(value),
         }
@@ -168,7 +168,7 @@ pub struct FloatGaugeState {
 }
 
 impl FloatGaugeState {
-    pub fn new(value: f64) -> Self {
+    pub const fn new(value: f64) -> Self {
         Self {
             count: AtomicF64::new(value),
         }
@@ -310,7 +310,7 @@ impl AtomicF64 {
         inner: AtomicU64::new(0),
     };
 
-    pub fn new(val: f64) -> AtomicF64 {
+    pub const fn new(val: f64) -> AtomicF64 {
         AtomicF64 {
             inner: AtomicU64::new(val.to_bits()),
         }
