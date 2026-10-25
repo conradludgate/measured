@@ -1,7 +1,7 @@
 //! All things histograms. See [`Histogram`]
 
 use std::{
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicI64, AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -14,7 +14,7 @@ use super::{
     name::MetricNameEncoder,
 };
 use crate::{
-    Histogram, HistogramVec,
+    GaugeHistogram, GaugeHistogramVec, Histogram, HistogramVec,
     label::{LabelGroup, LabelGroupSet},
 };
 
@@ -425,6 +425,170 @@ impl<const N: usize> MetricEncoding for HistogramState<N> {
             sample.inf,
             sample.sum,
             HistogramExtras::NONE,
+        )
+    }
+}
+
+/// The state of a gauge histogram, a distribution of values that can be added and removed.
+///
+/// For instance, the ages of items currently in a queue: an item is observed when it is added,
+/// and removed when it leaves the queue.
+pub struct GaugeHistogramState<const N: usize> {
+    /// The read lock is acquired for observations. The write lock is acquired for sampling.
+    inner: RwLock<GaugeHistogramStateInner<N>>,
+}
+
+struct GaugeHistogramStateInner<const N: usize> {
+    buckets: [AtomicI64; N],
+    inf: AtomicI64,
+    sum: AtomicF64,
+}
+
+impl<const N: usize> Default for GaugeHistogramState<N> {
+    fn default() -> Self {
+        Self {
+            inner: RwLock::new(GaugeHistogramStateInner {
+                buckets: core::array::from_fn(|_| AtomicI64::new(0)),
+                inf: AtomicI64::new(0),
+                sum: AtomicF64::ZERO,
+            }),
+        }
+    }
+}
+
+impl<const N: usize> MetricType for GaugeHistogramState<N> {
+    type Metadata = Thresholds<N>;
+}
+
+/// A consistent snapshot of the state of a gauge histogram. See [`GaugeHistogramState::sample`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct GaugeHistogramSample<const N: usize> {
+    /// The number of values in each bucket described by [`Thresholds`]. These are *not* cumulative.
+    pub buckets: [i64; N],
+    /// The number of values greater than all of the [`Thresholds`], including NaN.
+    pub inf: i64,
+    /// The sum of all values.
+    pub sum: f64,
+}
+
+impl<const N: usize> Default for GaugeHistogramSample<N> {
+    fn default() -> Self {
+        Self {
+            buckets: [0; N],
+            inf: 0,
+            sum: 0.0,
+        }
+    }
+}
+
+impl<const N: usize> GaugeHistogramSample<N> {
+    /// The total number of values.
+    pub fn count(&self) -> i64 {
+        self.buckets.iter().sum::<i64>() + self.inf
+    }
+}
+
+impl<const N: usize> GaugeHistogramState<N> {
+    /// Take a consistent snapshot of the gauge histogram.
+    ///
+    /// This briefly takes the write lock, so it blocks concurrent observations
+    /// until the snapshot is taken.
+    pub fn sample(&self) -> GaugeHistogramSample<N> {
+        let mut inner = self.inner.write();
+        GaugeHistogramSample {
+            buckets: core::array::from_fn(|i| *inner.buckets[i].get_mut()),
+            inf: *inner.inf.get_mut(),
+            sum: inner.sum.get_ex(),
+        }
+    }
+
+    fn add(&self, thresholds: &Thresholds<N>, x: f64, n: i64) {
+        let inner = self.inner.read();
+        let bucket = thresholds.bucket(x);
+        if bucket < N {
+            inner.buckets[bucket].fetch_add(n, Ordering::Relaxed);
+        } else {
+            inner.inf.fetch_add(n, Ordering::Relaxed);
+        }
+        inner.sum.inc_by(x * n as f64);
+    }
+}
+
+/// A shared ref to an individual gauge histogram
+pub type GaugeHistogramLockGuard<'a, const N: usize> = MetricLockGuard<'a, GaugeHistogramState<N>>;
+
+impl<const N: usize> GaugeHistogramLockGuard<'_, N> {
+    /// Add a value to the gauge histogram
+    pub fn observe(self, x: f64) {
+        self.add(self.metadata(), x, 1);
+    }
+
+    /// Remove a value that was previously added with [`observe`](Self::observe)
+    pub fn remove(self, x: f64) {
+        self.add(self.metadata(), x, -1);
+    }
+}
+
+impl<const N: usize> GaugeHistogram<N> {
+    /// Add a value to the gauge histogram
+    pub fn observe(&self, x: f64) {
+        self.get_metric().observe(x);
+    }
+
+    /// Remove a value that was previously added with [`observe`](Self::observe)
+    pub fn remove(&self, x: f64) {
+        self.get_metric().remove(x);
+    }
+
+    /// Take a consistent snapshot of the gauge histogram.
+    pub fn sample(&self) -> GaugeHistogramSample<N> {
+        self.get_metric().sample()
+    }
+}
+
+impl<L: LabelGroupSet, const N: usize> GaugeHistogramVec<L, N> {
+    /// Add a value to the gauge histogram, keyed by the label group
+    pub fn observe(&self, label: L::Group<'_>, x: f64) {
+        self.get_metric(self.with_labels(label)).observe(x);
+    }
+
+    /// Remove a value that was previously added with [`observe`](Self::observe), keyed by the label group
+    pub fn remove(&self, label: L::Group<'_>, x: f64) {
+        self.get_metric(self.with_labels(label)).remove(x);
+    }
+
+    /// Take a consistent snapshot of the gauge histogram for the label group.
+    /// Returns an empty sample if the gauge histogram has not been used yet.
+    ///
+    /// This does not create a new gauge histogram for the label group.
+    ///
+    /// # Panics
+    /// Panics if the label group is not contained within the label set.
+    pub fn sample(&self, label: L::Group<'_>) -> GaugeHistogramSample<N> {
+        self.find_metric(self.with_labels(label))
+            .map_or(GaugeHistogramSample::default(), |m| m.sample())
+    }
+}
+
+impl<const N: usize> MetricEncoding for GaugeHistogramState<N> {
+    const KIND: MetricKind = MetricKind::GaugeHistogram;
+
+    fn collect_into<E: Encoding>(
+        &self,
+        metadata: &Thresholds<N>,
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        let sample = self.sample();
+        enc.write_gauge_histogram(
+            name,
+            labels,
+            metadata.get(),
+            &sample.buckets,
+            sample.inf,
+            sample.sum,
         )
     }
 }

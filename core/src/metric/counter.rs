@@ -2,10 +2,11 @@
 
 use core::sync::atomic::AtomicU64;
 
-use crate::{Counter, CounterVec, LabelGroup, label::LabelGroupSet};
+use crate::{Counter, CounterVec, FloatCounter, FloatCounterVec, LabelGroup, label::LabelGroupSet};
 
 use super::{
     MetricEncoding, MetricLockGuard, MetricMut, MetricType,
+    gauge::AtomicF64,
     group::{Encoding, MetricKind, SampleExtras},
     name::MetricNameEncoder,
 };
@@ -83,10 +84,7 @@ impl<L: LabelGroupSet> CounterVec<L> {
 
     /// Get the counter value for the label group. Returns 0 if the counter has not been used yet.
     ///
-    /// This does not create a new counter for the label group.
-    ///
-    /// # Panics
-    /// Panics if the label group is not contained within the label set.
+    /// This does not create a new counter for the label group, or add its values to dynamic label sets.
     pub fn get(&self, label: L::Group<'_>) -> u64 {
         self.find_metric(self.with_labels(label))
             .map_or(0, |m| m.get())
@@ -136,5 +134,139 @@ impl MetricEncoding for CounterState {
         enc: &mut E,
     ) -> Result<(), E::Err> {
         enc.write_counter(name, labels, self.get(), SampleExtras::NONE)
+    }
+}
+
+#[derive(Default)]
+/// The internal state that is used by [`FloatCounter`] and [`FloatCounterVec`]
+pub struct FloatCounterState {
+    count: AtomicF64,
+}
+
+/// A reference to a specific float counter.
+pub type FloatCounterLockGuard<'a> = MetricLockGuard<'a, FloatCounterState>;
+/// A mut reference to a specific float counter.
+pub type FloatCounterMut<'a> = MetricMut<'a, FloatCounterState>;
+
+impl FloatCounterState {
+    /// Create a new float counter state with the given initial value
+    pub fn new(value: f64) -> Self {
+        Self {
+            count: AtomicF64::new(value),
+        }
+    }
+
+    /// Get the current counter value
+    pub fn get(&self) -> f64 {
+        self.count.get()
+    }
+
+    /// Increment the counter value by 1
+    pub fn inc(&self) {
+        self.inc_by(1.0);
+    }
+
+    /// Increment the counter value by `x`.
+    ///
+    /// Counters cannot decrease, so negative and NaN values are ignored. They panic in debug builds.
+    pub fn inc_by(&self, x: f64) {
+        debug_assert!(x >= 0.0, "counters should not decrease: {x}");
+        if x >= 0.0 {
+            self.count.inc_by(x);
+        }
+    }
+}
+
+impl FloatCounterMut<'_> {
+    /// Increment the counter value by 1
+    pub fn inc(self) {
+        self.inc_by(1.0);
+    }
+
+    /// Increment the counter value by `x`.
+    ///
+    /// Counters cannot decrease, so negative and NaN values are ignored. They panic in debug builds.
+    pub fn inc_by(mut self, x: f64) {
+        debug_assert!(x >= 0.0, "counters should not decrease: {x}");
+        if x >= 0.0 {
+            let count = self.count.get_ex() + x;
+            self.count.set_mut(count);
+        }
+    }
+}
+
+impl<L: LabelGroupSet> FloatCounterVec<L> {
+    /// Increment the counter value by 1, keyed by the label group
+    pub fn inc(&self, label: L::Group<'_>) {
+        self.get_metric(self.with_labels(label)).inc();
+    }
+
+    /// Increment the counter value by `y`, keyed by the label group
+    pub fn inc_by(&self, label: L::Group<'_>, y: f64) {
+        self.get_metric(self.with_labels(label)).inc_by(y);
+    }
+
+    /// Increment the counter value by 1, keyed by the label group
+    pub fn inc_mut(&mut self, label: L::Group<'_>) {
+        self.get_metric_mut(self.with_labels(label)).inc()
+    }
+
+    /// Increment the counter value by `y`, keyed by the label group
+    pub fn inc_by_mut(&mut self, label: L::Group<'_>, y: f64) {
+        self.get_metric_mut(self.with_labels(label)).inc_by(y)
+    }
+
+    /// Get the counter value for the label group. Returns 0 if the counter has not been used yet.
+    ///
+    /// This does not create a new counter for the label group, or add its values to dynamic label sets.
+    pub fn get(&self, label: L::Group<'_>) -> f64 {
+        self.find_metric(self.with_labels(label))
+            .map_or(0.0, |m| m.get())
+    }
+}
+
+impl FloatCounter {
+    /// Increment the counter value by 1
+    pub fn inc(&self) {
+        self.get_metric().inc()
+    }
+
+    /// Increment the counter value by `x`
+    pub fn inc_by(&self, x: f64) {
+        self.get_metric().inc_by(x)
+    }
+
+    /// Increment the counter value by 1
+    pub fn inc_mut(&mut self) {
+        self.get_metric_mut().inc()
+    }
+
+    /// Increment the counter value by `x`
+    pub fn inc_by_mut(&mut self, x: f64) {
+        self.get_metric_mut().inc_by(x)
+    }
+
+    /// Get the current counter value
+    pub fn get(&self) -> f64 {
+        self.get_metric().get()
+    }
+}
+
+impl MetricType for FloatCounterState {
+    /// [`FloatCounter`]s require no additional metadata
+    type Metadata = ();
+}
+
+impl MetricEncoding for FloatCounterState {
+    const KIND: MetricKind = MetricKind::Counter;
+
+    fn collect_into<E: Encoding>(
+        &self,
+        _: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_float_counter(name, labels, self.get(), SampleExtras::NONE)
     }
 }
