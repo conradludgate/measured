@@ -200,11 +200,11 @@ impl<W: Write, const OPEN_METRICS: bool> Inner<W, OPEN_METRICS> {
         impl<W: Write> LabelVisitor for Visitor<'_, W> {
             type Output = Result<(), std::io::Error>;
             fn write_int(self, x: i64) -> Result<(), std::io::Error> {
-                self.write_str(itoa::Buffer::new().format(x))
+                self.write_str(x.format_into(&mut core::fmt::NumBuffer::new()))
             }
 
             fn write_float(self, x: f64) -> Result<(), std::io::Error> {
-                self.write_str(format_float(&mut ryu::Buffer::new(), x))
+                self.write_str(format_float(&mut zmij::Buffer::new(), x))
             }
 
             fn write_str(self, x: &str) -> Result<(), std::io::Error> {
@@ -256,13 +256,13 @@ impl<W: Write, const OPEN_METRICS: bool> Inner<W, OPEN_METRICS> {
         match value {
             MetricValue::Int(x) => self
                 .writer
-                .write_all(itoa::Buffer::new().format(x).as_bytes()),
+                .write_all(x.format_into(&mut core::fmt::NumBuffer::new()).as_bytes()),
             MetricValue::Uint(x) => self
                 .writer
-                .write_all(itoa::Buffer::new().format(x).as_bytes()),
+                .write_all(x.format_into(&mut core::fmt::NumBuffer::new()).as_bytes()),
             MetricValue::Float(x) => self
                 .writer
-                .write_all(format_float(&mut ryu::Buffer::new(), x).as_bytes()),
+                .write_all(format_float(&mut zmij::Buffer::new(), x).as_bytes()),
         }
     }
 
@@ -596,7 +596,7 @@ fn unix_seconds(t: std::time::SystemTime) -> f64 {
     }
 }
 
-fn format_float(buf: &mut ryu::Buffer, x: f64) -> &str {
+fn format_float(buf: &mut zmij::Buffer, x: f64) -> &str {
     if x.is_nan() {
         "NaN"
     } else if x == f64::INFINITY {

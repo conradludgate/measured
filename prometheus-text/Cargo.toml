@@ -7,11 +7,10 @@ authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/conradludgate/measured"
 readme = "README.md"
-rust-version = "1.88"
+rust-version = "1.98"
 
 [dependencies]
 measured = { path = "../core", version = "0.0.25" }
 bytes = "1"
 memchr = "2"
-ryu = "1"
-itoa = "1"
+zmij = "1"

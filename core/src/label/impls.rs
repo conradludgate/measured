@@ -83,7 +83,7 @@ macro_rules! large_int_label_value {
             fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
                 match i64::try_from(*self) {
                     Ok(x) => v.write_int(x),
-                    Err(_) => v.write_str(itoa::Buffer::new().format((*self))),
+                    Err(_) => v.write_str((*self).format_into(&mut core::fmt::NumBuffer::new())),
                 }
             }
         }

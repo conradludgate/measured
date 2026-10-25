@@ -24,10 +24,10 @@ fn measured<const N: usize>(bencher: Bencher) {
         }),
     };
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
         metrics.counters.inc(Group {
-            kind: buf.format(i),
+            kind: i.format_into(&mut buf),
         });
     }
 
@@ -52,9 +52,11 @@ fn prometheus<const N: usize>(bencher: Bencher) {
     )
     .unwrap();
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        counter_vec.with_label_values(&[buf.format(i)]).inc();
+        counter_vec
+            .with_label_values(&[i.format_into(&mut buf)])
+            .inc();
     }
 
     let mut enc = Vec::new();
@@ -81,9 +83,9 @@ fn prometheus_client<const N: usize>(bencher: Bencher) {
 
     registry.register("counters", "help text", counter_vec.clone());
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        let kind = buf.format(i).to_owned();
+        let kind = i.format_into(&mut buf).to_owned();
         counter_vec.get_or_create(&GroupStatic { kind }).inc();
     }
 

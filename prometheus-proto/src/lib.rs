@@ -489,7 +489,7 @@ struct LenVisitor {}
 impl LabelVisitor for LenVisitor {
     type Output = usize;
     fn write_int(self, x: i64) -> usize {
-        encoding::encoded_len_str(2, itoa::Buffer::new().format(x))
+        encoding::encoded_len_str(2, x.format_into(&mut core::fmt::NumBuffer::new()))
     }
 
     fn write_float(self, x: f64) -> usize {
@@ -502,7 +502,7 @@ impl LabelVisitor for LenVisitor {
         } else if x.is_nan() {
             encoding::encoded_len_str(2, "NaN")
         } else {
-            encoding::encoded_len_str(2, ryu::Buffer::new().format(x))
+            encoding::encoded_len_str(2, zmij::Buffer::new().format(x))
         }
     }
 
@@ -532,7 +532,7 @@ struct Visitor<'a> {
 impl LabelVisitor for Visitor<'_> {
     type Output = ();
     fn write_int(self, x: i64) {
-        self.write_str(itoa::Buffer::new().format(x));
+        self.write_str(x.format_into(&mut core::fmt::NumBuffer::new()));
     }
 
     fn write_float(self, x: f64) {
@@ -545,7 +545,7 @@ impl LabelVisitor for Visitor<'_> {
         } else if x.is_nan() {
             self.write_str("NaN");
         } else {
-            self.write_str(ryu::Buffer::new().format(x));
+            self.write_str(zmij::Buffer::new().format(x));
         }
     }
 

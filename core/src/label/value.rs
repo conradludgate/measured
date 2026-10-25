@@ -89,7 +89,7 @@ pub struct LabelTestVisitor;
 impl LabelVisitor for LabelTestVisitor {
     type Output = String;
     fn write_int(self, x: i64) -> String {
-        self.write_str(itoa::Buffer::new().format(x))
+        self.write_str(x.format_into(&mut core::fmt::NumBuffer::new()))
     }
 
     fn write_float(self, x: f64) -> String {
@@ -102,7 +102,7 @@ impl LabelVisitor for LabelTestVisitor {
         } else if x.is_nan() {
             self.write_str("NaN")
         } else {
-            self.write_str(ryu::Buffer::new().format(x))
+            self.write_str(zmij::Buffer::new().format(x))
         }
     }
 
