@@ -12,8 +12,7 @@
 //! Most other prometheus/metrics crates make use of many `String` and `Arc` allocations for labels and metrics respectively.
 //! These all end up being small allocations and can make the allocator struggle, as well as cause a lot more cache misses.
 //!
-//! `measured` recommends you store string-based labels in large allocations based on [`lasso`], and all metrics are stored back-to-back
-//! in the metric vec, providing much better cache locality. See <#prometheus-vs-memory-fragmentation> for a breakdown.
+//! `measured` recommends you store string-based labels in large allocations based on [lasso](https://docs.rs/lasso/), and dense metric vectors store their series back-to-back, providing much better cache locality. See <#prometheus-vs-memory-fragmentation> for a breakdown.
 //!
 //! ## Strongly typed labels
 //!
@@ -33,7 +32,8 @@
 //! Most prometheus/metrics crates back metric vecs with a HashMap from labels to the individual metric value.
 //! They all try to hash the list of label strings in such a way to reduce overhead of the hashmap.
 //!
-//! `measured` does not need any hashing step and instead encodes label values directly to integers in a one-to-one mapping.
+//! `measured` first encodes label values into compact integers. Dense vectors use these integers
+//! as array indices; sparse vectors hash them to locate a series.
 //!
 //! ```
 //! use measured::FixedCardinalityLabel;
@@ -106,9 +106,10 @@
 //! There's nothing wrong with small allocations necessarily, but since these are long-lived allocations that are not allocated inside of
 //! an arena, it can lead to fragmentation issues where each small alloc can occupy many different allocator pages and prevent them from being freed.
 //!
-//! Compared to this crate, `measured` **only needs 1 allocation** for the `HashMap`.
-//! If you have semi-dynamic string labels (such as REST API path slugs) then that would add 4 allocations for
-//! a [`RodeoReader`](lasso::RodeoReader) or 2 allocations for an [`IndexSet`](indexmap::IndexSet) to track them.
+//! In measured, dense vectors store series in an array, while sparse vectors use sharded hash maps.
+//! Allocation counts depend on the representation, shard count, and label sets. String interners such as
+//! [RodeoReader](https://docs.rs/lasso/latest/lasso/struct.RodeoReader.html) share label storage
+//! across series instead of allocating a copy of every string for each series.
 //!
 //! And while it's bad form to have extremely high-cardinality metrics, this crate can easily handle
 //! 100,000 unique label groups with just a few large allocations.
