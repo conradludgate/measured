@@ -67,7 +67,7 @@ impl<W: Write> Encoding for TextEncoder<W> {
         self.writer.write_all(b"# HELP ")?;
         name.encode_utf8(&mut self.writer)?;
         self.writer.write_all(b" ")?;
-        self.writer.write_all(help.as_bytes())?;
+        write_help_str(help, &mut self.writer)?;
         self.writer.write_all(b"\n")?;
         Ok(())
     }
@@ -133,17 +133,7 @@ impl<W: Write> TextEncoder<W> {
             }
 
             fn write_float(self, x: f64) -> Result<(), std::io::Error> {
-                if x.is_infinite() {
-                    if x.is_sign_positive() {
-                        self.write_str("+Inf")
-                    } else {
-                        self.write_str("-Inf")
-                    }
-                } else if x.is_nan() {
-                    self.write_str("NaN")
-                } else {
-                    self.write_str(ryu::Buffer::new().format(x))
-                }
+                self.write_str(format_float(&mut ryu::Buffer::new(), x))
             }
 
             fn write_str(self, x: &str) -> Result<(), std::io::Error> {
@@ -194,9 +184,12 @@ impl<W: Write> TextEncoder<W> {
             MetricValue::Int(x) => self
                 .writer
                 .write_all(itoa::Buffer::new().format(x).as_bytes())?,
+            MetricValue::Uint(x) => self
+                .writer
+                .write_all(itoa::Buffer::new().format(x).as_bytes())?,
             MetricValue::Float(x) => self
                 .writer
-                .write_all(ryu::Buffer::new().format(x).as_bytes())?,
+                .write_all(format_float(&mut ryu::Buffer::new(), x).as_bytes())?,
         }
         self.writer.write_all(b"\n")?;
         Ok(())
@@ -245,7 +238,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
             enc.write_metric_value(
                 name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
-                MetricValue::Int(val as i64),
+                MetricValue::Uint(val),
             )?;
         }
         let count = val + inf;
@@ -254,7 +247,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
             labels
                 .by_ref()
                 .compose_with(HistogramLabelLe { le: f64::INFINITY }),
-            MetricValue::Int(count as i64),
+            MetricValue::Uint(count),
         )?;
         enc.write_metric_value(
             name.by_ref().with_suffix(Sum),
@@ -264,7 +257,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
         enc.write_metric_value(
             name.by_ref().with_suffix(Count),
             labels,
-            MetricValue::Int(count as i64),
+            MetricValue::Uint(count),
         )?;
         Ok(())
     }
@@ -287,7 +280,7 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for CounterState {
         enc.write_metric_value(
             &name,
             labels,
-            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed) as i64),
+            MetricValue::Uint(self.count.load(core::sync::atomic::Ordering::Relaxed)),
         )
     }
 }
@@ -408,6 +401,32 @@ impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEnc
     }
 }
 
+fn format_float(buf: &mut ryu::Buffer, x: f64) -> &str {
+    if x.is_nan() {
+        "NaN"
+    } else if x == f64::INFINITY {
+        "+Inf"
+    } else if x == f64::NEG_INFINITY {
+        "-Inf"
+    } else {
+        buf.format_finite(x)
+    }
+}
+
+fn write_help_str(s: &str, b: &mut impl Write) -> io::Result<()> {
+    let mut i = 0;
+    for j in memchr::memchr2_iter(b'\\', b'\n', s.as_bytes()) {
+        b.write_all(&s.as_bytes()[i..j])?;
+        match s.as_bytes()[j] {
+            b'\\' => b.write_all(b"\\\\")?,
+            b'\n' => b.write_all(b"\\n")?,
+            _ => unreachable!(),
+        }
+        i = j + 1;
+    }
+    b.write_all(&s.as_bytes()[i..])
+}
+
 pub(crate) fn write_label_str_value(s: &str, b: &mut impl Write) -> io::Result<()> {
     let mut i = 0;
     for j in memchr3_iter(b'\\', b'"', b'\n', s.as_bytes()) {
@@ -451,7 +470,7 @@ mod tests {
     use bytes::{BufMut, BytesMut};
 
     use crate::{
-        CounterVec, Histogram,
+        Counter, CounterVec, FloatGauge, Histogram,
         label::StaticLabelSet,
         metric::{
             MetricFamilyEncoding,
@@ -630,5 +649,93 @@ http_request_total{method="post",code="ok"} 1027
 http_request_total{method="get",code="badrequest"} 3
 "#
         );
+    }
+
+    #[test]
+    fn help_is_escaped() {
+        let mut encoder = BufferedTextEncoder::default();
+        let name = MetricName::from_str("foo");
+        encoder
+            .write_help(name, "line one\nline \\two \"quoted\"")
+            .unwrap();
+
+        let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
+        assert_eq!(s, "# HELP foo line one\\nline \\\\two \"quoted\"\n");
+    }
+
+    #[test]
+    fn special_values() {
+        let mut encoder = BufferedTextEncoder::default();
+
+        let counter = Counter::new();
+        counter.inc_by(u64::MAX);
+        counter
+            .collect_family_into(MetricName::from_str("big"), &mut encoder)
+            .unwrap();
+
+        for (name, x) in [
+            ("pos_inf", f64::INFINITY),
+            ("neg_inf", f64::NEG_INFINITY),
+            ("nan", f64::NAN),
+        ] {
+            let gauge = FloatGauge::new();
+            gauge.set(x);
+            gauge
+                .collect_family_into(MetricName::from_str(name), &mut encoder)
+                .unwrap();
+        }
+
+        let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
+        assert_eq!(
+            s,
+            r#"# TYPE big counter
+big 18446744073709551615
+
+# TYPE pos_inf gauge
+pos_inf +Inf
+
+# TYPE neg_inf gauge
+neg_inf -Inf
+
+# TYPE nan gauge
+nan NaN
+"#
+        );
+    }
+
+    #[test]
+    fn histogram_nan() {
+        let histogram = Histogram::with_metadata(Thresholds::with_buckets([1.0, 2.0]));
+        histogram.get_metric().observe(f64::NAN);
+        histogram.get_metric().observe(1.5);
+
+        let mut encoder = BufferedTextEncoder::default();
+        histogram
+            .collect_family_into(MetricName::from_str("h"), &mut encoder)
+            .unwrap();
+
+        let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
+        assert_eq!(
+            s,
+            r#"# TYPE h histogram
+h_bucket{le="1.0"} 0
+h_bucket{le="2.0"} 1
+h_bucket{le="+Inf"} 2
+h_sum NaN
+h_count 2
+"#
+        );
+    }
+
+    #[test]
+    fn empty_thresholds() {
+        let histogram = Histogram::with_metadata(Thresholds::<0>::with_buckets([]));
+        histogram.get_metric().observe(1.0);
+    }
+
+    #[test]
+    #[should_panic = "must not be NaN"]
+    fn nan_threshold() {
+        Thresholds::with_buckets([f64::NAN]);
     }
 }

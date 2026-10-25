@@ -13,6 +13,7 @@ use super::{
 #[derive(Clone, Copy, Debug)]
 pub enum MetricValue {
     Int(i64),
+    Uint(u64),
     Float(f64),
 }
 

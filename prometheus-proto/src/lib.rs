@@ -42,21 +42,53 @@ impl<W: Write> ProtoEncoder<W> {
         self.writer.flush()
     }
 
+    /// Writes out the buffered metric family, if it has any metrics, and resets the buffer.
+    ///
+    /// Metric families with no metrics are dropped. The buffer is reset even if the write fails,
+    /// so that a failed collection does not leak into the next one.
     fn flush_buf(&mut self) -> Result<(), std::io::Error> {
-        if self.state == State::Metrics {
-            self.state = State::Init;
-
+        let res = if self.state == State::Metrics {
             let len = self.buf.len() - 10;
             let varint_len = encoded_len_varint(len as u64);
             let offset = 10 - varint_len;
             encode_varint(len as u64, &mut &mut self.buf[offset..]);
-            self.writer.write_all(&self.buf[offset..])?;
+            self.writer.write_all(&self.buf[offset..])
+        } else {
+            Ok(())
+        };
 
-            self.buf.resize(10, 0);
-        } else if self.buf.is_empty() {
-            self.buf.resize(10, 0);
+        self.state = State::Init;
+        self.buf.clear();
+        self.buf.resize(10, 0);
+        res
+    }
+
+    fn start_family(&mut self, name: impl MetricNameEncoder) -> Result<(), std::io::Error> {
+        self.flush_buf()?;
+
+        // optional string     name   = 1;
+        encode_key(1, LengthDelimited, &mut self.buf);
+        encode_varint(name.encode_len() as u64, &mut self.buf);
+        name.encode_utf8(&mut self.buf)?;
+
+        self.state = State::Help;
+        Ok(())
+    }
+
+    fn write_metric_type(
+        &mut self,
+        name: impl MetricNameEncoder,
+        metric_type: i32,
+    ) -> Result<(), std::io::Error> {
+        // `write_help` may have already started this family
+        if self.state != State::Help {
+            self.start_family(name)?;
         }
-        debug_assert!(self.buf.len() >= 10);
+
+        // optional MetricType type   = 3;
+        encoding::encode_i32(3, metric_type, &mut self.buf);
+
+        self.state = State::Type;
         Ok(())
     }
 }
@@ -65,6 +97,7 @@ impl<W: Write> ProtoEncoder<W> {
 enum State {
     Init,
     Help,
+    Type,
     Metrics,
 }
 
@@ -94,17 +127,10 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
         name: impl MetricNameEncoder,
         help: &str,
     ) -> Result<(), std::io::Error> {
-        self.flush_buf()?;
-
-        // optional string     name   = 1;
-        encode_key(1, LengthDelimited, &mut self.buf);
-        encode_varint(name.encode_len() as u64, &mut self.buf);
-        name.encode_utf8(&mut self.buf)?;
+        self.start_family(name)?;
 
         // optional string     help   = 2;
         encoding::encode_str(2, help, &mut self.buf);
-
-        self.state = State::Help;
 
         Ok(())
     }
@@ -225,20 +251,8 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
         name: impl MetricNameEncoder,
         enc: &mut ProtoEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.flush_buf()?;
-
-        if enc.state == State::Init {
-            // optional string     name   = 1;
-            encode_key(1, LengthDelimited, &mut enc.buf);
-            encode_varint(name.encode_len() as u64, &mut enc.buf);
-            name.encode_utf8(&mut enc.buf)?;
-        }
-
-        // optional MetricType type   = 3;
-        // COUNTER = 0;
-        encoding::encode_i32(3, 0, &mut enc.buf);
-
-        Ok(())
+        // COUNTER = 0
+        enc.write_metric_type(name, 0)
     }
 
     fn collect_into(
@@ -280,20 +294,8 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
         name: impl MetricNameEncoder,
         enc: &mut ProtoEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.flush_buf()?;
-
-        if enc.state == State::Init {
-            // optional string     name   = 1;
-            encode_key(1, LengthDelimited, &mut enc.buf);
-            encode_varint(name.encode_len() as u64, &mut enc.buf);
-            name.encode_utf8(&mut enc.buf)?;
-        }
-
-        // optional MetricType type   = 3;
-        // GAUGE = 1;
-        encoding::encode_i32(3, 1, &mut enc.buf);
-
-        Ok(())
+        // GAUGE = 1
+        enc.write_metric_type(name, 1)
     }
 
     fn collect_into(
@@ -335,20 +337,8 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
         name: impl MetricNameEncoder,
         enc: &mut ProtoEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.flush_buf()?;
-
-        if enc.state == State::Init {
-            // optional string     name   = 1;
-            encode_key(1, LengthDelimited, &mut enc.buf);
-            encode_varint(name.encode_len() as u64, &mut enc.buf);
-            name.encode_utf8(&mut enc.buf)?;
-        }
-
-        // optional MetricType type   = 3;
-        // GAUGE = 1;
-        encoding::encode_i32(3, 1, &mut enc.buf);
-
-        Ok(())
+        // GAUGE = 1
+        enc.write_metric_type(name, 1)
     }
 
     fn collect_into(
@@ -592,5 +582,113 @@ mod tests {
 
         let actual = MetricFamily::decode_length_delimited(actual_msg).unwrap();
         assert_eq!(actual, expected);
+    }
+
+    fn decode_all(mut msg: bytes::Bytes) -> Vec<MetricFamily> {
+        let mut families = vec![];
+        while !msg.is_empty() {
+            families.push(MetricFamily::decode_length_delimited(&mut msg).unwrap());
+        }
+        families
+    }
+
+    fn write_family<W: std::io::Write>(
+        enc: &mut ProtoEncoder<W>,
+        name: &'static str,
+        family: &CounterVec<RequestLabelSet>,
+    ) -> std::io::Result<()> {
+        let name = MetricName::from_str(name).with_suffix(Total);
+        enc.write_help(&name, "help")?;
+        family.collect_family_into(&name, enc)
+    }
+
+    #[test]
+    fn empty_families_are_dropped() {
+        let empty = CounterVec::<RequestLabelSet>::new();
+        let full = CounterVec::<RequestLabelSet>::new();
+        full.inc(RequestLabels {
+            method: Method::Get,
+            code: StatusCode::Ok,
+        });
+
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+        write_family(&mut enc, "a", &empty).unwrap();
+        write_family(&mut enc, "b", &full).unwrap();
+        write_family(&mut enc, "c", &empty).unwrap();
+        write_family(&mut enc, "d", &full).unwrap();
+        write_family(&mut enc, "e", &empty).unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.writer.into_inner().freeze());
+        let names: Vec<_> = families.iter().map(|f| f.name()).collect();
+        assert_eq!(names, ["b_total", "d_total"]);
+        assert!(families.iter().all(|f| f.metric.len() == 1));
+    }
+
+    #[test]
+    fn type_without_help() {
+        let empty = CounterVec::<RequestLabelSet>::new();
+        let full = CounterVec::<RequestLabelSet>::new();
+        full.inc(RequestLabels {
+            method: Method::Get,
+            code: StatusCode::Ok,
+        });
+
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+        let a = MetricName::from_str("a").with_suffix(Total);
+        let b = MetricName::from_str("b").with_suffix(Total);
+        empty.collect_family_into(&a, &mut enc).unwrap();
+        full.collect_family_into(&b, &mut enc).unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.writer.into_inner().freeze());
+        assert_eq!(families.len(), 1);
+        assert_eq!(families[0].name(), "b_total");
+        assert_eq!(families[0].help, None);
+        assert_eq!(families[0].r#type, Some(MetricType::Counter as i32));
+    }
+
+    struct FailingWriter {
+        fail: bool,
+        out: Vec<u8>,
+    }
+
+    impl std::io::Write for FailingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.fail {
+                return Err(std::io::ErrorKind::BrokenPipe.into());
+            }
+            self.out.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn reuse_after_write_error() {
+        let full = CounterVec::<RequestLabelSet>::new();
+        full.inc(RequestLabels {
+            method: Method::Get,
+            code: StatusCode::Ok,
+        });
+
+        let mut enc = ProtoEncoder::new(FailingWriter {
+            fail: true,
+            out: vec![],
+        });
+        write_family(&mut enc, "a", &full).unwrap();
+        enc.flush().unwrap_err();
+
+        enc.writer.fail = false;
+        write_family(&mut enc, "b", &full).unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.writer.out.into());
+        assert_eq!(families.len(), 1);
+        assert_eq!(families[0].name(), "b_total");
+        assert_eq!(families[0].metric.len(), 1);
     }
 }

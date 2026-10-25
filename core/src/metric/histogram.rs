@@ -135,15 +135,30 @@ impl<const N: usize> Thresholds<N> {
     /// Create the histogram thresholds with the given sizes
     ///
     /// # Panics
-    /// Will panic if the buckets are not strictly monotonically increasing
+    /// Will panic if the buckets are not strictly monotonically increasing, or contain NaN
     pub fn with_buckets(buckets: [f64; N]) -> Self {
-        for i in 0..N - 1 {
+        assert!(
+            !buckets.iter().any(|b| b.is_nan()),
+            "histogram buckets must not be NaN",
+        );
+        for w in buckets.windows(2) {
             assert!(
-                buckets[i] < buckets[i + 1],
+                w[0] < w[1],
                 "consecutive histogram buckets must not decrease or be equal",
             );
         }
         Thresholds { le: buckets }
+    }
+
+    /// The index of the bucket that `x` should be counted in. `N` represents the +Inf bucket.
+    ///
+    /// NaN is not less than or equal to any bound, so it is only counted in the +Inf bucket.
+    fn bucket(&self, x: f64) -> usize {
+        if x.is_nan() {
+            N
+        } else {
+            self.le.partition_point(|le| x > *le)
+        }
     }
 
     /// View the bucket upper bounds
@@ -155,7 +170,7 @@ impl<const N: usize> Thresholds<N> {
 impl<const N: usize> HistogramLockGuard<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
-        let bucket = self.metadata().le.partition_point(|le| x > *le);
+        let bucket = self.metadata().bucket(x);
         self.inner.read().observe(bucket, x);
     }
 
@@ -175,7 +190,7 @@ impl<const N: usize> HistogramLockGuard<'_, N> {
 impl<const N: usize> HistogramMut<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(mut self, x: f64) {
-        let bucket = self.metadata().le.partition_point(|le| x > *le);
+        let bucket = self.metadata().bucket(x);
         self.inner.get_mut().observe(bucket, x);
     }
 
