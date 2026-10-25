@@ -64,7 +64,7 @@ impl ToTokens for FixedCardinalityLabel {
                 fn decode(value: usize) -> Self {
                     match value {
                         #(#count2 => #ident :: #var_idents2,)*
-                        _ => panic!("invalid value"),
+                        _ => ::core::panic!("invalid value"),
                     }
                 }
             }

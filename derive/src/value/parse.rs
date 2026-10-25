@@ -63,6 +63,29 @@ impl TryFrom<DeriveInput> for FixedCardinalityLabel {
             Data::Struct(_) => return Err(syn::Error::new(span, "structs not supported")),
         };
 
+        if variants.is_empty() {
+            return Err(syn::Error::new(
+                span,
+                "enums with no variants are not supported",
+            ));
+        }
+
+        // two variants with the same label value would produce duplicate metrics
+        let mut seen = std::collections::HashMap::new();
+        for var in &variants {
+            let value = match (&var.attrs.rename, &var.value) {
+                (Some(rename), _) => rename.value(),
+                (None, Some(int)) => int.base10_parse::<i128>()?.to_string(),
+                (None, None) => rename_all.apply(&var.ident.to_string()),
+            };
+            if let Some(other) = seen.insert(value.clone(), &var.ident) {
+                return Err(syn::Error::new(
+                    var.span,
+                    format!("label value {value:?} is already used by variant `{other}`"),
+                ));
+            }
+        }
+
         Ok(Self {
             krate,
             rename_all,

@@ -170,7 +170,7 @@ pub use label::FixedCardinalityLabel;
 /// * `struct TSet { ... }`
 /// * `impl LabelGroupSet for TSet { ... }`
 /// * `impl TSet { pub fn new(...) -> Self {} }`
-///     - `new` contains args for all the non-default fields.
+///     - `new` contains args for all the non-default fields, in the order they are declared.
 /// * `impl Default for TSet { ... }`
 ///     - only implemented if all fields are default fields.
 ///

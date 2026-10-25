@@ -1,5 +1,4 @@
-use heck::ToShoutySnakeCase;
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 
 use super::attr::{LabelGroupFieldAttrsKind, LabelGroupFieldAttrsSortKey};
@@ -18,16 +17,19 @@ impl ToTokens for LabelGroup {
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
         let visits = fields.iter().map(|x| {
-            let LabelGroupField { name, attrs, .. } = x;
-            let name_string = attrs.rename.as_ref().map_or_else(|| name.to_string(), |r| r.value());
-            let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
-            quote_spanned! { x.span =>
-                const #ident: &#krate::label::LabelName = #krate::label::LabelName::from_str(#name_string);
-                #krate::label::LabelGroupVisitor::write_value(v, #ident, &self.#name);
-            }
+            let name = &x.name;
+            let name_string = x.label_name();
+            quote_spanned! { x.span => {
+                const NAME: &#krate::label::LabelName = #krate::label::LabelName::from_str(#name_string);
+                #krate::label::LabelGroupVisitor::write_value(v, NAME, &self.#name);
+            }}
         });
 
-        let label_group_set = Set(self);
+        // the label set is optional, eg for labels that are only used with `InfoMetric`
+        let label_group_set = self
+            .set_ident
+            .as_ref()
+            .map(|set_ident| Set(self, set_ident));
 
         tokens.extend(quote! {
             #[automatically_derived]
@@ -42,7 +44,7 @@ impl ToTokens for LabelGroup {
     }
 }
 
-struct Set<'a>(&'a LabelGroup);
+struct Set<'a>(&'a LabelGroup, &'a Ident);
 
 impl ToTokens for Set<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -52,8 +54,9 @@ impl ToTokens for Set<'_> {
             ident,
             generics,
             fields,
-            set_ident,
+            ..
         } = self.0;
+        let set_ident = self.1;
 
         let mut sorted_fields = fields.clone();
         sorted_fields.sort_by_key(|x| x.attrs.get_sort_key());
@@ -136,7 +139,8 @@ impl ToTokens for Set<'_> {
                 }
             }
         } else {
-            let args = sorted_fields.iter().filter(|x| !x.attrs.default).map(|x| {
+            // arguments are in declaration order, regardless of how the fields are stored
+            let args = fields.iter().filter(|x| !x.attrs.default).map(|x| {
                 let name = &x.name;
                 match &x.attrs.kind {
                     LabelGroupFieldAttrsKind::Fixed => unreachable!("fixed is always default"),
@@ -159,13 +163,13 @@ impl ToTokens for Set<'_> {
 
         let cardinality_fns = if dynamics.is_empty() {
             quote!(
-                fn cardinality(&self) -> Option<usize> {
-                    Some(1usize)
+                fn cardinality(&self) -> ::core::option::Option<usize> {
+                    ::core::option::Option::Some(1usize)
                         #( .and_then(|x| x.checked_mul(#cardinalities)) )*
                 }
                 type Unique = usize;
-                fn encode_dense(&self, value: Self::Unique) -> Option<usize> {
-                    Some(value)
+                fn encode_dense(&self, value: Self::Unique) -> ::core::option::Option<usize> {
+                    ::core::option::Option::Some(value)
                 }
                 fn decode_dense(&self, value: usize) -> Self::Group<'_> {
                     self.decode(&value)
@@ -174,22 +178,23 @@ impl ToTokens for Set<'_> {
         } else {
             let dynamics = dynamics.iter().map(|_| quote!(usize));
             quote!(
-                fn cardinality(&self) -> Option<usize> {
-                    None
+                fn cardinality(&self) -> ::core::option::Option<usize> {
+                    ::core::option::Option::None
                 }
                 type Unique = (usize, #(#dynamics),*);
 
-                fn encode_dense(&self, _value: Self::Unique) -> Option<usize> {
-                    None
+                fn encode_dense(&self, _value: Self::Unique) -> ::core::option::Option<usize> {
+                    ::core::option::Option::None
                 }
                 fn decode_dense(&self, _value: usize) -> Self::Group<'_> {
-                    unreachable!("does not have a dense encoding")
+                    ::core::unreachable!("does not have a dense encoding")
                 }
             )
         };
 
         let encode_fn = SetEncode {
             group: self.0,
+            method: format_ident!("encode"),
             fixed,
             dynamics,
             cardinalities: &cardinalities,
@@ -218,6 +223,7 @@ impl ToTokens for Set<'_> {
 
                 #encode_fn
 
+
                 #decode_fn
             }
         });
@@ -226,6 +232,8 @@ impl ToTokens for Set<'_> {
 
 struct SetEncode<'a> {
     group: &'a LabelGroup,
+    /// `encode`, or `find` to encode without inserting into dynamic label sets
+    method: Ident,
     fixed: &'a [LabelGroupField],
     dynamics: &'a [LabelGroupField],
     cardinalities: &'a [TokenStream],
@@ -235,6 +243,7 @@ impl ToTokens for SetEncode<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
             group: LabelGroup { krate, .. },
+            method,
             fixed,
             dynamics,
             cardinalities,
@@ -249,10 +258,10 @@ impl ToTokens for SetEncode<'_> {
 
                 match &attrs.kind {
                     LabelGroupFieldAttrsKind::Fixed => {
-                        quote_spanned!(x.span => <#krate::label::StaticLabelSet<#ty> as #krate::label::LabelSet>::encode(&self.#name, value.#name)?)
+                        quote_spanned!(x.span => <#krate::label::StaticLabelSet<#ty> as #krate::label::LabelSet>::#method(&self.#name, value.#name)?)
                     }
                     LabelGroupFieldAttrsKind::FixedWith(ty) => {
-                        quote_spanned!(x.span => <#ty as #krate::label::LabelSet>::encode(&self.#name, value.#name)?)
+                        quote_spanned!(x.span => <#ty as #krate::label::LabelSet>::#method(&self.#name, value.#name)?)
                     }
                     LabelGroupFieldAttrsKind::DynamicWith(_) => unreachable!(),
                 }
@@ -268,7 +277,7 @@ impl ToTokens for SetEncode<'_> {
                     LabelGroupFieldAttrsKind::DynamicWith(ty) => {
                         quote_spanned!(x.span => {
                             <#ty as #krate::label::DynamicLabelSet>::__private_check_dynamic();
-                            <#ty as #krate::label::LabelSet>::encode(&self.#name, value.#name)?
+                            <#ty as #krate::label::LabelSet>::#method(&self.#name, value.#name)?
                         })
                     }
                     _ => unreachable!(),
@@ -277,7 +286,7 @@ impl ToTokens for SetEncode<'_> {
             .collect();
 
         tokens.extend(quote! {
-            fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+            fn #method(&self, value: Self::Group<'_>) -> ::core::option::Option<Self::Unique> {
                 let mut mul = 1;
                 let mut index = 0;
 
@@ -286,7 +295,7 @@ impl ToTokens for SetEncode<'_> {
                     mul *= #cardinalities;
                 )*
 
-                Some((
+                ::core::option::Option::Some((
                     index
                     #(, #dynamic_encodes)*
                 ))
@@ -360,7 +369,7 @@ impl ToTokens for SetDecode<'_> {
                     #fixed_decodes;
                 )*
 
-                debug_assert_eq!(index, 0);
+                ::core::debug_assert_eq!(index, 0);
 
                 #(
                     #dynamic_decodes;

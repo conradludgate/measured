@@ -10,7 +10,7 @@ mod to_tokens;
 pub struct LabelGroup {
     vis: Visibility,
     krate: Path,
-    set_ident: Ident,
+    set_ident: Option<Ident>,
     ident: Ident,
     fields: Vec<LabelGroupField>,
     generics: Generics,

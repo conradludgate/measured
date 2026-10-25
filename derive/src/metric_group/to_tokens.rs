@@ -1,7 +1,6 @@
-use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote, quote_spanned};
-use syn::{parse_quote, parse_quote_spanned};
+use syn::{ext::IdentExt, parse_quote, parse_quote_spanned};
 
 use super::{
     MetricGroup, MetricGroupField,
@@ -52,21 +51,20 @@ impl ToTokens for MetricGroup {
             let MetricGroupField { name,ty, attrs, .. } = x;
             match &attrs.kind {
                 MetricGroupFieldAttrsKind::Metric { rename } => {
-                    let name_string = rename.as_ref().map_or_else(|| name.to_string(), |l| l.value());
-                    let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
+                    let name_string = rename.as_ref().map_or_else(|| name.unraw().to_string(), |l| l.value());
 
                     let help = attrs.docs.as_deref().map(|doc|{
                         let doc = doc.trim();
                         quote_spanned!(x.span => {
-                            <#enc as #krate::metric::group::Encoding>::write_help(enc, #ident, #doc)?;
+                            <#enc as #krate::metric::group::Encoding>::write_help(enc, NAME, #doc)?;
                         })
                     });
 
-                    quote_spanned! { x.span =>
-                        const #ident: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
+                    quote_spanned! { x.span => {
+                        const NAME: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
                         #help
-                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_family_into(&self.#name, #ident, enc)?;
-                    }
+                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_family_into(&self.#name, NAME, enc)?;
+                    }}
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {
                     quote_spanned! { x.span =>
@@ -87,9 +85,9 @@ impl ToTokens for MetricGroup {
         tokens.extend(quote! {
             #[automatically_derived]
             impl #group_impl_generics #krate::metric::group::MetricGroup<#enc> for #ident #ty_generics #group_where_clause {
-                fn collect_group_into(&self, enc: &mut #enc) -> Result<(), #enc::Err>{
+                fn collect_group_into(&self, enc: &mut #enc) -> ::core::result::Result<(), #enc::Err>{
                     #(#visits)*
-                    Ok(())
+                    ::core::result::Result::Ok(())
                 }
             }
         });
@@ -98,7 +96,7 @@ impl ToTokens for MetricGroup {
             let inits = fields.iter().map(|x| {
                 let MetricGroupField { name,ty, attrs, .. } = x;
                 match &attrs.init {
-                    Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: #init,),
+                    Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: { #init },),
                     Some(MetricGroupFieldAttrsInit::Metric { metadata, label_set }) => {
                         match (label_set, metadata) {
                             (Some(ls), Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #meta),),
