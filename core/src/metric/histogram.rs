@@ -1,22 +1,16 @@
 //! All things histograms. See [`Histogram`]
 
-use std::{
-    sync::atomic::{AtomicI64, AtomicU64, Ordering},
-    time::Duration,
-};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::time::Duration;
 
 use parking_lot::RwLock;
 
-use super::{
-    MetricEncoding, MetricLockGuard, MetricMut, MetricType,
-    gauge::AtomicF64,
-    group::{Encoding, HistogramExtras, MetricKind},
-    name::MetricNameEncoder,
-};
-use crate::{
-    GaugeHistogram, GaugeHistogramVec, Histogram, HistogramVec,
-    label::{LabelGroup, LabelGroupSet},
-};
+use super::gauge::AtomicF64;
+use super::group::{Encoding, HistogramExtras, MetricKind};
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricMut, MetricType};
+use crate::label::{LabelGroup, LabelGroupSet};
+use crate::{GaugeHistogram, GaugeHistogramVec, Histogram, HistogramVec};
 
 /// The inner state of a histogram.
 ///

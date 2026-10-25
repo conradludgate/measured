@@ -1,9 +1,10 @@
-use syn::{Data, DeriveInput, Field, Fields, ext::IdentExt, spanned::Spanned};
-
-use crate::Krate;
+use syn::ext::IdentExt;
+use syn::spanned::Spanned;
+use syn::{Data, DeriveInput, Field, Fields};
 
 use super::attr::{ContainerAttrs, LabelGroupFieldAttrs};
 use super::{LabelGroup, LabelGroupField};
+use crate::Krate;
 
 impl TryFrom<Field> for LabelGroupField {
     type Error = syn::Error;

@@ -24,16 +24,11 @@
 use std::io::{self, Write};
 
 use bytes::{BufMut, Bytes, BytesMut};
+use measured::label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
+use measured::metric::exemplar::Exemplar;
+use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+use measured::metric::name::{Bucket, Count, MetricNameEncoder, Sum};
 use memchr::memchr3_iter;
-
-use measured::{
-    label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
-    metric::{
-        exemplar::Exemplar,
-        group::{Encoding, MetricKind, SampleExtras},
-        name::{Bucket, Count, MetricNameEncoder, Sum},
-    },
-};
 
 /// Values that prometheus supports in the text format
 #[derive(Clone, Copy, Debug)]
@@ -664,17 +659,12 @@ impl Write for BytesWriter {
 #[cfg(test)]
 mod tests {
     use bytes::{BufMut, BytesMut};
-
-    use measured::{
-        Counter, CounterVec, FloatGauge, Histogram,
-        label::StaticLabelSet,
-        metric::{
-            MetricFamilyEncoding,
-            group::{Encoding, MetricKind},
-            histogram::Thresholds,
-            name::{MetricName, Total},
-        },
-    };
+    use measured::label::StaticLabelSet;
+    use measured::metric::MetricFamilyEncoding;
+    use measured::metric::group::{Encoding, MetricKind};
+    use measured::metric::histogram::Thresholds;
+    use measured::metric::name::{MetricName, Total};
+    use measured::{Counter, CounterVec, FloatGauge, Histogram};
 
     use super::{BufferedOpenMetricsEncoder, BufferedTextEncoder, write_label_str_value};
 
@@ -1070,7 +1060,8 @@ latency_seconds_count 1
     }
 
     fn extras() -> Extras {
-        use measured::{label::LabelName, metric::exemplar::Exemplar};
+        use measured::label::LabelName;
+        use measured::metric::exemplar::Exemplar;
         const TRACE_ID: &LabelName = LabelName::from_str("trace_id");
 
         let at = std::time::UNIX_EPOCH + std::time::Duration::from_millis(1_700_000_000_500);

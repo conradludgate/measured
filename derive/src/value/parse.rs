@@ -1,11 +1,9 @@
-use syn::{Data, DeriveInput, Fields, Lit, Variant, spanned::Spanned};
+use syn::spanned::Spanned;
+use syn::{Data, DeriveInput, Fields, Lit, Variant};
 
+use super::attr::{ContainerAttrs, VariantAttrs};
+use super::{FixedCardinalityLabel, FixedCardinalityLabelVariant};
 use crate::Krate;
-
-use super::{
-    FixedCardinalityLabel, FixedCardinalityLabelVariant,
-    attr::{ContainerAttrs, VariantAttrs},
-};
 
 impl TryFrom<Variant> for FixedCardinalityLabelVariant {
     type Error = syn::Error;

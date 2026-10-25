@@ -1,5 +1,6 @@
 use proc_macro2::{Ident, Span};
-use syn::{FnArg, Generics, Path, Token, Type, punctuated::Punctuated};
+use syn::punctuated::Punctuated;
+use syn::{FnArg, Generics, Path, Token, Type};
 
 mod attr;
 mod parse;

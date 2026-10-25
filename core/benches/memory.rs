@@ -9,19 +9,20 @@ fn main() {
         .run_benches();
 }
 
-use std::{
-    cell::RefCell,
-    hash::{BuildHasher, BuildHasherDefault},
-};
+use std::cell::RefCell;
+use std::hash::{BuildHasher, BuildHasherDefault};
 
 use divan::{Bencher, black_box};
-use fake::{Fake, faker::name::raw::Name, locales::EN};
+use fake::Fake;
+use fake::faker::name::raw::Name;
+use fake::locales::EN;
 use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use metrics::SharedString;
 use paracord::ParaCord;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use rustc_hash::FxHasher;
 
 fn thread_rng() -> SmallRng {

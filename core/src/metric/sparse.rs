@@ -1,11 +1,10 @@
 use core::hash::Hash;
+use std::hash::{BuildHasher, BuildHasherDefault};
+use std::sync::OnceLock;
+
 use crossbeam_utils::CachePadded;
 use hashbrown::HashTable;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::{
-    hash::{BuildHasher, BuildHasherDefault},
-    sync::OnceLock,
-};
 
 use super::{LabelIdInner, MetricType};
 

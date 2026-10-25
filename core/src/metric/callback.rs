@@ -2,15 +2,12 @@
 
 use core::marker::PhantomData;
 
+use super::counter::{CounterState, FloatCounterState};
+use super::gauge::{FloatGaugeState, GaugeState};
+use super::group::Encoding;
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricFamilyEncoding};
 use crate::label::NoLabels;
-
-use super::{
-    MetricEncoding, MetricFamilyEncoding,
-    counter::{CounterState, FloatCounterState},
-    gauge::{FloatGaugeState, GaugeState},
-    group::Encoding,
-    name::MetricNameEncoder,
-};
 
 /// A metric whose value is computed by calling a function every time it is collected.
 ///
@@ -18,7 +15,9 @@ use super::{
 /// and saves implementing [`MetricGroup`](crate::MetricGroup) by hand.
 ///
 /// ```
-/// use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+/// use std::sync::Arc;
+/// use std::sync::atomic::{AtomicUsize, Ordering};
+///
 /// use measured::{CallbackGauge, MetricGroup};
 ///
 /// #[derive(MetricGroup)]

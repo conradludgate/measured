@@ -24,11 +24,16 @@
 //! use measured_prometheus_text::BufferedTextEncoder;
 //!
 //! #[derive(FixedCardinalityLabel, Clone, Copy)]
-//! enum Outcome { Success, Failure }
+//! enum Outcome {
+//!     Success,
+//!     Failure,
+//! }
 //!
 //! #[derive(LabelGroup)]
 //! #[label(set = RequestLabelSet)]
-//! struct RequestLabels { outcome: Outcome }
+//! struct RequestLabels {
+//!     outcome: Outcome,
+//! }
 //!
 //! #[derive(MetricGroup, Default)]
 //! struct Metrics {
@@ -38,8 +43,12 @@
 //!
 //! fn main() {
 //!     let metrics = Metrics::default();
-//!     metrics.requests_total.inc(RequestLabels { outcome: Outcome::Success });
-//!     metrics.requests_total.inc(RequestLabels { outcome: Outcome::Failure });
+//!     metrics.requests_total.inc(RequestLabels {
+//!         outcome: Outcome::Success,
+//!     });
+//!     metrics.requests_total.inc(RequestLabels {
+//!         outcome: Outcome::Failure,
+//!     });
 //!
 //!     let mut encoder = BufferedTextEncoder::new();
 //!     metrics.collect_group_into(&mut encoder).unwrap();
@@ -47,12 +56,15 @@
 //!     let text = std::str::from_utf8(&body).unwrap();
 //!     print!("{text}");
 //!
-//!     assert_eq!(text, concat!(
-//!         "# HELP requests_total Number of completed requests.\n",
-//!         "# TYPE requests_total counter\n",
-//!         "requests_total{outcome=\"success\"} 1\n",
-//!         "requests_total{outcome=\"failure\"} 1\n",
-//!     ));
+//!     assert_eq!(
+//!         text,
+//!         concat!(
+//!             "# HELP requests_total Number of completed requests.\n",
+//!             "# TYPE requests_total counter\n",
+//!             "requests_total{outcome=\"success\"} 1\n",
+//!             "requests_total{outcome=\"failure\"} 1\n",
+//!         )
+//!     );
 //! }
 //! ```
 //!

@@ -1,9 +1,9 @@
-use syn::{Data, DeriveInput, Field, Fields, spanned::Spanned};
-
-use crate::Krate;
+use syn::spanned::Spanned;
+use syn::{Data, DeriveInput, Field, Fields};
 
 use super::attr::{ContainerAttrs, MetricGroupFieldAttrs};
 use super::{MetricGroup, MetricGroupField};
+use crate::Krate;
 
 impl TryFrom<Field> for MetricGroupField {
     type Error = syn::Error;

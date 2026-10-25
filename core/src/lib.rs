@@ -12,22 +12,21 @@
 
 extern crate alloc;
 
-use metric::{
-    Metric, MetricVec,
-    counter::CounterState,
-    gauge::{FloatGaugeState, GaugeState},
-    histogram::HistogramState,
-};
+use metric::counter::CounterState;
+use metric::gauge::{FloatGaugeState, GaugeState};
+use metric::histogram::HistogramState;
+use metric::{Metric, MetricVec};
 
 #[cfg(any(doc, test))]
 pub mod docs;
 pub mod label;
 pub mod metric;
 
+pub use label::FixedCardinalityLabel;
+pub use label::group::LabelGroup;
 /// Reexport of lasso when feature is enabled
 #[cfg(feature = "lasso")]
 pub use lasso;
-
 /// Implement [`FixedCardinalityLabel`] on an `enum`
 ///
 /// # Container attributes
@@ -59,8 +58,7 @@ pub use lasso;
 /// ## Basic
 ///
 /// ```
-/// #[derive(measured::FixedCardinalityLabel)]
-/// #[derive(Debug, Copy, Clone, PartialEq)]
+/// #[derive(measured::FixedCardinalityLabel, Debug, Copy, Clone, PartialEq)]
 /// enum Operation {
 ///     Create,
 ///     Update,
@@ -82,8 +80,7 @@ pub use lasso;
 /// assert_eq!(Operation::decode(2), Operation::Delete);
 /// assert_eq!(Operation::decode(3), Operation::DeleteAll);
 ///
-/// use measured::label::LabelValue as _;
-/// use measured::label::LabelTestVisitor;
+/// use measured::label::{LabelTestVisitor, LabelValue as _};
 ///
 /// assert_eq!(Operation::Create.visit(LabelTestVisitor), "create");
 /// assert_eq!(Operation::Update.visit(LabelTestVisitor), "update");
@@ -94,8 +91,7 @@ pub use lasso;
 /// ## Integer values
 ///
 /// ```
-/// #[derive(measured::FixedCardinalityLabel)]
-/// #[derive(Debug, Copy, Clone, PartialEq)]
+/// #[derive(measured::FixedCardinalityLabel, Debug, Copy, Clone, PartialEq)]
 /// enum StatusCode {
 ///     Ok = 200,
 ///     ImATeapot = 418,
@@ -114,19 +110,20 @@ pub use lasso;
 /// assert_eq!(StatusCode::decode(1), StatusCode::ImATeapot);
 /// assert_eq!(StatusCode::decode(2), StatusCode::InternalServerError);
 ///
-/// use measured::label::LabelValue as _;
-/// use measured::label::LabelTestVisitor;
+/// use measured::label::{LabelTestVisitor, LabelValue as _};
 ///
 /// assert_eq!(StatusCode::Ok.visit(LabelTestVisitor), "200");
 /// assert_eq!(StatusCode::ImATeapot.visit(LabelTestVisitor), "418");
-/// assert_eq!(StatusCode::InternalServerError.visit(LabelTestVisitor), "500");
+/// assert_eq!(
+///     StatusCode::InternalServerError.visit(LabelTestVisitor),
+///     "500"
+/// );
 /// ```
 ///
 /// ## Custom values
 ///
 /// ```
-/// #[derive(measured::FixedCardinalityLabel)]
-/// #[derive(Debug, Copy, Clone, PartialEq)]
+/// #[derive(measured::FixedCardinalityLabel, Debug, Copy, Clone, PartialEq)]
 /// #[label(rename_all = "SHOUTY-KEBAB-CASE")]
 /// enum StatusCode {
 ///     #[label(rename = "a-okay")]
@@ -135,17 +132,16 @@ pub use lasso;
 ///     InternalServerError,
 /// }
 ///
-/// use measured::label::LabelValue as _;
-/// use measured::label::LabelTestVisitor;
+/// use measured::label::{LabelTestVisitor, LabelValue as _};
 ///
 /// assert_eq!(StatusCode::Ok.visit(LabelTestVisitor), "a-okay");
 /// assert_eq!(StatusCode::ImATeapot.visit(LabelTestVisitor), "IM-A-TEAPOT");
-/// assert_eq!(StatusCode::InternalServerError.visit(LabelTestVisitor), "INTERNAL-SERVER-ERROR");
+/// assert_eq!(
+///     StatusCode::InternalServerError.visit(LabelTestVisitor),
+///     "INTERNAL-SERVER-ERROR"
+/// );
 /// ```
 pub use measured_derive::FixedCardinalityLabel;
-
-pub use label::FixedCardinalityLabel;
-
 /// Implement [`LabelGroup`] on a `struct`
 ///
 /// A [`LabelGroup`] is a collection of named [`LabelValue`](label::LabelValue)s. Additionally to the label group,
@@ -219,7 +215,10 @@ pub use label::FixedCardinalityLabel;
 /// }
 ///
 /// let set = ResponseSet::new(
-///     ["/foo/bar", "/home"].into_iter().collect::<measured::lasso::Rodeo>().into_reader(),
+///     ["/foo/bar", "/home"]
+///         .into_iter()
+///         .collect::<measured::lasso::Rodeo>()
+///         .into_reader(),
 /// );
 ///
 /// use measured::label::LabelGroupSet as _;
@@ -243,9 +242,6 @@ pub use label::FixedCardinalityLabel;
 /// # }
 /// ```
 pub use measured_derive::LabelGroup;
-
-pub use label::group::LabelGroup;
-
 /// Implement [`MetricGroup`] on a `struct`
 ///
 /// A [`MetricGroup`] is a collection of named [`Metric`]s, [`MetricVec`]s, or nested [`MetricGroup`]s.
@@ -276,7 +272,6 @@ pub use label::group::LabelGroup;
 /// * `impl MetricGroup for T { ... }`
 /// * `impl MetricGroup { pub fn new(...) -> Self { ... } }`
 pub use measured_derive::MetricGroup;
-
 pub use metric::group::MetricGroup;
 
 /// A [`Metric`] that counts individual observations from an event or sample stream in configurable buckets.
@@ -284,9 +279,9 @@ pub use metric::group::MetricGroup;
 ///
 /// ```
 /// use measured::Histogram;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
-/// use measured::metric::MetricFamilyEncoding;
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a histogram with 8 buckets starting at 0.01, increasing by 2x each time up to 2.56
@@ -305,11 +300,11 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// A collection of multiple [`Histogram`]s, keyed by [`LabelGroup`]s
 ///
 /// ```
-/// use measured::{HistogramVec, LabelGroup, FixedCardinalityLabel};
 /// use measured::label::StaticLabelSet;
+/// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
-/// use measured::metric::MetricFamilyEncoding;
+/// use measured::{FixedCardinalityLabel, HistogramVec, LabelGroup};
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -335,8 +330,18 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 ///     Thresholds::<8>::exponential_buckets(0.01, 2.0),
 /// );
 /// // observe a value
-/// histograms.observe(MyLabelGroup { operation: Operation::Create }, 0.5);
-/// histograms.observe(MyLabelGroup { operation: Operation::Delete }, 2.0);
+/// histograms.observe(
+///     MyLabelGroup {
+///         operation: Operation::Create,
+///     },
+///     0.5,
+/// );
+/// histograms.observe(
+///     MyLabelGroup {
+///         operation: Operation::Delete,
+///     },
+///     2.0,
+/// );
 ///
 /// // sample the histograms and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
@@ -350,8 +355,8 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 ///
 /// ```
 /// use measured::Counter;
-/// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
+/// use measured::metric::name::MetricName;
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a counter
@@ -370,10 +375,10 @@ pub type Counter = Metric<CounterState>;
 /// A collection of multiple [`Counter`]s, keyed by [`LabelGroup`]s
 ///
 /// ```
-/// use measured::{CounterVec, LabelGroup, FixedCardinalityLabel};
 /// use measured::label::StaticLabelSet;
-/// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
+/// use measured::metric::name::MetricName;
+/// use measured::{CounterVec, FixedCardinalityLabel, LabelGroup};
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -396,8 +401,12 @@ pub type Counter = Metric<CounterState>;
 /// // create a counter vec
 /// let counters = CounterVec::with_label_set(MyLabelGroupSet::new());
 /// // increment the counter at a given label
-/// counters.inc(MyLabelGroup { operation: Operation::Create });
-/// counters.inc(MyLabelGroup { operation: Operation::Delete });
+/// counters.inc(MyLabelGroup {
+///     operation: Operation::Create,
+/// });
+/// counters.inc(MyLabelGroup {
+///     operation: Operation::Delete,
+/// });
 ///
 /// // sample the counters and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
@@ -411,8 +420,8 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 ///
 /// ```
 /// use measured::Gauge;
-/// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
+/// use measured::metric::name::MetricName;
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a gauge
@@ -431,10 +440,10 @@ pub type Gauge = Metric<GaugeState>;
 /// A collection of multiple [`Gauge`]s, keyed by [`LabelGroup`]s
 ///
 /// ```
-/// use measured::{GaugeVec, LabelGroup, FixedCardinalityLabel};
 /// use measured::label::StaticLabelSet;
-/// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
+/// use measured::metric::name::MetricName;
+/// use measured::{FixedCardinalityLabel, GaugeVec, LabelGroup};
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -457,8 +466,12 @@ pub type Gauge = Metric<GaugeState>;
 /// // create a gauge vec
 /// let gauges = GaugeVec::with_label_set(MyLabelGroupSet::new());
 /// // increment the gauge at a given label
-/// gauges.inc(MyLabelGroup { operation: Operation::Create });
-/// gauges.inc(MyLabelGroup { operation: Operation::Delete });
+/// gauges.inc(MyLabelGroup {
+///     operation: Operation::Create,
+/// });
+/// gauges.inc(MyLabelGroup {
+///     operation: Operation::Delete,
+/// });
 ///
 /// // sample the gauges and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
@@ -472,8 +485,8 @@ pub type GaugeVec<L> = MetricVec<GaugeState, L>;
 ///
 /// ```
 /// use measured::FloatGauge;
-/// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
+/// use measured::metric::name::MetricName;
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a gauge
@@ -492,10 +505,10 @@ pub type FloatGauge = Metric<FloatGaugeState>;
 /// A collection of multiple [`FloatGauge`]s, keyed by [`LabelGroup`]s
 ///
 /// ```
-/// use measured::{FloatGaugeVec, LabelGroup, FixedCardinalityLabel};
 /// use measured::label::StaticLabelSet;
-/// use measured::metric::name::MetricName;
 /// use measured::metric::MetricFamilyEncoding;
+/// use measured::metric::name::MetricName;
+/// use measured::{FixedCardinalityLabel, FloatGaugeVec, LabelGroup};
 /// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
@@ -518,8 +531,12 @@ pub type FloatGauge = Metric<FloatGaugeState>;
 /// // create a gauge vec
 /// let gauges = FloatGaugeVec::with_label_set(MyLabelGroupSet::new());
 /// // increment the gauge at a given label
-/// gauges.inc(MyLabelGroup { operation: Operation::Create });
-/// gauges.inc(MyLabelGroup { operation: Operation::Delete });
+/// gauges.inc(MyLabelGroup {
+///     operation: Operation::Create,
+/// });
+/// gauges.inc(MyLabelGroup {
+///     operation: Operation::Delete,
+/// });
 ///
 /// // sample the gauges and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
@@ -547,9 +564,8 @@ pub type GaugeHistogram<const N: usize> = Metric<metric::histogram::GaugeHistogr
 pub type GaugeHistogramVec<L, const N: usize> =
     MetricVec<metric::histogram::GaugeHistogramState<N>, L>;
 
-pub use metric::state_set::StateSet;
-
 pub use metric::exemplar::Exemplar;
+pub use metric::state_set::StateSet;
 
 /// A [`Counter`] that records when each series was created. See [`Created`](metric::created::Created)
 pub type CreatedCounter = Metric<metric::created::Created<metric::counter::CounterState>>;

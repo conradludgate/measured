@@ -1,15 +1,12 @@
 //! Groups of metrics
 
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
+use std::time::SystemTime;
 
+use super::exemplar::Exemplar;
+use super::name::{Bucket, Count, GCount, GSum, MetricNameEncoder, Sum, WithNamespace};
 pub use crate::label::ComposedGroup;
-
 use crate::label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue};
-
-use super::{
-    exemplar::Exemplar,
-    name::{Bucket, Count, GCount, GSum, MetricNameEncoder, Sum, WithNamespace},
-};
 
 /// The type of a metric family
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

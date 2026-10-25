@@ -1,19 +1,15 @@
 //! All about metrics
 
 use core::hash::Hash;
-use std::{
-    hash::BuildHasher,
-    ops::{Deref, DerefMut},
-    sync::OnceLock,
-};
+use std::hash::BuildHasher;
+use std::ops::{Deref, DerefMut};
+use std::sync::OnceLock;
 
-use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use crossbeam_utils::CachePadded;
 
-use self::{
-    group::{Encoding, MetricKind},
-    name::MetricNameEncoder,
-};
+use self::group::{Encoding, MetricKind};
+use self::name::MetricNameEncoder;
+use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 
 pub mod callback;
 pub mod counter;
@@ -572,12 +568,12 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// can be calculated:
     ///
     /// ```
-    /// use measured::{FixedCardinalityLabel, MetricGroup};
     /// use measured::label::StaticLabelSet;
-    /// use measured::metric::{
-    ///     MetricFamilyEncoding, MetricType, MetricVec, counter::CounterState, group::Encoding,
-    ///     name::MetricName,
-    /// };
+    /// use measured::metric::counter::CounterState;
+    /// use measured::metric::group::Encoding;
+    /// use measured::metric::name::MetricName;
+    /// use measured::metric::{MetricFamilyEncoding, MetricType, MetricVec};
+    /// use measured::{FixedCardinalityLabel, MetricGroup};
     /// use measured_prometheus_text::BufferedTextEncoder;
     ///
     /// #[derive(Default)]
@@ -606,13 +602,19 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     ///         const OPENED: &MetricName = MetricName::from_str("connections_opened_total");
     ///
     ///         // closed first, so that opened - closed is never negative
-    ///         self.0.project(|m| &m.closed).collect_family_into(CLOSED, None, enc)?;
-    ///         self.0.project(|m| &m.opened).collect_family_into(OPENED, None, enc)
+    ///         self.0
+    ///             .project(|m| &m.closed)
+    ///             .collect_family_into(CLOSED, None, enc)?;
+    ///         self.0
+    ///             .project(|m| &m.opened)
+    ///             .collect_family_into(OPENED, None, enc)
     ///     }
     /// }
     ///
     /// let connections = Connections::default();
-    /// let tcp = connections.0.get_metric(connections.0.with_labels(Protocol::Tcp));
+    /// let tcp = connections
+    ///     .0
+    ///     .get_metric(connections.0.with_labels(Protocol::Tcp));
     /// tcp.opened.inc_by(3);
     /// tcp.closed.inc();
     /// drop(tcp);
@@ -768,7 +770,9 @@ mod tests {
     #[cfg(feature = "lasso")]
     #[test]
     fn dynamic_labels() {
-        use fake::{Fake, faker::name::raw::Name, locales::EN};
+        use fake::Fake;
+        use fake::faker::name::raw::Name;
+        use fake::locales::EN;
 
         use crate::GaugeVec;
 

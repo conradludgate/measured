@@ -1,6 +1,6 @@
+use syn::punctuated::Punctuated;
 use syn::{
     Attribute, Expr, ExprLit, FnArg, Lit, LitStr, Meta, MetaNameValue, Token, parenthesized,
-    punctuated::Punctuated,
 };
 
 use crate::Krate;

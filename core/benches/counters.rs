@@ -1,15 +1,13 @@
 use std::cell::RefCell;
 use std::hash::{BuildHasher, BuildHasherDefault};
 
-use divan::Bencher;
-use divan::black_box;
+use divan::{Bencher, black_box};
 use lasso::{Rodeo, RodeoReader, Spur};
 use measured::label::StaticLabelSet;
-use measured_derive::FixedCardinalityLabel;
-use measured_derive::LabelGroup;
-use prometheus_client::encoding::EncodeLabelSet;
-use prometheus_client::encoding::EncodeLabelValue;
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use measured_derive::{FixedCardinalityLabel, LabelGroup};
+use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use rustc_hash::FxHasher;
 
 fn main() {

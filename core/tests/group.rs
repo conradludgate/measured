@@ -2,9 +2,9 @@
 #![cfg(feature = "lasso")]
 
 use lasso::{Rodeo, RodeoReader};
+use measured::metric::histogram::Thresholds;
 use measured::{
     Counter, CounterVec, FixedCardinalityLabel, Gauge, Histogram, LabelGroup, MetricGroup,
-    metric::histogram::Thresholds,
 };
 use measured_prometheus_text::BufferedTextEncoder;
 use prometheus_client::encoding::EncodeLabelValue;

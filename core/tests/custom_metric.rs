@@ -1,13 +1,9 @@
 //! A metric type defined outside of measured, as a third party crate would.
 
-use measured::{
-    LabelGroup, MetricGroup,
-    metric::{
-        MetricEncoding, MetricType,
-        group::{Encoding, MetricKind, SampleExtras},
-        name::MetricNameEncoder,
-    },
-};
+use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+use measured::metric::name::MetricNameEncoder;
+use measured::metric::{MetricEncoding, MetricType};
+use measured::{LabelGroup, MetricGroup};
 use measured_prometheus_text::BufferedTextEncoder;
 use parking_lot::Mutex;
 

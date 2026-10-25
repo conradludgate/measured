@@ -1,12 +1,10 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use measured::metric::histogram::Thresholds;
 use measured::{
     CallbackCounter, CallbackFloatGauge, CallbackGauge, Counter, CounterVec, FixedCardinalityLabel,
     FloatGauge, Gauge, GaugeVec, Histogram, HistogramVec, InfoMetric, LabelGroup, MetricGroup,
-    metric::histogram::Thresholds,
 };
 use measured_prometheus_text::BufferedTextEncoder;
 
@@ -221,7 +219,8 @@ fn state_set_in_namespace() {
 
 #[test]
 fn exemplars_and_created() {
-    use measured::{label::LabelName, metric::exemplar::Exemplar};
+    use measured::label::LabelName;
+    use measured::metric::exemplar::Exemplar;
     const TRACE_ID: &LabelName = LabelName::from_str("trace_id");
 
     let counters = measured::ExemplarCounterVec::<KindSet>::new();

@@ -1,23 +1,15 @@
 #![allow(clippy::cast_precision_loss)]
 
-use std::{
-    io::Write,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::io::Write;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use encoding::{
-    encode_key, encode_varint, encoded_len_varint, key_len,
-    WireType::{self, LengthDelimited},
-};
-use measured::{
-    label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
-    metric::{
-        exemplar::Exemplar,
-        group::{Encoding, HistogramExtras, MetricKind, SampleExtras},
-        name::MetricNameEncoder,
-    },
-    LabelGroup,
-};
+use encoding::WireType::{self, LengthDelimited};
+use encoding::{encode_key, encode_varint, encoded_len_varint, key_len};
+use measured::LabelGroup;
+use measured::label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
+use measured::metric::exemplar::Exemplar;
+use measured::metric::group::{Encoding, HistogramExtras, MetricKind, SampleExtras};
+use measured::metric::name::MetricNameEncoder;
 
 mod encoding;
 
@@ -603,22 +595,16 @@ mod tests {
     use std::vec;
 
     use bytes::{BufMut, BytesMut};
-    use measured::{
-        metric::histogram::Thresholds,
-        metric::{
-            name::{MetricName, Total},
-            MetricFamilyEncoding,
-        },
-        CounterVec, GaugeVec, HistogramVec,
-    };
+    use measured::metric::MetricFamilyEncoding;
+    use measured::metric::histogram::Thresholds;
+    use measured::metric::name::{MetricName, Total};
+    use measured::{CounterVec, GaugeVec, HistogramVec};
     use prost::Message;
 
-    use crate::{
-        generated::{
-            Bucket, Counter, Gauge, Histogram, LabelPair, Metric, MetricFamily, MetricType,
-            Quantile, Summary,
-        },
-        ProtoEncoder,
+    use crate::ProtoEncoder;
+    use crate::generated::{
+        Bucket, Counter, Gauge, Histogram, LabelPair, Metric, MetricFamily, MetricType, Quantile,
+        Summary,
     };
 
     #[derive(Clone, Copy, PartialEq, Debug, measured::LabelGroup)]
@@ -1082,7 +1068,8 @@ mod tests {
 
     #[test]
     fn histogram_retains_infinite_bucket_exemplar() {
-        use measured::{label::LabelName, metric::exemplar::Exemplar};
+        use measured::label::LabelName;
+        use measured::metric::exemplar::Exemplar;
 
         // Include a histogram whose only bucket is +Inf.
         for bounds in [vec![], vec![1.0]] {
@@ -1128,8 +1115,9 @@ mod tests {
 
     #[test]
     fn new_kinds() {
+        use measured::FixedCardinalityLabel;
+        use measured::label::NoLabels;
         use measured::metric::group::{Encoding, MetricKind, SampleExtras};
-        use measured::{label::NoLabels, FixedCardinalityLabel};
 
         #[derive(Clone, Copy, PartialEq, Debug, FixedCardinalityLabel)]
         enum Status {
@@ -1217,11 +1205,11 @@ mod tests {
     fn exemplars_and_created() {
         use std::time::{Duration, UNIX_EPOCH};
 
-        use measured::{
-            label::LabelName,
-            metric::{exemplar::Exemplar, histogram::Thresholds, MetricFamilyEncoding},
-            CreatedCounter, ExemplarCounter, ExemplarHistogram,
-        };
+        use measured::label::LabelName;
+        use measured::metric::MetricFamilyEncoding;
+        use measured::metric::exemplar::Exemplar;
+        use measured::metric::histogram::Thresholds;
+        use measured::{CreatedCounter, ExemplarCounter, ExemplarHistogram};
 
         const TRACE_ID: &LabelName = LabelName::from_str("trace_id");
         let at = UNIX_EPOCH + Duration::from_millis(1_700_000_000_500);

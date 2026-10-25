@@ -1,0 +1,7 @@
+# Format with: cargo +nightly-2026-10-24 fmt --all
+unstable_features = true
+style_edition = "2024"
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+format_code_in_doc_comments = true
+format_generated_files = false

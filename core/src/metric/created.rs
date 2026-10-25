@@ -3,17 +3,14 @@
 use core::ops::Deref;
 use std::time::SystemTime;
 
+use super::group::{Encoding, HistogramExtras, MetricKind, SampleExtras};
+use super::histogram::{HistogramSample, HistogramState};
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricType};
+use crate::label::{LabelGroup, LabelGroupSet, LabelValue};
 use crate::{
     CreatedCounter, CreatedCounterVec, CreatedFloatCounter, CreatedFloatCounterVec,
     CreatedHistogram, CreatedHistogramVec,
-    label::{LabelGroup, LabelGroupSet, LabelValue},
-};
-
-use super::{
-    MetricEncoding, MetricLockGuard, MetricType,
-    group::{Encoding, HistogramExtras, MetricKind, SampleExtras},
-    histogram::{HistogramSample, HistogramState},
-    name::MetricNameEncoder,
 };
 
 /// Wraps a metric to record when each series was created.

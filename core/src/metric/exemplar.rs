@@ -1,23 +1,16 @@
 //! Exemplars, examples of observations with extra labels such as a trace ID. See [`Exemplar`]
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::SystemTime,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::SystemTime;
 
 use parking_lot::Mutex;
 
-use crate::{
-    ExemplarCounter, ExemplarCounterVec, ExemplarHistogram, ExemplarHistogramVec,
-    label::{LabelGroup, LabelGroupSet, LabelGroupVisitor, LabelName},
-};
-
-use super::{
-    MetricEncoding, MetricLockGuard, MetricType,
-    group::{Encoding, HistogramExtras, MetricKind, SampleExtras},
-    histogram::{HistogramSample, HistogramState, Thresholds},
-    name::MetricNameEncoder,
-};
+use super::group::{Encoding, HistogramExtras, MetricKind, SampleExtras};
+use super::histogram::{HistogramSample, HistogramState, Thresholds};
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricType};
+use crate::label::{LabelGroup, LabelGroupSet, LabelGroupVisitor, LabelName};
+use crate::{ExemplarCounter, ExemplarCounterVec, ExemplarHistogram, ExemplarHistogramVec};
 
 /// An example of an observation, with labels that identify it, such as a trace ID.
 ///
@@ -26,7 +19,9 @@ use super::{
 /// are not written by the OpenMetrics encoder.
 ///
 /// ```
-/// use measured::{ExemplarCounter, label::LabelName, metric::exemplar::Exemplar};
+/// use measured::ExemplarCounter;
+/// use measured::label::LabelName;
+/// use measured::metric::exemplar::Exemplar;
 ///
 /// const TRACE_ID: &LabelName = LabelName::from_str("trace_id");
 ///

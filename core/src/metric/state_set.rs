@@ -1,17 +1,12 @@
 //! State sets. See [`StateSet`]
 
-use core::{
-    marker::PhantomData,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::marker::PhantomData;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
+use super::MetricFamilyEncoding;
+use super::group::{Encoding, MetricKind};
+use super::name::MetricNameEncoder;
 use crate::label::{FixedCardinalityLabel, LabelValue, NoLabels};
-
-use super::{
-    MetricFamilyEncoding,
-    group::{Encoding, MetricKind},
-    name::MetricNameEncoder,
-};
 
 /// Which state an enum is currently in, exposed as one series per state.
 ///

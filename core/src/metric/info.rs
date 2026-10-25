@@ -2,13 +2,10 @@
 
 use parking_lot::RwLock;
 
+use super::MetricFamilyEncoding;
+use super::group::{Encoding, MetricKind};
+use super::name::MetricNameEncoder;
 use crate::label::LabelGroup;
-
-use super::{
-    MetricFamilyEncoding,
-    group::{Encoding, MetricKind},
-    name::MetricNameEncoder,
-};
 
 /// A gauge that is always 1, used to expose information as labels, such as a build version.
 ///
@@ -31,8 +28,14 @@ use super::{
 ///     build_info: InfoMetric<BuildInfo>,
 /// }
 ///
-/// let metrics = Metrics::new(BuildInfo { version: "1.0", commit: "abc" });
-/// metrics.build_info.set_labels(BuildInfo { version: "1.1", commit: "def" });
+/// let metrics = Metrics::new(BuildInfo {
+///     version: "1.0",
+///     commit: "abc",
+/// });
+/// metrics.build_info.set_labels(BuildInfo {
+///     version: "1.1",
+///     commit: "def",
+/// });
 /// ```
 pub struct InfoMetric<L> {
     labels: RwLock<L>,

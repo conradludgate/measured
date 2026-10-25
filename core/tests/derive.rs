@@ -6,9 +6,8 @@ type Result<T> = std::result::Result<T, ()>;
 #[allow(dead_code)]
 type Option = u8;
 
-use measured::{
-    Counter, FixedCardinalityLabel, LabelGroup, MetricGroup, metric::MetricFamilyEncoding,
-};
+use measured::metric::MetricFamilyEncoding;
+use measured::{Counter, FixedCardinalityLabel, LabelGroup, MetricGroup};
 use measured_prometheus_text::BufferedTextEncoder;
 
 #[derive(FixedCardinalityLabel, Clone, Copy)]

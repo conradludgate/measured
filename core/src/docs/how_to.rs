@@ -10,10 +10,13 @@
 //! the encoder's `Encoding::MIME_TYPE`. Reuse the encoder between scrapes to reuse its allocation.
 //!
 //! ```
-//! use measured::{Counter, MetricGroup, metric::group::Encoding};
+//! use measured::metric::group::Encoding;
+//! use measured::{Counter, MetricGroup};
 //! use measured_prometheus_text::BufferedTextEncoder;
 //! #[derive(MetricGroup, Default)]
-//! struct Metrics { requests_total: Counter }
+//! struct Metrics {
+//!     requests_total: Counter,
+//! }
 //! let metrics = Metrics::default();
 //! let mut encoder = BufferedTextEncoder::new();
 //! metrics.collect_group_into(&mut encoder).unwrap();
@@ -33,10 +36,13 @@
 //! exactly once per collection. Writer-based encoders use `flush()` instead.
 //!
 //! ```
-//! use measured::{Counter, MetricGroup, metric::group::Encoding};
+//! use measured::metric::group::Encoding;
+//! use measured::{Counter, MetricGroup};
 //! use measured_prometheus_text::BufferedOpenMetricsEncoder;
 //! #[derive(MetricGroup, Default)]
-//! struct Metrics { requests_total: Counter }
+//! struct Metrics {
+//!     requests_total: Counter,
+//! }
 //! let metrics = Metrics::default();
 //! let mut encoder = BufferedOpenMetricsEncoder::new();
 //! metrics.collect_group_into(&mut encoder).unwrap();
@@ -51,8 +57,10 @@
 //! Keep the bounds stable across instances whose histograms you intend to aggregate.
 //!
 //! ```
-//! use measured::{Histogram, metric::histogram::Thresholds};
 //! use std::time::Duration;
+//!
+//! use measured::Histogram;
+//! use measured::metric::histogram::Thresholds;
 //! let latency = Histogram::with_metadata(Thresholds::with_buckets([0.01, 0.1, 1.0]));
 //! latency.observe_duration(Duration::from_millis(50));
 //! let sample = latency.sample();
@@ -68,7 +76,8 @@
 //! ```
 //! # #[cfg(feature = "lasso")]
 //! # {
-//! use measured::{CounterVec, LabelGroup, lasso::{Rodeo, RodeoReader}};
+//! use measured::lasso::{Rodeo, RodeoReader};
+//! use measured::{CounterVec, LabelGroup};
 //! #[derive(LabelGroup)]
 //! #[label(set = RouteSet)]
 //! struct Route<'a> {
@@ -79,7 +88,11 @@
 //! let requests = CounterVec::with_label_set(RouteSet::new(routes));
 //! requests.inc(Route { route: "/users" });
 //! assert_eq!(requests.get(Route { route: "/users" }), 1);
-//! assert!(requests.try_with_labels(Route { route: "/unknown" }).is_none());
+//! assert!(
+//!     requests
+//!         .try_with_labels(Route { route: "/unknown" })
+//!         .is_none()
+//! );
 //! # }
 //! ```
 //!
@@ -88,7 +101,8 @@
 //! ```
 //! # #[cfg(feature = "lasso")]
 //! # {
-//! use measured::{CounterVec, LabelGroup, lasso::ThreadedRodeo};
+//! use measured::lasso::ThreadedRodeo;
+//! use measured::{CounterVec, LabelGroup};
 //! #[derive(LabelGroup)]
 //! #[label(set = RouteSet)]
 //! struct Route<'a> {
@@ -96,8 +110,15 @@
 //!     route: &'a str,
 //! }
 //! let requests = CounterVec::<RouteSet>::new();
-//! requests.inc(Route { route: "/users/:id" });
-//! assert_eq!(requests.get(Route { route: "/users/:id" }), 1);
+//! requests.inc(Route {
+//!     route: "/users/:id",
+//! });
+//! assert_eq!(
+//!     requests.get(Route {
+//!         route: "/users/:id"
+//!     }),
+//!     1
+//! );
 //! assert_eq!(requests.get(Route { route: "/unknown" }), 0);
 //! assert!(requests.find_labels(Route { route: "/unknown" }).is_none());
 //! # }
@@ -113,10 +134,13 @@
 //! Look up the ID with `find_labels` so removal cannot insert new labels.
 //!
 //! ```
-//! use measured::{CounterVec, FixedCardinalityLabel, label::StaticLabelSet};
+//! use measured::label::StaticLabelSet;
+//! use measured::{CounterVec, FixedCardinalityLabel};
 //! #[derive(FixedCardinalityLabel, Clone, Copy)]
 //! #[label(singleton = "worker")]
-//! enum Worker { Background }
+//! enum Worker {
+//!     Background,
+//! }
 //! let requests = CounterVec::<StaticLabelSet<Worker>>::sparse();
 //! requests.inc(Worker::Background);
 //! if let Some(id) = requests.find_labels(Worker::Background) {

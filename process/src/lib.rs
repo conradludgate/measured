@@ -14,7 +14,6 @@
 //!     #[metric(namespace = "process")]
 //!     #[metric(init = measured_process::ProcessCollector::for_self())]
 //!     process: measured_process::ProcessCollector,
-//!
 //!     // other metrics
 //! }
 //!
@@ -70,10 +69,12 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
 
         #[cfg(target_os = "linux")]
         {
-            use measured::label::NoLabels;
-            use measured::metric::{
-                group::{MetricKind, SampleExtras},
-                name::MetricName,
+            use measured::{
+                label::NoLabels,
+                metric::{
+                    group::{MetricKind, SampleExtras},
+                    name::MetricName,
+                },
             };
 
             let Ok(p) = procfs::process::Process::new(self.pid) else {

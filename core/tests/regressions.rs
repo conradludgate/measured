@@ -24,7 +24,8 @@ fn invalid_float_counter_increments_preserve_the_value() {
 
 #[test]
 fn mutable_float_counter_vec_updates_the_selected_series() {
-    use measured::{FixedCardinalityLabel, FloatCounterVec, label::StaticLabelSet};
+    use measured::label::StaticLabelSet;
+    use measured::{FixedCardinalityLabel, FloatCounterVec};
 
     #[derive(FixedCardinalityLabel, Clone, Copy)]
     #[label(singleton = "kind")]
@@ -47,10 +48,8 @@ fn mutable_float_counter_vec_updates_the_selected_series() {
 
 #[test]
 fn default_and_static_reference_label_lookup_preserve_existing_metrics() {
-    use measured::{
-        CounterVec,
-        label::{LabelGroupSet, NoLabels},
-    };
+    use measured::CounterVec;
+    use measured::label::{LabelGroupSet, NoLabels};
 
     // A downstream label set can rely on the default `find` implementation.
     struct Labels;
@@ -105,8 +104,9 @@ fn info_labels_are_independent_snapshots() {
 #[cfg(feature = "lasso")]
 #[test]
 fn all_metric_reads_leave_dynamic_labels_and_series_unchanged() {
-    use measured::metric::histogram::Thresholds;
     use std::sync::Arc;
+
+    use measured::metric::histogram::Thresholds;
 
     #[derive(LabelGroup, Clone, Copy)]
     #[label(set = Names)]
@@ -171,15 +171,11 @@ fn all_metric_reads_leave_dynamic_labels_and_series_unchanged() {
 
 #[test]
 fn projection_preserves_histogram_metadata_and_labels() {
-    use measured::{
-        FixedCardinalityLabel,
-        label::StaticLabelSet,
-        metric::{
-            MetricFamilyEncoding, MetricType, MetricVec,
-            histogram::{HistogramState, Thresholds},
-            name::MetricName,
-        },
-    };
+    use measured::FixedCardinalityLabel;
+    use measured::label::StaticLabelSet;
+    use measured::metric::histogram::{HistogramState, Thresholds};
+    use measured::metric::name::MetricName;
+    use measured::metric::{MetricFamilyEncoding, MetricType, MetricVec};
     use measured_prometheus_text::BufferedTextEncoder;
 
     #[derive(Default)]
@@ -221,11 +217,10 @@ fn projection_preserves_histogram_metadata_and_labels() {
 #[cfg(feature = "paracord")]
 #[test]
 fn composed_shared_label_sets_find_without_interning() {
-    use measured::{
-        CounterVec,
-        label::{ComposedGroup, LabelGroupSet},
-    };
     use std::sync::Arc;
+
+    use measured::CounterVec;
+    use measured::label::{ComposedGroup, LabelGroupSet};
 
     #[derive(LabelGroup, Clone, Copy)]
     #[label(set = NameSet)]

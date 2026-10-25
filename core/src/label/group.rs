@@ -206,9 +206,8 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{FixedCardinalityLabel, LabelGroup};
-
     use super::{ComposedGroup, LabelGroupSet};
+    use crate::{FixedCardinalityLabel, LabelGroup};
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
     #[label(crate = crate, set = ErrorsSet)]

@@ -1,16 +1,13 @@
 use std::sync::Arc;
 
-use axum::{
-    extract::{MatchedPath, Request, State},
-    middleware::Next,
-    response::Response,
-    RequestExt,
-};
-use measured::{
-    label::{self, LabelValue},
-    metric::{group::Encoding, histogram::Thresholds},
-    CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup,
-};
+use axum::RequestExt;
+use axum::extract::{MatchedPath, Request, State};
+use axum::middleware::Next;
+use axum::response::Response;
+use measured::label::{self, LabelValue};
+use measured::metric::group::Encoding;
+use measured::metric::histogram::Thresholds;
+use measured::{CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup};
 use measured_prometheus_text::BufferedTextEncoder;
 use tokio::sync::Mutex;
 

@@ -1,8 +1,7 @@
 use core::marker::PhantomData;
 
-use crate::LabelGroup;
-
 use super::LabelGroupSet;
+use crate::LabelGroup;
 
 /// `StaticLabelSet` is a [`LabelSet`] for a [`FixedCardinalityLabel`]
 pub struct StaticLabelSet<T>(PhantomData<T>);
@@ -222,9 +221,8 @@ mod tests {
 
     use measured_derive::MetricGroup;
 
-    use crate::CounterVec;
-
     use super::StaticLabelSet;
+    use crate::CounterVec;
 
     #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
     #[label(crate = crate)]

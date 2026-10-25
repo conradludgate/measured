@@ -1,4 +1,5 @@
-use measured::metric::{MetricFamilyEncoding, histogram::Thresholds};
+use measured::metric::MetricFamilyEncoding;
+use measured::metric::histogram::Thresholds;
 use prometheus::exponential_buckets;
 
 #[test]

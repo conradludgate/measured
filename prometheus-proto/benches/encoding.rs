@@ -1,5 +1,4 @@
-use divan::black_box;
-use divan::Bencher;
+use divan::{Bencher, black_box};
 use measured::lasso::{Spur, ThreadedRodeo};
 use measured::{CounterVec, LabelGroup, MetricGroup};
 use measured_prometheus_protobuf::ProtoEncoder;

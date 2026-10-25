@@ -2,13 +2,11 @@
 
 use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
-use crate::{FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup, label::LabelGroupSet};
-
-use super::{
-    MetricEncoding, MetricLockGuard, MetricMut, MetricType,
-    group::{Encoding, MetricKind},
-    name::MetricNameEncoder,
-};
+use super::group::{Encoding, MetricKind};
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricMut, MetricType};
+use crate::label::LabelGroupSet;
+use crate::{FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup};
 
 #[derive(Default)]
 /// The internal state that is used by [`Gauge`] and [`GaugeVec`]

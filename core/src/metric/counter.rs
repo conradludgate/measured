@@ -2,14 +2,12 @@
 
 use core::sync::atomic::AtomicU64;
 
-use crate::{Counter, CounterVec, FloatCounter, FloatCounterVec, LabelGroup, label::LabelGroupSet};
-
-use super::{
-    MetricEncoding, MetricLockGuard, MetricMut, MetricType,
-    gauge::AtomicF64,
-    group::{Encoding, MetricKind, SampleExtras},
-    name::MetricNameEncoder,
-};
+use super::gauge::AtomicF64;
+use super::group::{Encoding, MetricKind, SampleExtras};
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricMut, MetricType};
+use crate::label::LabelGroupSet;
+use crate::{Counter, CounterVec, FloatCounter, FloatCounterVec, LabelGroup};
 
 #[derive(Default)]
 /// The internal state that is used by [`Counter`] and [`CounterVec`]

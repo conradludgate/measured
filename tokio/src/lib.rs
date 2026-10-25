@@ -12,7 +12,6 @@
 //!     #[metric(namespace = "tokio")]
 //!     #[metric(init = measured_tokio::RuntimeCollector::current())]
 //!     tokio: measured_tokio::RuntimeCollector,
-//!
 //!     // other metrics
 //! }
 //!
@@ -26,16 +25,15 @@
 //! }
 //! ```
 
-use std::{borrow::Cow, sync::RwLock};
+use std::borrow::Cow;
+use std::sync::RwLock;
 
-use measured::{
-    FixedCardinalityLabel, LabelGroup, MetricGroup,
-    label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels},
-    metric::{
-        group::{Encoding, MetricKind, SampleExtras},
-        name::MetricName,
-    },
+use measured::label::{
+    ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels,
 };
+use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+use measured::metric::name::MetricName;
+use measured::{FixedCardinalityLabel, LabelGroup, MetricGroup};
 use tokio::runtime::RuntimeMetrics;
 
 /// A collector which contains multiple named tokio runtimes

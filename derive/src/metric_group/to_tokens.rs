@@ -1,11 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote, quote_spanned};
-use syn::{ext::IdentExt, parse_quote, parse_quote_spanned};
+use syn::ext::IdentExt;
+use syn::{parse_quote, parse_quote_spanned};
 
-use super::{
-    MetricGroup, MetricGroupField,
-    attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind},
-};
+use super::attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind};
+use super::{MetricGroup, MetricGroupField};
 
 impl ToTokens for MetricGroup {
     fn to_tokens(&self, tokens: &mut TokenStream) {

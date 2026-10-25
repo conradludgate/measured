@@ -1,12 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
-use axum::{
-    extract::{FromRef, Path},
-    http::StatusCode,
-    middleware,
-    routing::get,
-    Router,
-};
+use axum::extract::{FromRef, Path};
+use axum::http::StatusCode;
+use axum::routing::get;
+use axum::{Router, middleware};
 use metrics::{AppMetrics, AppMetricsEncoder};
 use tokio::net::TcpListener;
 
