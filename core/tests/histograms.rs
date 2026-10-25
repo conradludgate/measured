@@ -1,4 +1,4 @@
-use measured::metric::{MetricFamilyEncoding, group::Encoding, histogram::Thresholds};
+use measured::metric::{MetricFamilyEncoding, histogram::Thresholds};
 use prometheus::exponential_buckets;
 
 #[test]
@@ -14,8 +14,8 @@ fn measured() {
     }
 
     let metric = MetricName::from_str("http_request_errors");
-    encoder.write_help(metric, "help text").unwrap();
-    h.collect_family_into(metric, &mut encoder).unwrap();
+    h.collect_family_into(metric, Some("help text"), &mut encoder)
+        .unwrap();
     assert_eq!(
         encoder.finish(),
         r#"# HELP http_request_errors help text

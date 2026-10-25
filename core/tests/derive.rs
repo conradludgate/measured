@@ -111,6 +111,7 @@ fn label_set_new_uses_declaration_order() {
     counter
         .collect_family_into(
             measured::metric::name::MetricName::from_str("pairs"),
+            None,
             &mut enc,
         )
         .unwrap();

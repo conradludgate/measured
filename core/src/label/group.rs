@@ -55,6 +55,7 @@ pub trait LabelGroupSet {
 }
 
 /// A [`LabelGroup`] with no label pairs
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NoLabels;
 
 impl LabelGroup for NoLabels {

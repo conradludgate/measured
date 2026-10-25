@@ -734,6 +734,7 @@ version = "0.0.25"
 dependencies = [
  "itoa",
  "measured",
+ "measured-prometheus-text",
  "tokio",
 ]
 

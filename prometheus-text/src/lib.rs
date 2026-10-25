@@ -29,12 +29,8 @@ use memchr::memchr3_iter;
 use measured::{
     label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
-        MetricEncoding,
-        counter::CounterState,
-        gauge::{FloatGaugeState, GaugeState},
-        group::Encoding,
-        histogram::{HistogramState, Thresholds},
-        name::{Bucket, Count, MetricNameEncoder, Sum},
+        group::{Encoding, MetricKind, SampleExtras},
+        name::MetricNameEncoder,
     },
 };
 
@@ -77,27 +73,67 @@ pub enum MetricType {
 }
 
 impl<W: Write> Encoding for TextEncoder<W> {
-    type Err = std::io::Error;
-
+    type Err = io::Error;
     const MIME_TYPE: &'static str = "text/plain; version=0.0.4";
-
-    /// Write the help line for a metric
-    fn write_help(
+    fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: &str,
-    ) -> Result<(), std::io::Error> {
+        help: Option<&str>,
+        kind: MetricKind,
+    ) -> io::Result<()> {
         if self.state == State::Metrics {
-            self.write_line()?;
+            self.writer.write_all(b"\n")?;
+        }
+        if let Some(help) = help {
+            self.writer.write_all(b"# HELP ")?;
+            name.encode_utf8(&mut self.writer)?;
+            self.writer.write_all(b" ")?;
+            write_help_str(help, &mut self.writer)?;
+            self.writer.write_all(b"\n")?;
         }
         self.state = State::Info;
-
-        self.writer.write_all(b"# HELP ")?;
-        name.encode_utf8(&mut self.writer)?;
-        self.writer.write_all(b" ")?;
-        write_help_str(help, &mut self.writer)?;
-        self.writer.write_all(b"\n")?;
-        Ok(())
+        let kind = match kind {
+            MetricKind::Counter => MetricType::Counter,
+            MetricKind::Gauge | MetricKind::Info | MetricKind::StateSet => MetricType::Gauge,
+            MetricKind::Histogram | MetricKind::GaugeHistogram => MetricType::Histogram,
+            MetricKind::Summary => MetricType::Summary,
+            _ => MetricType::Untyped,
+        };
+        self.write_type(name, kind)
+    }
+    fn write_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: u64,
+        _: SampleExtras<'_>,
+    ) -> io::Result<()> {
+        self.write_metric_value(name, labels, MetricValue::Uint(value))
+    }
+    fn write_float_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: f64,
+        _: SampleExtras<'_>,
+    ) -> io::Result<()> {
+        self.write_metric_value(name, labels, MetricValue::Float(value))
+    }
+    fn write_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: i64,
+    ) -> io::Result<()> {
+        self.write_metric_value(name, labels, MetricValue::Int(value))
+    }
+    fn write_float_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: f64,
+    ) -> io::Result<()> {
+        self.write_metric_value(name, labels, MetricValue::Float(value))
     }
 }
 
@@ -239,129 +275,6 @@ impl<W: Write> TextEncoder<W> {
     }
 }
 
-impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState<N> {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Histogram)
-    }
-    fn collect_into(
-        &self,
-        metadata: &Thresholds<N>,
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        struct F64(f64);
-        impl LabelValue for F64 {
-            fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
-                v.write_float(self.0)
-            }
-        }
-
-        struct HistogramLabelLe {
-            le: f64,
-        }
-
-        impl LabelGroup for HistogramLabelLe {
-            fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
-                const LE: &LabelName = LabelName::from_str("le");
-                v.write_value(LE, &F64(self.le));
-            }
-        }
-
-        let sample = self.sample();
-        let mut val = 0;
-
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..N {
-            let le = metadata.get()[i];
-            val += sample.buckets[i];
-            enc.write_metric_value(
-                name.by_ref().with_suffix(Bucket),
-                labels.by_ref().compose_with(HistogramLabelLe { le }),
-                MetricValue::Uint(val),
-            )?;
-        }
-        let count = val + sample.inf;
-        enc.write_metric_value(
-            name.by_ref().with_suffix(Bucket),
-            labels
-                .by_ref()
-                .compose_with(HistogramLabelLe { le: f64::INFINITY }),
-            MetricValue::Uint(count),
-        )?;
-        enc.write_metric_value(
-            name.by_ref().with_suffix(Sum),
-            labels.by_ref(),
-            MetricValue::Float(sample.sum),
-        )?;
-        enc.write_metric_value(
-            name.by_ref().with_suffix(Count),
-            labels,
-            MetricValue::Uint(count),
-        )?;
-        Ok(())
-    }
-}
-
-impl<W: Write> MetricEncoding<TextEncoder<W>> for CounterState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Counter)
-    }
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(&name, labels, MetricValue::Uint(self.get()))
-    }
-}
-
-impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Gauge)
-    }
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(&name, labels, MetricValue::Int(self.get()))
-    }
-}
-
-impl<W: Write> MetricEncoding<TextEncoder<W>> for FloatGaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_type(&name, MetricType::Gauge)
-    }
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut TextEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(&name, labels, MetricValue::Float(self.get()))
-    }
-}
-
-/// A [`TextEncoder`] that writes into an in-memory buffer.
-///
 /// Writing into the buffer never fails.
 pub type BufferedTextEncoder = TextEncoder<BytesWriter>;
 
@@ -462,7 +375,7 @@ mod tests {
         label::StaticLabelSet,
         metric::{
             MetricFamilyEncoding,
-            group::Encoding,
+            group::{Encoding, MetricKind},
             histogram::Thresholds,
             name::{MetricName, Total},
         },
@@ -528,10 +441,13 @@ This is on a new line"#,
         let mut encoder = BufferedTextEncoder::default();
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
-        encoder
-            .write_help(&name, "The total number of HTTP requests.")
+        requests
+            .collect_family_into(
+                name,
+                Some("The total number of HTTP requests."),
+                &mut encoder,
+            )
             .unwrap();
-        requests.collect_family_into(name, &mut encoder).unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
@@ -557,10 +473,13 @@ http_request_total{method="get",code="400"} 3
         let mut encoder = BufferedTextEncoder::default();
 
         let name = MetricName::from_str("http_request_duration_seconds");
-        encoder
-            .write_help(name, "A histogram of the request duration.")
+        histogram
+            .collect_family_into(
+                name,
+                Some("A histogram of the request duration."),
+                &mut encoder,
+            )
             .unwrap();
-        histogram.collect_family_into(name, &mut encoder).unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
@@ -621,10 +540,13 @@ http_request_duration_seconds_count 4
         let mut encoder = BufferedTextEncoder::default();
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
-        encoder
-            .write_help(&name, "The total number of HTTP requests.")
+        requests
+            .collect_family_into(
+                name,
+                Some("The total number of HTTP requests."),
+                &mut encoder,
+            )
             .unwrap();
-        requests.collect_family_into(name, &mut encoder).unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert_eq!(
@@ -642,11 +564,18 @@ http_request_total{method="get",code="badrequest"} 3
         let mut encoder = BufferedTextEncoder::default();
         let name = MetricName::from_str("foo");
         encoder
-            .write_help(name, "line one\nline \\two \"quoted\"")
+            .write_family(
+                name,
+                Some("line one\nline \\two \"quoted\""),
+                MetricKind::Gauge,
+            )
             .unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
-        assert_eq!(s, "# HELP foo line one\\nline \\\\two \"quoted\"\n");
+        assert_eq!(
+            s,
+            "# HELP foo line one\\nline \\\\two \"quoted\"\n# TYPE foo gauge\n"
+        );
     }
 
     #[test]
@@ -656,7 +585,7 @@ http_request_total{method="get",code="badrequest"} 3
         let counter = Counter::new();
         counter.inc_by(u64::MAX);
         counter
-            .collect_family_into(MetricName::from_str("big"), &mut encoder)
+            .collect_family_into(MetricName::from_str("big"), None, &mut encoder)
             .unwrap();
 
         for (name, x) in [
@@ -667,7 +596,7 @@ http_request_total{method="get",code="badrequest"} 3
             let gauge = FloatGauge::new();
             gauge.set(x);
             gauge
-                .collect_family_into(MetricName::from_str(name), &mut encoder)
+                .collect_family_into(MetricName::from_str(name), None, &mut encoder)
                 .unwrap();
         }
 
@@ -697,7 +626,7 @@ nan NaN
 
         let mut encoder = BufferedTextEncoder::default();
         histogram
-            .collect_family_into(MetricName::from_str("h"), &mut encoder)
+            .collect_family_into(MetricName::from_str("h"), None, &mut encoder)
             .unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();

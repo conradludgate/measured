@@ -6,40 +6,59 @@ use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType:
 use measured::{
     label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
-        counter::CounterState,
-        gauge::{FloatGaugeState, GaugeState},
-        group::Encoding,
+        exemplar::Exemplar,
+        group::{Encoding, HistogramExtras, MetricKind, SampleExtras},
         name::MetricNameEncoder,
-        MetricEncoding,
     },
     LabelGroup,
 };
 
 mod encoding;
 
-/// The prometheus text encoder helper
+/// The prometheus protobuf encoder.
+///
+/// Encodes metrics as a stream of length-delimited `io.prometheus.client.MetricFamily` messages.
 pub struct ProtoEncoder<W> {
     state: State,
-    pub writer: W,
+    untyped: bool,
+    writer: W,
     buf: Vec<u8>,
 }
 
 impl<W: Write> ProtoEncoder<W> {
-    /// Create a new text encoder.
+    /// Create a new protobuf encoder.
     ///
     /// This should ideally be cached and re-used between collections to reduce re-allocating
     pub fn new(w: W) -> Self {
         Self {
             state: State::Init,
+            untyped: true,
             writer: w,
             buf: Vec::new(),
         }
     }
 
-    /// Finish the text encoding and extract the bytes to send in a HTTP response.
+    /// Finish this collection, writing out the final metric family and flushing the inner writer.
     pub fn flush(&mut self) -> std::io::Result<()> {
         self.flush_buf()?;
         self.writer.flush()
+    }
+
+    /// Borrow the inner writer.
+    pub fn writer(&self) -> &W {
+        &self.writer
+    }
+
+    /// Mutably borrow the inner writer.
+    ///
+    /// Writing to the inner writer directly in the middle of a collection can produce invalid output.
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
+    /// Return the inner writer. Call [`ProtoEncoder::flush`] first, or the final metric family will be lost.
+    pub fn into_inner(self) -> W {
+        self.writer
     }
 
     /// Writes out the buffered metric family, if it has any metrics, and resets the buffer.
@@ -58,12 +77,18 @@ impl<W: Write> ProtoEncoder<W> {
         };
 
         self.state = State::Init;
+        self.untyped = true;
         self.buf.clear();
         self.buf.resize(10, 0);
         res
     }
 
-    fn start_family(&mut self, name: impl MetricNameEncoder) -> Result<(), std::io::Error> {
+    fn start_family(
+        &mut self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+        kind: MetricKind,
+    ) -> Result<(), std::io::Error> {
         self.flush_buf()?;
 
         // optional string     name   = 1;
@@ -71,49 +96,91 @@ impl<W: Write> ProtoEncoder<W> {
         encode_varint(name.encode_len() as u64, &mut self.buf);
         name.encode_utf8(&mut self.buf)?;
 
-        self.state = State::Help;
-        Ok(())
-    }
-
-    fn write_metric_type(
-        &mut self,
-        name: impl MetricNameEncoder,
-        metric_type: i32,
-    ) -> Result<(), std::io::Error> {
-        // `write_help` may have already started this family
-        if self.state != State::Help {
-            self.start_family(name)?;
+        // optional string     help   = 2;
+        if let Some(help) = help {
+            encoding::encode_str(2, help, &mut self.buf);
         }
 
         // optional MetricType type   = 3;
+        // Unsupported types fall back to untyped samples.
+        let metric_type = match kind {
+            MetricKind::Counter => 0,
+            // protobuf has no state sets or info metrics, but their samples are gauges
+            MetricKind::Gauge | MetricKind::StateSet | MetricKind::Info => 1,
+            MetricKind::Summary => 2,
+            MetricKind::Histogram => 4,
+            MetricKind::GaugeHistogram => 5,
+            _ => 3,
+        };
+        self.untyped = metric_type == 3;
         encoding::encode_i32(3, metric_type, &mut self.buf);
 
-        self.state = State::Type;
+        self.state = State::Header;
         Ok(())
+    }
+
+    /// Write a metric into the current family, with the value in the given `Metric` field.
+    fn write_metric(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value_tag: u32,
+        value_len: usize,
+        value: impl FnOnce(&mut Vec<u8>),
+    ) -> Result<(), std::io::Error> {
+        // samples should always be in a family, but don't produce an invalid message if not
+        if self.state == State::Init {
+            self.start_family(name, None, MetricKind::Untyped)?;
+        }
+        self.state = State::Metrics;
+
+        let mut label_pairs_len = GroupLenVisitor { len: 0 };
+        labels.visit_values(&mut label_pairs_len);
+        let metric_len = label_pairs_len.len + message_len(value_tag, value_len);
+
+        // repeated Metric     metric = 4;
+        encode_message(4, metric_len, &mut self.buf, |buf| {
+            labels.visit_values(&mut GroupVisitor { buf });
+            encode_message(value_tag, value_len, buf, value);
+        });
+
+        Ok(())
+    }
+
+    fn write_double(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value_tag: u32,
+        value: f64,
+    ) -> Result<(), std::io::Error> {
+        // optional Untyped untyped = 5;
+        let value_tag = if self.untyped { 5 } else { value_tag };
+        let value_len = encoding::encoded_len_f64(1, value);
+        self.write_metric(name, labels, value_tag, value_len, |buf| {
+            // optional double   value    = 1;
+            encoding::encode_f64(1, value, buf);
+        })
+    }
+
+    /// Write a `Counter` message
+    fn write_counter_message(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: f64,
+        extras: SampleExtras<'_>,
+    ) -> Result<(), std::io::Error> {
+        let _ = extras;
+        self.write_double(name, labels, if self.untyped { 5 } else { 3 }, value)
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum State {
     Init,
-    Help,
-    Type,
+    Header,
     Metrics,
-}
-
-/// Prometheus only supports these 5 types of metrics
-#[derive(Clone, Copy, Debug)]
-pub enum MetricType {
-    /// Corresponds to [`Counter`](crate::Counter)
-    Counter,
-    /// Corresponds to [`Histogram`](crate::Histogram)
-    Histogram,
-    /// Corresponds to [`Gauge`](crate::Gauge)
-    Gauge,
-    /// Not currently supported
-    Summary,
-    /// Not currently supported
-    Untyped,
 }
 
 impl<W: Write> Encoding for ProtoEncoder<W> {
@@ -121,18 +188,174 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
 
     const MIME_TYPE: &'static str = "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited";
 
-    /// Write the help line for a metric
-    fn write_help(
+    fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: &str,
+        help: Option<&str>,
+        kind: MetricKind,
     ) -> Result<(), std::io::Error> {
-        self.start_family(name)?;
+        self.start_family(name, help, kind)
+    }
 
-        // optional string     help   = 2;
-        encoding::encode_str(2, help, &mut self.buf);
+    fn write_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: u64,
+        extras: SampleExtras<'_>,
+    ) -> Result<(), std::io::Error> {
+        // protobuf counters are doubles, so this loses precision above 2^53
+        self.write_counter_message(name, labels, value as f64, extras)
+    }
 
-        Ok(())
+    fn write_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: i64,
+    ) -> Result<(), std::io::Error> {
+        // optional Gauge     gauge        = 2;
+        // protobuf gauges are doubles, so this loses precision above 2^53
+        self.write_double(name, labels, 2, value as f64)
+    }
+
+    fn write_float_gauge(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: f64,
+    ) -> Result<(), std::io::Error> {
+        // optional Gauge     gauge        = 2;
+        self.write_double(name, labels, 2, value)
+    }
+
+    fn write_float_counter(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        value: f64,
+        extras: SampleExtras<'_>,
+    ) -> Result<(), std::io::Error> {
+        self.write_counter_message(name, labels, value, extras)
+    }
+
+    fn write_gauge_histogram(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        le: &[f64],
+        counts: &[i64],
+        inf: i64,
+        sum: f64,
+    ) -> Result<(), std::io::Error> {
+        // gauge histograms use the same message as histograms, in a GAUGE_HISTOGRAM family.
+        // the counts should never be negative, but clamp them in case they are.
+        let counts: Vec<u64> = counts.iter().map(|&c| c.max(0) as u64).collect();
+        self.write_histogram(
+            name,
+            labels,
+            le,
+            &counts,
+            inf.max(0) as u64,
+            sum,
+            HistogramExtras::NONE,
+        )
+    }
+
+    fn write_histogram(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        le: &[f64],
+        counts: &[u64],
+        inf: u64,
+        sum: f64,
+        extras: HistogramExtras<'_>,
+    ) -> Result<(), std::io::Error> {
+        fn bucket_len(
+            cumulative_count: u64,
+            upper_bound: f64,
+            _exemplar: Option<&Exemplar>,
+        ) -> usize {
+            encoding::encoded_len_u64(1, cumulative_count)
+                + encoding::encoded_len_f64(2, upper_bound)
+        }
+
+        let count = counts.iter().sum::<u64>() + inf;
+
+        let mut histogram_len =
+            encoding::encoded_len_u64(1, count) + encoding::encoded_len_f64(2, sum);
+        let buckets = le.iter().copied().zip(counts.iter().copied());
+        let mut cumulative = 0;
+        for (i, (upper_bound, n)) in buckets.clone().enumerate() {
+            cumulative += n;
+            histogram_len +=
+                message_len(3, bucket_len(cumulative, upper_bound, extras.exemplar(i)));
+        }
+
+        // optional Histogram histogram    = 7;
+        self.write_metric(name, labels, 7, histogram_len, |buf| {
+            // optional uint64 sample_count = 1;
+            encoding::encode_u64(1, count, buf);
+            // optional double sample_sum   = 2;
+            encoding::encode_f64(2, sum, buf);
+
+            // repeated Bucket bucket       = 3;
+            let mut cumulative = 0;
+            for (i, (upper_bound, n)) in buckets.enumerate() {
+                cumulative += n;
+                let _exemplar = extras.exemplar(i);
+                encode_message(
+                    3,
+                    bucket_len(cumulative, upper_bound, _exemplar),
+                    buf,
+                    |buf| {
+                        // optional uint64 cumulative_count = 1;
+                        encoding::encode_u64(1, cumulative, buf);
+                        // optional double upper_bound      = 2;
+                        encoding::encode_f64(2, upper_bound, buf);
+                    },
+                );
+            }
+        })
+    }
+
+    fn write_summary(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        quantiles: &[(f64, f64)],
+        count: u64,
+        sum: f64,
+        _extras: SampleExtras<'_>,
+    ) -> Result<(), std::io::Error> {
+        fn quantile_len(quantile: f64, value: f64) -> usize {
+            encoding::encoded_len_f64(1, quantile) + encoding::encoded_len_f64(2, value)
+        }
+
+        let mut summary_len =
+            encoding::encoded_len_u64(1, count) + encoding::encoded_len_f64(2, sum);
+        for &(quantile, value) in quantiles {
+            summary_len += message_len(3, quantile_len(quantile, value));
+        }
+
+        // optional Summary   summary      = 4;
+        self.write_metric(name, labels, 4, summary_len, |buf| {
+            // optional uint64   sample_count = 1;
+            encoding::encode_u64(1, count, buf);
+            // optional double   sample_sum   = 2;
+            encoding::encode_f64(2, sum, buf);
+
+            // repeated Quantile quantile     = 3;
+            for &(quantile, value) in quantiles {
+                encode_message(3, quantile_len(quantile, value), buf, |buf| {
+                    // optional double quantile = 1;
+                    encoding::encode_f64(1, quantile, buf);
+                    // optional double value    = 2;
+                    encoding::encode_f64(2, value, buf);
+                });
+            }
+        })
     }
 }
 
@@ -246,135 +469,6 @@ impl LabelGroupVisitor for GroupVisitor<'_> {
     }
 }
 
-impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        // COUNTER = 0
-        enc.write_metric_type(name, 0)
-    }
-
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        _name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.state = State::Metrics;
-
-        let mut metric_len = 0;
-
-        let mut label_pairs_len = GroupLenVisitor { len: 0 };
-        labels.visit_values(&mut label_pairs_len);
-        metric_len += label_pairs_len.len;
-
-        let count = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
-        let count_len = encoding::encoded_len_f64(1, count);
-        metric_len += message_len(3, count_len);
-
-        // repeated Metric     metric = 4;
-        encode_message(4, metric_len, &mut enc.buf, |buf| {
-            labels.visit_values(&mut GroupVisitor { buf });
-
-            // optional Counter   counter      = 3;
-            encode_message(3, count_len, buf, |buf| {
-                // optional double   value    = 1;
-                encoding::encode_f64(1, count, buf);
-            });
-        });
-
-        Ok(())
-    }
-}
-
-impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        // GAUGE = 1
-        enc.write_metric_type(name, 1)
-    }
-
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        _name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.state = State::Metrics;
-
-        let mut metric_len = 0;
-
-        let mut label_pairs_len = GroupLenVisitor { len: 0 };
-        labels.visit_values(&mut label_pairs_len);
-        metric_len += label_pairs_len.len;
-
-        let gauge = self.count.load(std::sync::atomic::Ordering::Relaxed) as f64;
-        let gauge_len = encoding::encoded_len_f64(1, gauge);
-        metric_len += message_len(3, gauge_len);
-
-        // repeated Metric     metric = 4;
-        encode_message(4, metric_len, &mut enc.buf, |buf| {
-            labels.visit_values(&mut GroupVisitor { buf });
-
-            // optional Gauge   gauge      = 2;
-            encode_message(2, gauge_len, buf, |buf| {
-                // optional double   value    = 1;
-                encoding::encode_f64(1, gauge, buf);
-            });
-        });
-
-        Ok(())
-    }
-}
-
-impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        // GAUGE = 1
-        enc.write_metric_type(name, 1)
-    }
-
-    fn collect_into(
-        &self,
-        _m: &(),
-        labels: impl LabelGroup,
-        _name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
-        enc.state = State::Metrics;
-
-        let mut metric_len = 0;
-
-        let mut label_pairs_len = GroupLenVisitor { len: 0 };
-        labels.visit_values(&mut label_pairs_len);
-        metric_len += label_pairs_len.len;
-
-        let gauge = self.count.get();
-        let gauge_len = encoding::encoded_len_f64(1, gauge);
-        metric_len += message_len(3, gauge_len);
-
-        // repeated Metric     metric = 4;
-        encode_message(4, metric_len, &mut enc.buf, |buf| {
-            labels.visit_values(&mut GroupVisitor { buf });
-
-            // optional Gauge   gauge      = 2;
-            encode_message(2, gauge_len, buf, |buf| {
-                // optional double   value    = 1;
-                encoding::encode_f64(1, gauge, buf);
-            });
-        });
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod generated;
 
@@ -384,17 +478,20 @@ mod tests {
 
     use bytes::{BufMut, BytesMut};
     use measured::{
+        metric::histogram::Thresholds,
         metric::{
-            group::Encoding,
             name::{MetricName, Total},
             MetricFamilyEncoding,
         },
-        CounterVec, GaugeVec,
+        CounterVec, GaugeVec, HistogramVec,
     };
     use prost::Message;
 
     use crate::{
-        generated::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType},
+        generated::{
+            Bucket, Counter, Gauge, Histogram, LabelPair, Metric, MetricFamily, MetricType,
+            Quantile, Summary,
+        },
         ProtoEncoder,
     };
 
@@ -437,11 +534,11 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
-        enc.write_help(&name, "The total number of HTTP requests.")
+        requests
+            .collect_family_into(&name, Some("The total number of HTTP requests."), &mut enc)
             .unwrap();
-        requests.collect_family_into(&name, &mut enc).unwrap();
         enc.flush().unwrap();
-        let actual_msg = enc.writer.into_inner();
+        let actual_msg = enc.into_inner().into_inner();
 
         let expected = MetricFamily {
             name: Some("http_request_total".to_string()),
@@ -523,11 +620,11 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
-        enc.write_help(&name, "The total number of HTTP requests.")
+        requests
+            .collect_family_into(&name, Some("The total number of HTTP requests."), &mut enc)
             .unwrap();
-        requests.collect_family_into(&name, &mut enc).unwrap();
         enc.flush().unwrap();
-        let actual_msg = enc.writer.into_inner();
+        let actual_msg = enc.into_inner().into_inner();
 
         let expected = MetricFamily {
             name: Some("http_request_total".to_string()),
@@ -598,8 +695,7 @@ mod tests {
         family: &CounterVec<RequestLabelSet>,
     ) -> std::io::Result<()> {
         let name = MetricName::from_str(name).with_suffix(Total);
-        enc.write_help(&name, "help")?;
-        family.collect_family_into(&name, enc)
+        family.collect_family_into(&name, Some("help"), enc)
     }
 
     #[test]
@@ -619,7 +715,7 @@ mod tests {
         write_family(&mut enc, "e", &empty).unwrap();
         enc.flush().unwrap();
 
-        let families = decode_all(enc.writer.into_inner().freeze());
+        let families = decode_all(enc.into_inner().into_inner().freeze());
         let names: Vec<_> = families.iter().map(|f| f.name()).collect();
         assert_eq!(names, ["b_total", "d_total"]);
         assert!(families.iter().all(|f| f.metric.len() == 1));
@@ -637,11 +733,11 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
         let a = MetricName::from_str("a").with_suffix(Total);
         let b = MetricName::from_str("b").with_suffix(Total);
-        empty.collect_family_into(&a, &mut enc).unwrap();
-        full.collect_family_into(&b, &mut enc).unwrap();
+        empty.collect_family_into(&a, None, &mut enc).unwrap();
+        full.collect_family_into(&b, None, &mut enc).unwrap();
         enc.flush().unwrap();
 
-        let families = decode_all(enc.writer.into_inner().freeze());
+        let families = decode_all(enc.into_inner().into_inner().freeze());
         assert_eq!(families.len(), 1);
         assert_eq!(families[0].name(), "b_total");
         assert_eq!(families[0].help, None);
@@ -682,13 +778,266 @@ mod tests {
         write_family(&mut enc, "a", &full).unwrap();
         enc.flush().unwrap_err();
 
-        enc.writer.fail = false;
+        enc.writer_mut().fail = false;
         write_family(&mut enc, "b", &full).unwrap();
         enc.flush().unwrap();
 
-        let families = decode_all(enc.writer.out.into());
+        let families = decode_all(enc.into_inner().out.into());
         assert_eq!(families.len(), 1);
         assert_eq!(families[0].name(), "b_total");
         assert_eq!(families[0].metric.len(), 1);
+    }
+
+    #[test]
+    fn histogram() {
+        let histograms =
+            HistogramVec::<RequestLabelSet, 2>::with_metadata(Thresholds::with_buckets([0.1, 1.0]));
+        let labels = RequestLabels {
+            method: Method::Get,
+            code: StatusCode::Ok,
+        };
+        histograms.observe(labels, 0.05);
+        histograms.observe(labels, 0.5);
+        histograms.observe(labels, 0.5);
+        histograms.observe(labels, 5.0);
+
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+        let name = MetricName::from_str("latency_seconds");
+        histograms
+            .collect_family_into(name, Some("request latency"), &mut enc)
+            .unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.into_inner().into_inner().freeze());
+        assert_eq!(
+            families,
+            [MetricFamily {
+                name: Some("latency_seconds".to_owned()),
+                help: Some("request latency".to_owned()),
+                r#type: Some(MetricType::Histogram as i32),
+                metric: vec![Metric {
+                    label: vec![
+                        LabelPair {
+                            name: Some("method".to_owned()),
+                            value: Some("get".to_owned()),
+                        },
+                        LabelPair {
+                            name: Some("code".to_owned()),
+                            value: Some("200".to_owned()),
+                        },
+                    ],
+                    histogram: Some(Histogram {
+                        sample_count: Some(4),
+                        sample_sum: Some(6.05),
+                        bucket: vec![
+                            Bucket {
+                                cumulative_count: Some(1),
+                                upper_bound: Some(0.1),
+                                ..Default::default()
+                            },
+                            Bucket {
+                                cumulative_count: Some(3),
+                                upper_bound: Some(1.0),
+                                ..Default::default()
+                            },
+                        ],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }],
+                unit: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn summary() {
+        use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+        let name = MetricName::from_str("latency");
+        enc.write_family(name, None, MetricKind::Summary).unwrap();
+        enc.write_summary(
+            name,
+            measured::label::NoLabels,
+            &[(0.5, 1.0), (0.99, 3.0)],
+            10,
+            12.5,
+            SampleExtras::NONE,
+        )
+        .unwrap();
+        enc.write_family(
+            MetricName::from_str("flag"),
+            None,
+            MetricKind::Custom("stateset"),
+        )
+        .unwrap();
+        enc.write_gauge(MetricName::from_str("flag"), measured::label::NoLabels, 1)
+            .unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.into_inner().into_inner().freeze());
+        assert_eq!(families.len(), 2);
+        assert_eq!(families[0].r#type, Some(MetricType::Summary as i32));
+        assert_eq!(
+            families[0].metric[0].summary,
+            Some(Summary {
+                sample_count: Some(10),
+                sample_sum: Some(12.5),
+                quantile: vec![
+                    Quantile {
+                        quantile: Some(0.5),
+                        value: Some(1.0),
+                    },
+                    Quantile {
+                        quantile: Some(0.99),
+                        value: Some(3.0),
+                    },
+                ],
+                ..Default::default()
+            })
+        );
+        assert_eq!(families[1].r#type, Some(MetricType::Untyped as i32));
+    }
+
+    #[test]
+    fn untyped_samples_use_untyped_payloads() {
+        use measured::label::NoLabels;
+        use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+
+        let mut enc = ProtoEncoder::new(Vec::new());
+        let name = MetricName::from_str("value");
+        // Also cover the implicit untyped family before any header is written.
+        enc.write_counter(name, NoLabels, 7, SampleExtras::NONE)
+            .unwrap();
+        enc.flush().unwrap();
+        for kind in [MetricKind::Untyped, MetricKind::Custom("flag")] {
+            enc.write_family(name, None, kind).unwrap();
+            enc.write_gauge(name, NoLabels, -2).unwrap();
+            enc.write_float_gauge(name, NoLabels, 1.5).unwrap();
+            let exemplar = measured::metric::exemplar::Exemplar::new();
+            let extras = SampleExtras::NONE
+                .with_created(Some(std::time::UNIX_EPOCH))
+                .with_exemplar(Some(&exemplar));
+            enc.write_counter(name, NoLabels, 3, extras).unwrap();
+            enc.write_float_counter(name, NoLabels, 4.5, extras)
+                .unwrap();
+        }
+        enc.write_family(name, None, MetricKind::Counter).unwrap();
+        enc.write_counter(name, NoLabels, 9, SampleExtras::NONE)
+            .unwrap();
+        enc.flush().unwrap();
+        // Flushing a typed family must reset the implicit fallback too.
+        enc.write_float_gauge(name, NoLabels, 2.5).unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.into_inner().into());
+        assert_eq!(families.len(), 5);
+        for (family, values) in [
+            (&families[0], &[7.0][..]),
+            (&families[1], &[-2.0, 1.5, 3.0, 4.5][..]),
+            (&families[2], &[-2.0, 1.5, 3.0, 4.5][..]),
+            (&families[4], &[2.5][..]),
+        ] {
+            assert_eq!(family.r#type, Some(MetricType::Untyped as i32));
+            assert_eq!(family.metric.len(), values.len());
+            for (metric, value) in family.metric.iter().zip(values) {
+                assert_eq!(metric.untyped.as_ref().unwrap().value, Some(*value));
+                assert!(metric.gauge.is_none());
+                assert!(metric.counter.is_none());
+            }
+        }
+        assert_eq!(
+            families[3].metric[0].counter.as_ref().unwrap().value,
+            Some(9.0)
+        );
+        assert!(families[3].metric[0].untyped.is_none());
+    }
+
+    #[test]
+    fn new_kinds() {
+        use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+        use measured::{label::NoLabels, FixedCardinalityLabel};
+
+        #[derive(Clone, Copy, PartialEq, Debug, FixedCardinalityLabel)]
+        enum Status {
+            Starting,
+            Ready,
+        }
+
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+
+        let cpu = MetricName::from_str("cpu_seconds_total");
+        enc.write_family(cpu, None, MetricKind::Counter).unwrap();
+        enc.write_float_counter(cpu, NoLabels, 1.5, SampleExtras::NONE)
+            .unwrap();
+
+        let ages = MetricName::from_str("queue_age_seconds");
+        enc.write_family(ages, None, MetricKind::GaugeHistogram)
+            .unwrap();
+        enc.write_gauge_histogram(ages, NoLabels, &[1.0], &[1], 1, 2.5)
+            .unwrap();
+
+        let status = MetricName::from_str("status");
+        enc.write_family(status, None, MetricKind::StateSet)
+            .unwrap();
+        enc.write_state_set(
+            status,
+            NoLabels,
+            [(Status::Starting, false), (Status::Ready, true)],
+        )
+        .unwrap();
+
+        let info = MetricName::from_str("build_info");
+        enc.write_family(info, None, MetricKind::Info).unwrap();
+        enc.write_gauge(info, NoLabels, 1).unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.into_inner().into_inner().freeze());
+        let types: Vec<_> = families.iter().map(|f| f.r#type).collect();
+        assert_eq!(
+            types,
+            [
+                Some(MetricType::Counter as i32),
+                Some(MetricType::GaugeHistogram as i32),
+                Some(MetricType::Gauge as i32),
+                Some(MetricType::Gauge as i32),
+            ]
+        );
+
+        assert_eq!(
+            families[0].metric[0].counter.as_ref().unwrap().value,
+            Some(1.5)
+        );
+
+        let histogram = families[1].metric[0].histogram.as_ref().unwrap();
+        assert_eq!(histogram.sample_count, Some(2));
+        assert_eq!(histogram.sample_sum, Some(2.5));
+        assert_eq!(histogram.bucket[0].cumulative_count, Some(1));
+
+        let states: Vec<_> = families[2]
+            .metric
+            .iter()
+            .map(|m| (m.label[0].clone(), m.gauge.as_ref().unwrap().value))
+            .collect();
+        assert_eq!(
+            states,
+            [
+                (
+                    LabelPair {
+                        name: Some("status".to_owned()),
+                        value: Some("starting".to_owned()),
+                    },
+                    Some(0.0)
+                ),
+                (
+                    LabelPair {
+                        name: Some("status".to_owned()),
+                        value: Some("ready".to_owned()),
+                    },
+                    Some(1.0)
+                ),
+            ]
+        );
     }
 }

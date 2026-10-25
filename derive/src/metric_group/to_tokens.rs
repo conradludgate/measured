@@ -30,7 +30,7 @@ impl ToTokens for MetricGroup {
             let MetricGroupField { ty, attrs, .. } = field;
             match attrs.kind {
                 MetricGroupFieldAttrsKind::Metric { .. } => {
-                    wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding<#enc> ));
+                    wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding ));
                 }
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {
                     wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::group::MetricGroup<#enc> ));
@@ -53,17 +53,17 @@ impl ToTokens for MetricGroup {
                 MetricGroupFieldAttrsKind::Metric { rename } => {
                     let name_string = rename.as_ref().map_or_else(|| name.unraw().to_string(), |l| l.value());
 
-                    let help = attrs.docs.as_deref().map(|doc|{
-                        let doc = doc.trim();
-                        quote_spanned!(x.span => {
-                            <#enc as #krate::metric::group::Encoding>::write_help(enc, NAME, #doc)?;
-                        })
-                    });
+                    let help = match attrs.docs.as_deref() {
+                        Some(doc) => {
+                            let doc = doc.trim();
+                            quote_spanned!(x.span => ::core::option::Option::Some(#doc))
+                        }
+                        None => quote_spanned!(x.span => ::core::option::Option::None),
+                    };
 
                     quote_spanned! { x.span => {
                         const NAME: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
-                        #help
-                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_family_into(&self.#name, NAME, enc)?;
+                        <#ty as #krate::metric::MetricFamilyEncoding>::collect_family_into(&self.#name, NAME, #help, enc)?;
                     }}
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {

@@ -21,6 +21,7 @@ tokio = { version = "1.45.0", features = ["rt"] }
 itoa = "1"
 
 [dev-dependencies]
+measured-prometheus-text = { path = "../prometheus-text" }
 tokio = { version = "1.45.0", features = ["rt", "rt-multi-thread"] }
 
 [package.metadata.docs.rs]

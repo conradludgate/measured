@@ -5,14 +5,15 @@ use core::sync::atomic::AtomicU64;
 use crate::{Counter, CounterVec, LabelGroup, label::LabelGroupSet};
 
 use super::{
-    MetricEncoding, MetricLockGuard, MetricMut, MetricType, group::Encoding,
+    MetricEncoding, MetricLockGuard, MetricMut, MetricType,
+    group::{Encoding, MetricKind, SampleExtras},
     name::MetricNameEncoder,
 };
 
 #[derive(Default)]
 /// The internal state that is used by [`Counter`] and [`CounterVec`]
 pub struct CounterState {
-    pub count: AtomicU64,
+    count: AtomicU64,
 }
 
 /// A reference to a specific counter.
@@ -21,15 +22,16 @@ pub type CounterLockGuard<'a> = MetricLockGuard<'a, CounterState>;
 pub type CounterMut<'a> = MetricMut<'a, CounterState>;
 
 impl CounterState {
-    /// Get the current metric value
-    pub fn get(&self) -> u64 {
-        self.count.load(core::sync::atomic::Ordering::Relaxed)
-    }
-
+    /// Create a new counter state with the given initial value
     pub fn new(value: u64) -> Self {
         Self {
             count: AtomicU64::new(value),
         }
+    }
+
+    /// Get the current counter value
+    pub fn get(&self) -> u64 {
+        self.count.load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// Increment the counter value by 1
@@ -47,13 +49,14 @@ impl CounterState {
 
 impl CounterMut<'_> {
     /// Increment the counter value by 1
-    pub fn inc(mut self) {
-        *self.count.get_mut() += 1;
+    pub fn inc(self) {
+        self.inc_by(1);
     }
 
-    /// Increment the counter value by `x`
+    /// Increment the counter value by `x`. Wraps on overflow, like [`CounterState::inc_by`]
     pub fn inc_by(mut self, x: u64) {
-        *self.count.get_mut() += x;
+        let count = self.count.get_mut();
+        *count = count.wrapping_add(x);
     }
 }
 
@@ -77,6 +80,17 @@ impl<L: LabelGroupSet> CounterVec<L> {
     pub fn inc_by_mut(&mut self, label: L::Group<'_>, y: u64) {
         self.get_metric_mut(self.with_labels(label)).inc_by(y)
     }
+
+    /// Get the counter value for the label group. Returns 0 if the counter has not been used yet.
+    ///
+    /// This does not create a new counter for the label group.
+    ///
+    /// # Panics
+    /// Panics if the label group is not contained within the label set.
+    pub fn get(&self, label: L::Group<'_>) -> u64 {
+        self.find_metric(self.with_labels(label))
+            .map_or(0, |m| m.get())
+    }
 }
 
 impl Counter {
@@ -99,6 +113,11 @@ impl Counter {
     pub fn inc_by_mut(&mut self, x: u64) {
         self.get_metric_mut().inc_by(x)
     }
+
+    /// Get the current counter value
+    pub fn get(&self) -> u64 {
+        self.get_metric().get()
+    }
 }
 
 impl MetricType for CounterState {
@@ -106,17 +125,16 @@ impl MetricType for CounterState {
     type Metadata = ();
 }
 
-pub fn write_counter<Enc: Encoding>(
-    enc: &mut Enc,
-    name: impl MetricNameEncoder,
-    labels: impl LabelGroup,
-    value: u64,
-) -> Result<(), Enc::Err>
-where
-    CounterState: MetricEncoding<Enc>,
-{
-    CounterState {
-        count: AtomicU64::new(value),
+impl MetricEncoding for CounterState {
+    const KIND: MetricKind = MetricKind::Counter;
+
+    fn collect_into<E: Encoding>(
+        &self,
+        _: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_counter(name, labels, self.get(), SampleExtras::NONE)
     }
-    .collect_into(&(), labels, name, enc)
 }

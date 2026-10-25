@@ -10,9 +10,13 @@ use std::{
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use crossbeam_utils::CachePadded;
 
-use self::{group::Encoding, name::MetricNameEncoder};
+use self::{
+    group::{Encoding, MetricKind},
+    name::MetricNameEncoder,
+};
 
 pub mod counter;
+pub mod exemplar;
 pub mod gauge;
 pub mod group;
 pub mod histogram;
@@ -27,7 +31,12 @@ pub trait MetricType: Default {
 
 /// A shared ref to an individual metric value.
 ///
-/// As the name implies, it might hold a lock (only applicable to sparse metric vecs, but this is not guaranteed behaviour)
+/// As the name implies, it might hold a lock (only applicable to sparse metric vecs, but this is not guaranteed behaviour).
+///
+/// # Deadlocks
+/// Do not hold onto this guard while calling other methods on the same metric vec.
+/// For sparse metric vecs, calling [`MetricVec::remove_metric`], or creating a new metric in the same shard,
+/// while this guard is alive can deadlock.
 pub struct MetricLockGuard<'a, M: MetricType>(MetricLockGuardRepr<'a, M>, &'a M::Metadata);
 
 enum MetricLockGuardRepr<'a, M> {
@@ -107,7 +116,7 @@ pub struct Metric<M: MetricType> {
 ///
 /// ## Sparse
 ///
-/// Sparse metric vecs are represented as a sharded hashmap. Because the implementation makes use of [`RwLock`]s, it does have
+/// Sparse metric vecs are represented as a sharded hashmap. Because the implementation makes use of [`RwLock`](parking_lot::RwLock)s, it does have
 /// slower performance compared to the dense representation.
 ///
 /// Currently the number of shards used is taken as the number of CPU cores, multiplied by 4 and rounded up to the next power of 2.
@@ -251,6 +260,15 @@ impl<M: MetricType, U: Hash + Eq + Copy> VecInner<U, M> {
         }
     }
 
+    fn find_metric(&self, id: LabelIdInner<U>) -> Option<MetricLockGuardRepr<'_, M>> {
+        match self {
+            VecInner::Dense(metrics) => metrics[id.hash as usize]
+                .get()
+                .map(MetricLockGuardRepr::Dense),
+            VecInner::Sparse(metrics) => metrics.find_metric(id).map(MetricLockGuardRepr::Sparse),
+        }
+    }
+
     fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
         match self {
             VecInner::Dense(metrics) => {
@@ -282,6 +300,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 
     /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
+    ///
+    /// # Panics
+    /// Panics if the label set does not have a fixed cardinality.
     pub fn dense_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         let c = label_set
             .cardinality()
@@ -353,7 +374,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         Some(LabelId(LabelIdInner { id, hash }))
     }
 
-    /// Get the individual metric at the given identifier.
+    /// Get the individual metric at the given identifier, creating it if it does not exist yet.
+    ///
+    /// See [`MetricLockGuard`] for the deadlock hazards of holding onto the returned guard.
     ///
     /// # Panics
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
@@ -361,10 +384,33 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         MetricLockGuard(self.metrics.get_metric(id.0), &self.metadata)
     }
 
+    /// Get the individual metric at the given identifier, if it exists.
+    ///
+    /// Unlike [`MetricVec::get_metric`], this does not create the metric.
+    ///
+    /// See [`MetricLockGuard`] for the deadlock hazards of holding onto the returned guard.
+    ///
+    /// # Panics
+    /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
+    pub fn find_metric(&self, id: LabelId<L>) -> Option<MetricLockGuard<'_, M>> {
+        Some(MetricLockGuard(
+            self.metrics.find_metric(id.0)?,
+            &self.metadata,
+        ))
+    }
+
+    /// Returns true if metrics can be removed from this metric vec with [`MetricVec::remove_metric`].
+    ///
+    /// Only 'sparse' metric vecs support removal.
+    pub fn supports_removal(&self) -> bool {
+        matches!(self.metrics, VecInner::Sparse(_))
+    }
+
     /// Remove the metric with the given label, returning it's inner state.
     ///
     /// # Note
     /// 'dense' metrics cannot be removed, and will always return None.
+    /// Use [`MetricVec::supports_removal`] to tell the difference between this and the metric not existing.
     /// If you need to support removal with a fixed-cardinality label set, use
     /// one of the sparse constructors.
     ///
@@ -402,49 +448,67 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 }
 
-/// Defines the encoding of a metric
-pub trait MetricEncoding<T: Encoding>: MetricType {
-    /// Write the type information for this metric into the encoder
-    fn write_type(name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
-    /// Sample this metric into the encoder
-    fn collect_into(
+/// A metric state that can be written into any [`Encoding`].
+pub trait MetricEncoding: MetricType {
+    /// The type of the metric family this metric belongs to
+    const KIND: MetricKind;
+
+    /// Write the current value of this metric
+    fn collect_into<E: Encoding>(
         &self,
         metadata: &Self::Metadata,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut T,
-    ) -> Result<(), T::Err>;
+        enc: &mut E,
+    ) -> Result<(), E::Err>;
 }
 
-/// The encoding visitor for a single [`Metric`] or [`MetricVec`]
-pub trait MetricFamilyEncoding<T: Encoding> {
-    /// Collect these metric values into the given encoder with the given metric name
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
+/// A metric family, such as a [`Metric`] or [`MetricVec`], that can be written into any [`Encoding`].
+pub trait MetricFamilyEncoding {
+    /// Write the family header and all samples of this metric family
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+        enc: &mut E,
+    ) -> Result<(), E::Err>;
 }
 
-impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Option<M> {
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
+impl<M: MetricFamilyEncoding> MetricFamilyEncoding for Option<M> {
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
         if let Some(this) = self {
-            this.collect_family_into(name, enc)?;
+            this.collect_family_into(name, help, enc)?;
         }
         Ok(())
     }
 }
 
-impl<M: MetricEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Metric<M> {
-    /// Collect this metric value into the given encoder with the given metric name
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
-        M::write_type(&name, enc)?;
+impl<M: MetricEncoding> MetricFamilyEncoding for Metric<M> {
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_family(&name, help, M::KIND)?;
         self.metric
             .collect_into(&self.metadata, NoLabels, name, enc)
     }
 }
 
-impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T>
-    for MetricVec<M, L>
-{
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
-        M::write_type(&name, enc)?;
+impl<M: MetricEncoding, L: LabelGroupSet> MetricFamilyEncoding for MetricVec<M, L> {
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_family(&name, help, M::KIND)?;
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {
@@ -561,7 +625,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(errors.get_cardinality(), (1, Some(3)));
-        assert_eq!(user_errors.count.into_inner(), 1)
+        assert_eq!(user_errors.get(), 1)
     }
 
     #[cfg(feature = "lasso")]

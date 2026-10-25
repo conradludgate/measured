@@ -13,6 +13,20 @@ impl<T> Default for StaticLabelSet<T> {
     }
 }
 
+impl<T> Clone for StaticLabelSet<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for StaticLabelSet<T> {}
+
+impl<T> core::fmt::Debug for StaticLabelSet<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("StaticLabelSet")
+    }
+}
+
 impl<T> StaticLabelSet<T> {
     /// Create a new `StaticLabelSet`
     pub const fn new() -> Self {
