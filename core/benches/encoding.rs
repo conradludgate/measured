@@ -1,7 +1,7 @@
 use divan::Bencher;
 use divan::black_box;
-use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, LabelGroup, MetricGroup};
+use measured_prometheus_text::BufferedTextEncoder;
 use paracord::ParaCord;
 use prometheus_client::encoding::EncodeLabelSet;
 

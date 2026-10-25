@@ -6,5 +6,6 @@ members = [
     "examples/*",
     "tokio",
     "prometheus-proto",
+    "prometheus-text",
 ]
 resolver = "2"
