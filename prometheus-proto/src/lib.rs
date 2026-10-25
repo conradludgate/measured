@@ -1,8 +1,14 @@
 #![allow(clippy::cast_precision_loss)]
 
-use std::io::Write;
+use std::{
+    io::Write,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
-use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType::LengthDelimited};
+use encoding::{
+    encode_key, encode_varint, encoded_len_varint, key_len,
+    WireType::{self, LengthDelimited},
+};
 use measured::{
     label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
     metric::{
@@ -171,9 +177,102 @@ impl<W: Write> ProtoEncoder<W> {
         value: f64,
         extras: SampleExtras<'_>,
     ) -> Result<(), std::io::Error> {
-        let _ = extras;
-        self.write_double(name, labels, if self.untyped { 5 } else { 3 }, value)
+        if self.untyped {
+            // Untyped samples have no exemplar or created timestamp fields.
+            return self.write_double(name, labels, 5, value);
+        }
+
+        let value_len = encoding::encoded_len_f64(1, value)
+            + extras
+                .exemplar
+                .map_or(0, |e| message_len(2, exemplar_len(e)))
+            + extras
+                .created
+                .map_or(0, |t| message_len(3, timestamp_len(t)));
+
+        // optional Counter   counter      = 3;
+        self.write_metric(name, labels, 3, value_len, |buf| {
+            // optional double   value    = 1;
+            encoding::encode_f64(1, value, buf);
+            // optional Exemplar exemplar = 2;
+            if let Some(exemplar) = extras.exemplar {
+                encode_exemplar(2, exemplar, buf);
+            }
+            // optional google.protobuf.Timestamp created_timestamp = 3;
+            if let Some(created) = extras.created {
+                encode_timestamp(3, created, buf);
+            }
+        })
     }
+}
+
+/// Split a time into the seconds and nanos of a `google.protobuf.Timestamp`, where nanos are never negative.
+fn timestamp_parts(t: SystemTime) -> (i64, i32) {
+    match t.duration_since(UNIX_EPOCH) {
+        Ok(d) => (d.as_secs() as i64, d.subsec_nanos() as i32),
+        Err(e) => {
+            let d = e.duration();
+            match d.subsec_nanos() {
+                0 => (-(d.as_secs() as i64), 0),
+                n => (-(d.as_secs() as i64) - 1, (1_000_000_000 - n) as i32),
+            }
+        }
+    }
+}
+
+fn timestamp_len(t: SystemTime) -> usize {
+    // proto3 fields are omitted when they are zero
+    let (seconds, nanos) = timestamp_parts(t);
+    let seconds_len = if seconds == 0 {
+        0
+    } else {
+        key_len(1) + encoded_len_varint(seconds as u64)
+    };
+    let nanos_len = if nanos == 0 {
+        0
+    } else {
+        key_len(2) + encoded_len_varint(nanos as u64)
+    };
+    seconds_len + nanos_len
+}
+
+fn encode_timestamp(tag: u32, t: SystemTime, buf: &mut Vec<u8>) {
+    let (seconds, nanos) = timestamp_parts(t);
+    encode_message(tag, timestamp_len(t), buf, |buf| {
+        // int64 seconds = 1;
+        if seconds != 0 {
+            encode_key(1, WireType::Varint, buf);
+            encode_varint(seconds as u64, buf);
+        }
+        // int32 nanos = 2;
+        if nanos != 0 {
+            encode_key(2, WireType::Varint, buf);
+            encode_varint(nanos as u64, buf);
+        }
+    });
+}
+
+fn exemplar_len(exemplar: &Exemplar) -> usize {
+    let mut labels_len = GroupLenVisitor { len: 0 };
+    exemplar.labels().visit_values(&mut labels_len);
+    labels_len.len
+        + encoding::encoded_len_f64(2, exemplar.value())
+        + exemplar
+            .timestamp()
+            .map_or(0, |t| message_len(3, timestamp_len(t)))
+}
+
+fn encode_exemplar(tag: u32, exemplar: &Exemplar, buf: &mut Vec<u8>) {
+    encode_message(tag, exemplar_len(exemplar), buf, |buf| {
+        // repeated LabelPair label = 1;
+        exemplar.labels().visit_values(&mut GroupVisitor { buf });
+        // optional double value = 2;
+        encoding::encode_f64(2, exemplar.value(), buf);
+        // optional google.protobuf.Timestamp timestamp = 3;
+        if let Some(timestamp) = exemplar.timestamp() {
+            encode_timestamp(3, timestamp, buf);
+        }
+    });
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -275,17 +374,27 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
         fn bucket_len(
             cumulative_count: u64,
             upper_bound: f64,
-            _exemplar: Option<&Exemplar>,
+            exemplar: Option<&Exemplar>,
         ) -> usize {
             encoding::encoded_len_u64(1, cumulative_count)
                 + encoding::encoded_len_f64(2, upper_bound)
+                + exemplar.map_or(0, |e| message_len(3, exemplar_len(e)))
         }
 
         let count = counts.iter().sum::<u64>() + inf;
 
-        let mut histogram_len =
-            encoding::encoded_len_u64(1, count) + encoding::encoded_len_f64(2, sum);
-        let buckets = le.iter().copied().zip(counts.iter().copied());
+        let mut histogram_len = encoding::encoded_len_u64(1, count)
+            + encoding::encoded_len_f64(2, sum)
+            + extras
+                .created
+                .map_or(0, |t| message_len(15, timestamp_len(t)));
+        // The +Inf count is normally implied by sample_count, but an explicit
+        // bucket is needed to carry its exemplar.
+        let buckets = le
+            .iter()
+            .copied()
+            .zip(counts.iter().copied())
+            .chain(extras.exemplar(le.len()).map(|_| (f64::INFINITY, inf)));
         let mut cumulative = 0;
         for (i, (upper_bound, n)) in buckets.clone().enumerate() {
             cumulative += n;
@@ -304,18 +413,27 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
             let mut cumulative = 0;
             for (i, (upper_bound, n)) in buckets.enumerate() {
                 cumulative += n;
-                let _exemplar = extras.exemplar(i);
+                let exemplar = extras.exemplar(i);
                 encode_message(
                     3,
-                    bucket_len(cumulative, upper_bound, _exemplar),
+                    bucket_len(cumulative, upper_bound, exemplar),
                     buf,
                     |buf| {
                         // optional uint64 cumulative_count = 1;
                         encoding::encode_u64(1, cumulative, buf);
                         // optional double upper_bound      = 2;
                         encoding::encode_f64(2, upper_bound, buf);
+                        // optional Exemplar exemplar       = 3;
+                        if let Some(exemplar) = exemplar {
+                            encode_exemplar(3, exemplar, buf);
+                        }
                     },
                 );
+            }
+
+            // optional google.protobuf.Timestamp created_timestamp = 15;
+            if let Some(created) = extras.created {
+                encode_timestamp(15, created, buf);
             }
         })
     }
@@ -327,14 +445,17 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
         quantiles: &[(f64, f64)],
         count: u64,
         sum: f64,
-        _extras: SampleExtras<'_>,
+        extras: SampleExtras<'_>,
     ) -> Result<(), std::io::Error> {
         fn quantile_len(quantile: f64, value: f64) -> usize {
             encoding::encoded_len_f64(1, quantile) + encoding::encoded_len_f64(2, value)
         }
 
-        let mut summary_len =
-            encoding::encoded_len_u64(1, count) + encoding::encoded_len_f64(2, sum);
+        let mut summary_len = encoding::encoded_len_u64(1, count)
+            + encoding::encoded_len_f64(2, sum)
+            + extras
+                .created
+                .map_or(0, |t| message_len(4, timestamp_len(t)));
         for &(quantile, value) in quantiles {
             summary_len += message_len(3, quantile_len(quantile, value));
         }
@@ -354,6 +475,11 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
                     // optional double value    = 2;
                     encoding::encode_f64(2, value, buf);
                 });
+            }
+
+            // optional google.protobuf.Timestamp created_timestamp = 4;
+            if let Some(created) = extras.created {
+                encode_timestamp(4, created, buf);
             }
         })
     }
@@ -955,6 +1081,52 @@ mod tests {
     }
 
     #[test]
+    fn histogram_retains_infinite_bucket_exemplar() {
+        use measured::{label::LabelName, metric::exemplar::Exemplar};
+
+        // Include a histogram whose only bucket is +Inf.
+        for bounds in [vec![], vec![1.0]] {
+            let mut enc = ProtoEncoder::new(Vec::new());
+            use measured::metric::group::{Encoding, HistogramExtras, MetricKind};
+            let name = MetricName::from_str("latency");
+            enc.write_family(name, None, MetricKind::Histogram).unwrap();
+            let exemplar = Exemplar::new()
+                .with_label(LabelName::from_str("trace_id"), "overflow")
+                .with_value(5.0)
+                .with_timestamp(std::time::UNIX_EPOCH);
+            let mut exemplars = vec![None; bounds.len()];
+            exemplars.push(Some(exemplar));
+            enc.write_histogram(
+                name,
+                measured::label::NoLabels,
+                &bounds,
+                &vec![2; bounds.len()],
+                1,
+                5.0,
+                HistogramExtras::NONE.with_exemplars(&exemplars),
+            )
+            .unwrap();
+            enc.flush().unwrap();
+            let families = decode_all(enc.into_inner().into());
+            let histogram = families[0].metric[0].histogram.as_ref().unwrap();
+            assert_eq!(histogram.bucket.len(), bounds.len() + 1);
+            let bucket = histogram.bucket.last().unwrap();
+            assert_eq!(bucket.upper_bound, Some(f64::INFINITY));
+            assert_eq!(bucket.cumulative_count, histogram.sample_count);
+            let exemplar = bucket.exemplar.as_ref().unwrap();
+            assert_eq!(exemplar.value, Some(5.0));
+            assert_eq!(exemplar.label[0].value.as_deref(), Some("overflow"));
+            assert_eq!(
+                exemplar.timestamp,
+                Some(prost_types::Timestamp {
+                    seconds: 0,
+                    nanos: 0
+                })
+            );
+        }
+    }
+
+    #[test]
     fn new_kinds() {
         use measured::metric::group::{Encoding, MetricKind, SampleExtras};
         use measured::{label::NoLabels, FixedCardinalityLabel};
@@ -1038,6 +1210,75 @@ mod tests {
                     Some(1.0)
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn exemplars_and_created() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        use measured::{
+            label::LabelName,
+            metric::{exemplar::Exemplar, histogram::Thresholds, MetricFamilyEncoding},
+            CreatedCounter, ExemplarCounter, ExemplarHistogram,
+        };
+
+        const TRACE_ID: &LabelName = LabelName::from_str("trace_id");
+        let at = UNIX_EPOCH + Duration::from_millis(1_700_000_000_500);
+
+        let requests = ExemplarCounter::new();
+        requests.inc_with_exemplar(
+            3,
+            Exemplar::new()
+                .with_label(TRACE_ID, "abc")
+                .with_timestamp(at),
+        );
+        let latency = ExemplarHistogram::with_metadata(Thresholds::with_buckets([1.0]));
+        latency.observe_with_exemplar(0.5, Exemplar::new().with_label(TRACE_ID, "def"));
+        let created = CreatedCounter::new();
+        created.inc();
+
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+        requests
+            .collect_family_into(MetricName::from_str("requests_total"), None, &mut enc)
+            .unwrap();
+        latency
+            .collect_family_into(MetricName::from_str("latency_seconds"), None, &mut enc)
+            .unwrap();
+        created
+            .collect_family_into(MetricName::from_str("created_total"), None, &mut enc)
+            .unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.into_inner().into_inner().freeze());
+
+        let counter = families[0].metric[0].counter.clone().unwrap();
+        assert_eq!(counter.value, Some(3.0));
+        let exemplar = counter.exemplar.unwrap();
+        assert_eq!(exemplar.value, Some(3.0));
+        assert_eq!(exemplar.label[0].value.as_deref(), Some("abc"));
+        assert_eq!(
+            exemplar.timestamp,
+            Some(prost_types::Timestamp {
+                seconds: 1_700_000_000,
+                nanos: 500_000_000,
+            })
+        );
+        assert_eq!(counter.created_timestamp, None);
+
+        let bucket = &families[1].metric[0].histogram.as_ref().unwrap().bucket[0];
+        let exemplar = bucket.exemplar.as_ref().unwrap();
+        assert_eq!(exemplar.value, Some(0.5));
+        assert_eq!(exemplar.label[0].value.as_deref(), Some("def"));
+
+        let counter = families[2].metric[0].counter.clone().unwrap();
+        let created_at = created.created().duration_since(UNIX_EPOCH).unwrap();
+        assert_eq!(
+            counter.created_timestamp,
+            Some(prost_types::Timestamp {
+                seconds: created_at.as_secs() as i64,
+                nanos: created_at.subsec_nanos() as i32,
+            })
         );
     }
 }
