@@ -121,6 +121,17 @@ impl RuntimeCollector {
     }
 }
 
+#[cfg(tokio_unstable)]
+#[cfg(feature = "__tokio-unstable-schedule-latency")]
+fn histogram_le(le: std::time::Duration) -> HistogramLabelLe {
+    let le = if le == std::time::Duration::from_nanos(u64::MAX) {
+        f64::INFINITY
+    } else {
+        le.as_secs_f64()
+    };
+    HistogramLabelLe { le }
+}
+
 fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Result<(), Enc::Err> {
     macro_rules! metric {
         ($name:literal, $help:literal, kind = $kind:expr, |$rt:ident| $expr:expr) => {{
@@ -411,6 +422,36 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
     );
 
     #[cfg(tokio_unstable)]
+    #[cfg(feature = "__tokio-unstable-schedule-latency")]
+    if runtimes
+        .iter()
+        .any(|rt| rt.runtime.schedule_latency_histogram_enabled())
+    {
+        metric!(
+            "worker_schedule_latency_seconds",
+            "time tasks spent waiting between being scheduled and being polled by this worker",
+            // tokio does not track the sum of schedule latencies, so this can't be a histogram
+            kind = MetricKind::Untyped,
+            |rt| if rt.schedule_latency_histogram_enabled() {
+                use measured::metric::name::{Bucket, Count};
+
+                for worker in 0..rt.num_workers() {
+                    let worker_label = Worker(worker);
+                    let buckets = rt.schedule_latency_histogram_num_buckets();
+                    let mut total = 0;
+                    for bucket in 0..buckets {
+                        let le =
+                            histogram_le(rt.schedule_latency_histogram_bucket_range(bucket).end);
+                        total += rt.schedule_latency_histogram_bucket_count(worker, bucket);
+                        write_counter!(Bucket, worker_label.compose_with(le), total);
+                    }
+                    write_counter!(Count, worker_label, total);
+                }
+            }
+        );
+    }
+
+    #[cfg(tokio_unstable)]
     #[cfg(feature = "net")]
     {
         metric!(
@@ -457,6 +498,21 @@ impl LabelGroup for Worker {
     fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
         const LE: &LabelName = LabelName::from_str("worker");
         v.write_value(LE, &I64(self.0 as i64));
+    }
+}
+
+#[cfg(tokio_unstable)]
+#[cfg(feature = "__tokio-unstable-schedule-latency")]
+struct HistogramLabelLe {
+    le: f64,
+}
+
+#[cfg(tokio_unstable)]
+#[cfg(feature = "__tokio-unstable-schedule-latency")]
+impl LabelGroup for HistogramLabelLe {
+    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
+        const LE: &LabelName = LabelName::from_str("le");
+        v.write_value(LE, &self.le);
     }
 }
 
@@ -529,6 +585,53 @@ mod tests {
             assert!(output.contains("worker_poll_time_seconds_bucket{worker=\"0\",le=\"+Inf\"} "));
             assert!(output.contains("worker_poll_time_seconds_count{worker=\"0\"} "));
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(tokio_unstable)]
+#[cfg(feature = "__tokio-unstable-schedule-latency")]
+mod schedule_latency_tests {
+    use measured::MetricGroup;
+    use measured_prometheus_text::BufferedTextEncoder;
+
+    use crate::RuntimeCollector;
+
+    fn encode(rt: &tokio::runtime::Runtime) -> String {
+        rt.block_on(async {
+            for _ in 0..10 {
+                tokio::spawn(async {}).await.unwrap();
+            }
+        });
+
+        let mut enc = BufferedTextEncoder::new();
+        RuntimeCollector::new(rt.metrics())
+            .collect_group_into(&mut enc)
+            .unwrap();
+        String::from_utf8(enc.finish().to_vec()).unwrap()
+    }
+
+    #[test]
+    fn disabled() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .build()
+            .unwrap();
+        assert!(!encode(&rt).contains("schedule_latency"));
+    }
+
+    #[test]
+    fn enabled() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_metrics_schedule_latency_histogram()
+            .build()
+            .unwrap();
+        let output = encode(&rt);
+        assert!(
+            output.contains("worker_schedule_latency_seconds_bucket{worker=\"0\",le=\"+Inf\"}")
+        );
+        assert!(output.contains("worker_schedule_latency_seconds_count{worker=\"1\"}"));
     }
 }
 
