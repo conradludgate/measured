@@ -242,7 +242,8 @@ impl<L: LabelGroupSet> ExemplarCounterVec<L> {
     ///
     /// This does not create a new counter for the label group, or add its values to dynamic label sets.
     pub fn get(&self, label: L::Group<'_>) -> u64 {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(0, |m| m.get())
     }
 }
@@ -331,7 +332,8 @@ impl<L: LabelGroupSet, const N: usize> ExemplarHistogramVec<L, N> {
     ///
     /// This does not create a new histogram for the label group, or add its values to dynamic label sets.
     pub fn sample(&self, label: L::Group<'_>) -> HistogramSample<N> {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(HistogramSample::default(), |m| m.sample())
     }
 }

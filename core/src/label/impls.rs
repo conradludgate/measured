@@ -83,7 +83,7 @@ macro_rules! large_int_label_value {
             fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
                 match i64::try_from(*self) {
                     Ok(x) => v.write_int(x),
-                    Err(_) => v.write_str(itoa::Buffer::new().format(*self)),
+                    Err(_) => v.write_str(itoa::Buffer::new().format((*self))),
                 }
             }
         }
@@ -123,6 +123,10 @@ impl<S: core::hash::BuildHasher> LabelSet for paracord::ParaCord<S> {
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.get_or_intern(value).into_repr() as usize)
+    }
+
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        Some(self.get(value)?.into_repr() as usize)
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
@@ -175,6 +179,10 @@ impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> Label
         Some(self.try_get_or_intern(value).ok()?.into_usize())
     }
 
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        Some(self.get(value)?.into_usize())
+    }
+
     fn decode(&self, value: usize) -> Self::Value<'_> {
         self.resolve(&K::try_from_usize(value).unwrap())
     }
@@ -221,6 +229,10 @@ impl<T: LabelSet + ?Sized> LabelSet for Arc<T> {
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         T::encode(self, value)
+    }
+
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        T::find(self, value)
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {

@@ -341,12 +341,10 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
     /// Take a consistent snapshot of the histogram for the label group.
     /// Returns an empty sample if the histogram has not been used yet.
     ///
-    /// This does not create a new histogram for the label group.
-    ///
-    /// # Panics
-    /// Panics if the label group is not contained within the label set.
+    /// This does not create a new histogram for the label group, or add its values to dynamic label sets.
     pub fn sample(&self, label: L::Group<'_>) -> HistogramSample<N> {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(HistogramSample::default(), |m| m.sample())
     }
 }
@@ -554,19 +552,21 @@ impl<L: LabelGroupSet, const N: usize> GaugeHistogramVec<L, N> {
     }
 
     /// Remove a value that was previously added with [`observe`](Self::observe), keyed by the label group
+    ///
+    /// Does nothing if no value was ever added for the label group.
     pub fn remove(&self, label: L::Group<'_>, x: f64) {
-        self.get_metric(self.with_labels(label)).remove(x);
+        if let Some(metric) = self.find_labels(label).and_then(|id| self.find_metric(id)) {
+            metric.remove(x);
+        }
     }
 
     /// Take a consistent snapshot of the gauge histogram for the label group.
     /// Returns an empty sample if the gauge histogram has not been used yet.
     ///
-    /// This does not create a new gauge histogram for the label group.
-    ///
-    /// # Panics
-    /// Panics if the label group is not contained within the label set.
+    /// This does not create a new gauge histogram for the label group, or add its values to dynamic label sets.
     pub fn sample(&self, label: L::Group<'_>) -> GaugeHistogramSample<N> {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(GaugeHistogramSample::default(), |m| m.sample())
     }
 }

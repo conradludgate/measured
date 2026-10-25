@@ -365,7 +365,22 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Returns None if the label group is not contained within the label set.
     pub fn try_with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
         let id = self.label_set.encode(label)?;
+        Some(self.label_id(id))
+    }
 
+    /// Get an identifier for the specific metric identified by this label group,
+    /// without adding new values to any dynamic label sets.
+    ///
+    /// Use this to read metrics without growing the label sets.
+    ///
+    /// # Errors
+    /// Returns None if the label group is not contained within the label set.
+    pub fn find_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
+        let id = self.label_set.find(label)?;
+        Some(self.label_id(id))
+    }
+
+    fn label_id(&self, id: L::Unique) -> LabelId<L> {
         let hash = match &self.metrics {
             VecInner::Dense(metrics) => {
                 let index = self.label_set.encode_dense(id).expect("If the label set is fixed in cardinality, it must return a value here in the range of `0..cardinality`");
@@ -375,7 +390,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
             VecInner::Sparse(metrics) => metrics.hasher.hash_one(id),
         };
 
-        Some(LabelId(LabelIdInner { id, hash }))
+        LabelId(LabelIdInner { id, hash })
     }
 
     /// Get the individual metric at the given identifier, creating it if it does not exist yet.
@@ -417,6 +432,8 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Use [`MetricVec::supports_removal`] to tell the difference between this and the metric not existing.
     /// If you need to support removal with a fixed-cardinality label set, use
     /// one of the sparse constructors.
+    ///
+    /// Use [`MetricVec::find_labels`] to get the label ID, so that removing a metric does not add values to dynamic label sets.
     ///
     /// # Panics
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
@@ -513,35 +530,142 @@ impl<M: MetricEncoding, L: LabelGroupSet> MetricFamilyEncoding for MetricVec<M, 
         enc: &mut E,
     ) -> Result<(), E::Err> {
         enc.write_family(&name, help, M::KIND)?;
+        self.try_for_each(|labels, metric| metric.collect_into(&self.metadata, labels, &name, enc))
+    }
+}
+
+impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
+    /// Visit every metric in this vec that has been created, along with its labels.
+    ///
+    /// Stops at, and returns, the first error returned by `f`.
+    ///
+    /// # Deadlocks
+    /// For sparse metric vecs, the lock for a group of metrics is held while they are visited.
+    /// Do not create or remove metrics in this vec from inside `f`.
+    pub fn try_for_each<E>(
+        &self,
+        mut f: impl FnMut(L::Group<'_>, &M) -> Result<(), E>,
+    ) -> Result<(), E> {
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {
                     if let Some(value) = value.get() {
-                        value.collect_into(
-                            &self.metadata,
-                            self.label_set.decode_dense(index),
-                            &name,
-                            enc,
-                        )?;
+                        f(self.label_set.decode_dense(index), value)?;
                     }
                 }
             }
             VecInner::Sparse(m) => {
                 for shard in &m.shards {
                     for (k, v) in shard.read().iter() {
-                        v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc)?;
+                        f(self.label_set.decode(k), v)?;
                     }
                 }
             }
         }
         Ok(())
     }
+
+    /// A view of this metric vec that encodes part of each metric as its own metric family.
+    ///
+    /// This is useful for metrics that are made of other metrics. For instance, a pair of counters
+    /// that track how many connections were opened and closed, from which the number of open connections
+    /// can be calculated:
+    ///
+    /// ```
+    /// use measured::{FixedCardinalityLabel, MetricGroup};
+    /// use measured::label::StaticLabelSet;
+    /// use measured::metric::{
+    ///     MetricFamilyEncoding, MetricType, MetricVec, counter::CounterState, group::Encoding,
+    ///     name::MetricName,
+    /// };
+    /// use measured_prometheus_text::BufferedTextEncoder;
+    ///
+    /// #[derive(Default)]
+    /// struct ConnectionsState {
+    ///     opened: CounterState,
+    ///     closed: CounterState,
+    /// }
+    ///
+    /// impl MetricType for ConnectionsState {
+    ///     type Metadata = ();
+    /// }
+    ///
+    /// #[derive(FixedCardinalityLabel, Clone, Copy)]
+    /// #[label(singleton = "protocol")]
+    /// enum Protocol {
+    ///     Tcp,
+    ///     Http,
+    /// }
+    ///
+    /// #[derive(Default)]
+    /// struct Connections(MetricVec<ConnectionsState, StaticLabelSet<Protocol>>);
+    ///
+    /// impl<E: Encoding> MetricGroup<E> for Connections {
+    ///     fn collect_group_into(&self, enc: &mut E) -> Result<(), E::Err> {
+    ///         const CLOSED: &MetricName = MetricName::from_str("connections_closed_total");
+    ///         const OPENED: &MetricName = MetricName::from_str("connections_opened_total");
+    ///
+    ///         // closed first, so that opened - closed is never negative
+    ///         self.0.project(|m| &m.closed).collect_family_into(CLOSED, None, enc)?;
+    ///         self.0.project(|m| &m.opened).collect_family_into(OPENED, None, enc)
+    ///     }
+    /// }
+    ///
+    /// let connections = Connections::default();
+    /// let tcp = connections.0.get_metric(connections.0.with_labels(Protocol::Tcp));
+    /// tcp.opened.inc_by(3);
+    /// tcp.closed.inc();
+    /// drop(tcp);
+    ///
+    /// let mut enc = BufferedTextEncoder::new();
+    /// connections.collect_group_into(&mut enc).unwrap();
+    /// assert_eq!(
+    ///     enc.finish(),
+    ///     "# TYPE connections_closed_total counter\n\
+    ///      connections_closed_total{protocol=\"tcp\"} 1\n\
+    ///      \n\
+    ///      ## TYPE connections_opened_total counter\n\
+    ///      connections_opened_total{protocol=\"tcp\"} 3\n",
+    /// );
+    /// ```
+    pub fn project<N, F>(&self, project: F) -> Projection<'_, M, L, F>
+    where
+        F: Fn(&M) -> &N,
+    {
+        Projection { vec: self, project }
+    }
+}
+
+/// A view of a [`MetricVec`] that encodes part of each metric. See [`MetricVec::project`].
+pub struct Projection<'a, M: MetricType, L: LabelGroupSet, F> {
+    vec: &'a MetricVec<M, L>,
+    project: F,
+}
+
+impl<M, L, N, F> MetricFamilyEncoding for Projection<'_, M, L, F>
+where
+    M: MetricType,
+    L: LabelGroupSet,
+    N: MetricEncoding<Metadata = M::Metadata>,
+    F: Fn(&M) -> &N,
+{
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        help: Option<&str>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_family(&name, help, N::KIND)?;
+        self.vec.try_for_each(|labels, metric| {
+            (self.project)(metric).collect_into(&self.vec.metadata, labels, &name, enc)
+        })
+    }
 }
 
 pub struct LabelId<L: LabelGroupSet>(LabelIdInner<L::Unique>);
 
 #[derive(Clone, Copy)]
-pub struct LabelIdInner<U> {
+pub(crate) struct LabelIdInner<U> {
     id: U,
     hash: u64,
 }
