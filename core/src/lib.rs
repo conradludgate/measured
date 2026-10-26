@@ -503,3 +503,20 @@ pub type FloatGauge = Metric<FloatGaugeState>;
 /// let bytes = text_encoder.finish();
 /// ```
 pub type FloatGaugeVec<L> = MetricVec<FloatGaugeState, L>;
+
+pub use metric::callback::{CallbackCounter, CallbackFloatCounter, CallbackFloatGauge, CallbackGauge, CallbackMetric};
+pub use metric::info::InfoMetric;
+
+/// A float [`Counter`], for counters of non-integer values like seconds.
+pub type FloatCounter = Metric<metric::counter::FloatCounterState>;
+
+/// A collection of multiple [`FloatCounter`]s, keyed by [`LabelGroup`]s.
+pub type FloatCounterVec<L> = MetricVec<metric::counter::FloatCounterState, L>;
+
+/// A [`GaugeHistogram`](metric::histogram::GaugeHistogramState), for distributions of values that can be removed.
+pub type GaugeHistogram<const N: usize> = Metric<metric::histogram::GaugeHistogramState<N>>;
+
+/// A collection of multiple [`GaugeHistogram`]s, keyed by [`LabelGroup`]s.
+pub type GaugeHistogramVec<L, const N: usize> = MetricVec<metric::histogram::GaugeHistogramState<N>, L>;
+
+pub use metric::state_set::StateSet;

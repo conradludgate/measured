@@ -11,13 +11,16 @@ use self::group::{Encoding, MetricKind};
 use self::name::MetricNameEncoder;
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 
+pub mod callback;
 pub mod counter;
 pub mod exemplar;
 pub mod gauge;
 pub mod group;
 pub mod histogram;
+pub mod info;
 pub mod name;
 mod sparse;
+pub mod state_set;
 
 /// Defines a metric
 pub trait MetricType: Default {

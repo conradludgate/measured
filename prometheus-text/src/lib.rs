@@ -26,7 +26,7 @@ use std::io::{self, Write};
 use bytes::{BufMut, Bytes, BytesMut};
 use measured::label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
 use measured::metric::group::{Encoding, MetricKind, SampleExtras};
-use measured::metric::name::MetricNameEncoder;
+use measured::metric::name::{Bucket, Count, MetricNameEncoder, Sum};
 use memchr::memchr3_iter;
 
 /// Values that prometheus supports in the text format
@@ -65,6 +65,16 @@ pub enum MetricType {
     Summary,
     /// For metrics with no specific type
     Untyped,
+}
+
+/// The `le` label of a histogram bucket
+struct Le(f64);
+
+impl LabelGroup for Le {
+    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
+        const LE: &LabelName = LabelName::from_str("le");
+        v.write_value(LE, &self.0);
+    }
 }
 
 impl<W: Write> Encoding for TextEncoder<W> {
@@ -119,6 +129,33 @@ impl<W: Write> Encoding for TextEncoder<W> {
         value: f64,
     ) -> io::Result<()> {
         self.write_metric_value(name, labels, MetricValue::Float(value))
+    }
+    fn write_gauge_histogram(
+        &mut self,
+        name: impl MetricNameEncoder,
+        labels: impl LabelGroup,
+        le: &[f64],
+        counts: &[i64],
+        inf: i64,
+        sum: f64,
+    ) -> io::Result<()> {
+        let mut cumulative = 0;
+        for (&le, &count) in le.iter().zip(counts) {
+            cumulative += count;
+            self.write_gauge(
+                name.by_ref().with_suffix(Bucket),
+                labels.by_ref().compose_with(Le(le)),
+                cumulative,
+            )?;
+        }
+        let count = cumulative + inf;
+        self.write_gauge(
+            name.by_ref().with_suffix(Bucket),
+            labels.by_ref().compose_with(Le(f64::INFINITY)),
+            count,
+        )?;
+        self.write_float_gauge(name.by_ref().with_suffix(Sum), labels.by_ref(), sum)?;
+        self.write_gauge(name.by_ref().with_suffix(Count), labels, count)
     }
 }
 
@@ -614,5 +651,68 @@ h_count 2
     #[should_panic = "must not be NaN"]
     fn nan_threshold() {
         Thresholds::with_buckets([f64::NAN]);
+    }
+
+    #[derive(Clone, Copy, PartialEq, Debug, measured::FixedCardinalityLabel)]
+    enum Status {
+        Starting,
+        Ready,
+    }
+
+    #[derive(measured::LabelGroup)]
+    struct Build {
+        version: &'static str,
+    }
+
+    #[derive(measured::MetricGroup)]
+    #[metric(new())]
+    struct AllKinds {
+        /// requests "served"
+        requests_total: Counter,
+        /// a counter without the suffix
+        errors: Counter,
+        /// cpu time
+        cpu_seconds_total: measured::FloatCounter,
+        /// build information
+        #[metric(init = measured::InfoMetric::new(Build { version: "1.0" }))]
+        build_info: measured::InfoMetric<Build>,
+        /// server status
+        #[metric(init = measured::StateSet::new(Status::Ready))]
+        status: measured::StateSet<Status>,
+        /// ages of queued items
+        #[metric(metadata = Thresholds::with_buckets([1.0]))]
+        queue_age_seconds: measured::GaugeHistogram<1>,
+        /// latency
+        #[metric(metadata = Thresholds::with_buckets([1.0]))]
+        latency_seconds: Histogram<1>,
+    }
+
+    fn all_kinds() -> AllKinds {
+        let metrics = AllKinds::new();
+        metrics.requests_total.inc_by(3);
+        metrics.errors.inc();
+        metrics.cpu_seconds_total.inc_by(1.5);
+        metrics.queue_age_seconds.observe(0.5);
+        metrics.queue_age_seconds.observe(2.0);
+        metrics.queue_age_seconds.observe(3.0);
+        metrics.queue_age_seconds.remove(3.0);
+        metrics.latency_seconds.observe(0.5);
+        metrics
+    }
+
+    #[test]
+    fn classic_fallbacks() {
+        use measured::MetricGroup;
+
+        let mut encoder = BufferedTextEncoder::new();
+        all_kinds().collect_group_into(&mut encoder).unwrap();
+        let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
+        assert!(s.contains("# TYPE errors counter\nerrors 1\n"), "{s}");
+        assert!(s.contains("# TYPE build_info gauge\nbuild_info{version=\"1.0\"} 1\n"));
+        assert!(s.contains("# TYPE status gauge\nstatus{status=\"starting\"} 0\n"));
+        assert!(s.contains(
+            "# TYPE queue_age_seconds histogram\nqueue_age_seconds_bucket{le=\"1.0\"} 1\nqueue_age_seconds_bucket{le=\"+Inf\"} 2\nqueue_age_seconds_sum 2.5\nqueue_age_seconds_count 2\n"
+        ));
+        assert!(!s.contains("# EOF"));
     }
 }
