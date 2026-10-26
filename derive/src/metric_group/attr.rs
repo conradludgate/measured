@@ -1,6 +1,5 @@
 use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
-use syn::{Attribute, Expr, ExprLit, FnArg, Lit, LitStr, Token, parenthesized};
+use syn::{Attribute, Expr, ExprLit, FnArg, Lit, LitStr, Meta, MetaNameValue, Token, parenthesized};
 
 use crate::Krate;
 
@@ -142,12 +141,15 @@ impl MetricGroupFieldAttrs {
                     Ok(())
                 })?;
             } else if attr.path().is_ident("doc") {
-                let expr = &attr.meta.require_name_value()?.value;
-                let s = match expr {
-                    Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => s,
-                    _ => return Err(syn::Error::new(attr.span(), "invalid doc comment")),
-                };
-                docs.get_or_insert_with(String::new).push_str(&s.value());
+                // only literal doc comments are used as help text.
+                // others, such as `#[doc(hidden)]` or `#[doc = include_str!(..)]`, are ignored.
+                if let Meta::NameValue(MetaNameValue {
+                    value: Expr::Lit(ExprLit { lit: Lit::Str(s), .. }),
+                    ..
+                }) = &attr.meta
+                {
+                    docs.get_or_insert_with(String::new).push_str(&s.value());
+                }
             }
         }
         Ok(Self {

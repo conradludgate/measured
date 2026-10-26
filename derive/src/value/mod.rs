@@ -21,3 +21,25 @@ pub struct FixedCardinalityLabelVariant {
     ident: Ident,
     value: Option<LitInt>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::FixedCardinalityLabel;
+    fn parse(input: &str) -> Result<FixedCardinalityLabel, syn::Error> {
+        FixedCardinalityLabel::try_from(syn::parse_str::<syn::DeriveInput>(input).unwrap())
+    }
+    #[test]
+    fn empty_and_duplicate_label_values_are_rejected() {
+        for (input, expected) in [
+            ("enum Label {}", "no variants"),
+            (
+                "enum Label { #[label(rename = \"same\")] A, #[label(rename = \"same\")] B }",
+                "already used",
+            ),
+        ] {
+            let err = parse(input).err().unwrap();
+            assert!(err.to_string().contains(expected), "{err}");
+        }
+        assert!(parse("enum Label { #[label(rename = \"a\")] A, #[label(rename = \"A\")] B }").is_ok());
+    }
+}

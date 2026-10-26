@@ -43,6 +43,15 @@ impl TryFrom<DeriveInput> for MetricGroup {
             },
         };
 
+        if args.inputs.is_none()
+            && let Some(field) = fields.iter().find(|f| f.attrs.init.is_some())
+        {
+            return Err(syn::Error::new(
+                field.span,
+                "`metric(init)`, `metric(metadata)` and `metric(label_set)` require `#[metric(new(...))]` on the struct",
+            ));
+        }
+
         Ok(Self {
             krate,
             ident,

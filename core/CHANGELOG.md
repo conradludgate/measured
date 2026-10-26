@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- Label-group set constructor arguments now follow declaration order. Empty label enums and duplicate names or values are rejected; initialization attributes require `metric(new(...))`.
+
 ## [0.0.25](https://github.com/conradludgate/measured/compare/measured-v0.0.24...measured-v0.0.25) - 2026-04-14
 
 ### Other
