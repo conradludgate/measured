@@ -3,20 +3,12 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{parse_quote, parse_quote_spanned};
 
-use super::{
-    MetricGroup, MetricGroupField,
-    attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind},
-};
+use super::attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind};
+use super::{MetricGroup, MetricGroupField};
 
 impl ToTokens for MetricGroup {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self {
-            krate,
-            ident,
-            generics,
-            fields,
-            inputs,
-        } = self;
+        let Self { krate, ident, generics, fields, inputs } = self;
 
         let enc = format_ident!("__MetricGroupEncodingT");
 
@@ -31,10 +23,12 @@ impl ToTokens for MetricGroup {
             let MetricGroupField { ty, attrs, .. } = field;
             match attrs.kind {
                 MetricGroupFieldAttrsKind::Metric { .. } => {
-                    wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding<#enc> ));
+                    wc.predicates
+                        .push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding<#enc> ));
                 }
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {
-                    wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::group::MetricGroup<#enc> ));
+                    wc.predicates
+                        .push(parse_quote_spanned!(field.span => #ty: #krate::metric::group::MetricGroup<#enc> ));
                 }
                 MetricGroupFieldAttrsKind::Group { namespace: Some(_) } => {
                     wc.predicates.push(parse_quote_spanned!(field.span =>
@@ -96,17 +90,17 @@ impl ToTokens for MetricGroup {
 
         if let Some(inputs) = inputs {
             let inits = fields.iter().map(|x| {
-                let MetricGroupField { name,ty, attrs, .. } = x;
+                let MetricGroupField { name, ty, attrs, .. } = x;
                 match &attrs.init {
                     Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: #init,),
-                    Some(MetricGroupFieldAttrsInit::Metric { metadata, label_set }) => {
-                        match (label_set, metadata) {
-                            (Some(ls), Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #meta),),
-                            (Some(ls), None) => quote_spanned!(x.span => #name: <#ty>::with_label_set(#ls),),
-                            (None, Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_metadata(#meta),),
-                            (None, None) => quote_spanned!(x.span => #name: <#ty>::new(),),
+                    Some(MetricGroupFieldAttrsInit::Metric { metadata, label_set }) => match (label_set, metadata) {
+                        (Some(ls), Some(meta)) => {
+                            quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #meta),)
                         }
-                    }
+                        (Some(ls), None) => quote_spanned!(x.span => #name: <#ty>::with_label_set(#ls),),
+                        (None, Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_metadata(#meta),),
+                        (None, None) => quote_spanned!(x.span => #name: <#ty>::new(),),
+                    },
                     None => quote_spanned!(x.span => #name: <#ty as ::core::default::Default>::default(),),
                 }
             });

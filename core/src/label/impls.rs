@@ -12,9 +12,7 @@ impl<T: LabelValue + core::hash::Hash + Eq + Clone, S: core::hash::BuildHasher> 
 }
 
 #[cfg(feature = "indexmap")]
-impl<T: LabelValue + core::hash::Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet
-    for indexmap::IndexSet<T, S>
-{
+impl<T: LabelValue + core::hash::Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet for indexmap::IndexSet<T, S> {
     type Value<'a> = T;
 
     fn dynamic_cardinality(&self) -> Option<usize> {
@@ -100,9 +98,7 @@ impl<K: lasso::Key, S: core::hash::BuildHasher> LabelSet for lasso::RodeoReader<
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> LabelSet
-    for lasso::ThreadedRodeo<K, S>
-{
+impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> LabelSet for lasso::ThreadedRodeo<K, S> {
     type Value<'a> = &'a str;
 
     fn dynamic_cardinality(&self) -> Option<usize> {

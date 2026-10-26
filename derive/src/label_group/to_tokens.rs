@@ -7,19 +7,16 @@ use super::{LabelGroup, LabelGroupField};
 
 impl ToTokens for LabelGroup {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self {
-            krate,
-            ident,
-            generics,
-            fields,
-            ..
-        } = self;
+        let Self { krate, ident, generics, fields, .. } = self;
 
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
         let visits = fields.iter().map(|x| {
             let LabelGroupField { name, attrs, .. } = x;
-            let name_string = attrs.rename.as_ref().map_or_else(|| name.to_string(), |r| r.value());
+            let name_string = attrs
+                .rename
+                .as_ref()
+                .map_or_else(|| name.to_string(), |r| r.value());
             let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
             quote_spanned! { x.span =>
                 const #ident: &#krate::label::LabelName = #krate::label::LabelName::from_str(#name_string);
@@ -61,13 +58,7 @@ impl ToTokens for Set<'_> {
         let (_, ty_generics, _) = generics.split_for_impl();
 
         let set_fields = sorted_fields.iter().map(|x| {
-            let LabelGroupField {
-                vis,
-                name,
-                attrs,
-                ty,
-                ..
-            } = x;
+            let LabelGroupField { vis, name, attrs, ty, .. } = x;
             match &attrs.kind {
                 LabelGroupFieldAttrsKind::Fixed => {
                     quote_spanned!( x.span => #vis #name: #krate::label::StaticLabelSet<#ty>, )
@@ -81,8 +72,7 @@ impl ToTokens for Set<'_> {
             }
         });
 
-        let part = sorted_fields
-            .partition_point(|x| x.attrs.get_sort_key() == LabelGroupFieldAttrsSortKey::Dynamic);
+        let part = sorted_fields.partition_point(|x| x.attrs.get_sort_key() == LabelGroupFieldAttrsSortKey::Dynamic);
         let (dynamics, fixed) = sorted_fields.split_at(part);
 
         // this is to reverse the order of the encoded fields
@@ -111,8 +101,7 @@ impl ToTokens for Set<'_> {
                     LabelGroupFieldAttrsKind::Fixed => {
                         quote_spanned!(x.span => #name: #krate::label::StaticLabelSet::new(),)
                     }
-                    LabelGroupFieldAttrsKind::FixedWith(path)
-                    | LabelGroupFieldAttrsKind::DynamicWith(path) => {
+                    LabelGroupFieldAttrsKind::FixedWith(path) | LabelGroupFieldAttrsKind::DynamicWith(path) => {
                         quote_spanned!(x.span => #name: <#path as ::core::default::Default>::default(),)
                     }
                 }
@@ -140,8 +129,7 @@ impl ToTokens for Set<'_> {
                 let name = &x.name;
                 match &x.attrs.kind {
                     LabelGroupFieldAttrsKind::Fixed => unreachable!("fixed is always default"),
-                    LabelGroupFieldAttrsKind::FixedWith(path)
-                    | LabelGroupFieldAttrsKind::DynamicWith(path) => {
+                    LabelGroupFieldAttrsKind::FixedWith(path) | LabelGroupFieldAttrsKind::DynamicWith(path) => {
                         quote_spanned!(x.span => #name: #path)
                     }
                 }

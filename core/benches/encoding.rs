@@ -1,5 +1,4 @@
-use divan::Bencher;
-use divan::black_box;
+use divan::{Bencher, black_box};
 use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, LabelGroup, MetricGroup};
 use paracord::ParaCord;
@@ -18,16 +17,12 @@ const SIZES: &[usize] = &[100, 1000, 10000, 100000];
 #[divan::bench(consts = SIZES)]
 fn measured<const N: usize>(bencher: Bencher) {
     let metrics = Metrics {
-        counters: measured::CounterVec::with_label_set(GroupSet {
-            kind: ParaCord::default(),
-        }),
+        counters: measured::CounterVec::with_label_set(GroupSet { kind: ParaCord::default() }),
     };
 
     let mut buf = itoa::Buffer::new();
     for i in 0..N {
-        metrics.counters.inc(Group {
-            kind: buf.format(i),
-        });
+        metrics.counters.inc(Group { kind: buf.format(i) });
     }
 
     let mut enc = BufferedTextEncoder::new();
@@ -41,13 +36,8 @@ fn measured<const N: usize>(bencher: Bencher) {
 #[divan::bench(consts = SIZES)]
 fn prometheus<const N: usize>(bencher: Bencher) {
     let registry = prometheus::Registry::new();
-    let counter_vec = prometheus::register_int_counter_vec_with_registry!(
-        "counters",
-        "help text",
-        &["kind"],
-        registry
-    )
-    .unwrap();
+    let counter_vec =
+        prometheus::register_int_counter_vec_with_registry!("counters", "help text", &["kind"], registry).unwrap();
 
     let mut buf = itoa::Buffer::new();
     for i in 0..N {

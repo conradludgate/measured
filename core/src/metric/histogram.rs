@@ -1,14 +1,14 @@
 //! All things histograms. See [`Histogram`]
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use parking_lot::RwLock;
 
-use super::{MetricLockGuard, MetricMut, MetricType, gauge::AtomicF64};
-use crate::{Histogram, HistogramVec, label::LabelGroupSet};
+use super::gauge::AtomicF64;
+use super::{MetricLockGuard, MetricMut, MetricType};
+use crate::label::LabelGroupSet;
+use crate::{Histogram, HistogramVec};
 
 /// The inner state of a histogram.
 ///
@@ -231,11 +231,7 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
     }
 
     /// Observe the duration in seconds since the given instant
-    pub fn observe_duration_since(
-        &self,
-        label: L::Group<'_>,
-        since: std::time::Instant,
-    ) -> Duration {
+    pub fn observe_duration_since(&self, label: L::Group<'_>, since: std::time::Instant) -> Duration {
         let d = since.elapsed();
         self.observe_duration(label, d);
         d

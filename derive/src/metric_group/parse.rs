@@ -1,9 +1,9 @@
-use syn::{Data, DeriveInput, Field, Fields, spanned::Spanned};
-
-use crate::Krate;
+use syn::spanned::Spanned;
+use syn::{Data, DeriveInput, Field, Fields};
 
 use super::attr::{ContainerAttrs, MetricGroupFieldAttrs};
 use super::{MetricGroup, MetricGroupField};
+use crate::Krate;
 
 impl TryFrom<Field> for MetricGroupField {
     type Error = syn::Error;
@@ -22,13 +22,7 @@ impl TryFrom<DeriveInput> for MetricGroup {
     type Error = syn::Error;
     fn try_from(input: DeriveInput) -> syn::Result<Self> {
         let span = input.span();
-        let DeriveInput {
-            ident,
-            data,
-            generics,
-            attrs,
-            ..
-        } = input;
+        let DeriveInput { ident, data, generics, attrs, .. } = input;
 
         let args = ContainerAttrs::parse_attrs(&attrs)?;
         let Krate(krate) = args.krate.unwrap_or_default();

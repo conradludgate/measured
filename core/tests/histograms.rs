@@ -1,4 +1,6 @@
-use measured::metric::{MetricFamilyEncoding, group::Encoding, histogram::Thresholds};
+use measured::metric::MetricFamilyEncoding;
+use measured::metric::group::Encoding;
+use measured::metric::histogram::Thresholds;
 use prometheus::exponential_buckets;
 
 #[test]
@@ -162,7 +164,6 @@ http_request_errors_bucket{le="+Inf"} 17
 
 fn latencies() -> &'static [f64] {
     &[
-        0.02, 0.12, 0.05, 0.26, 0.7, 5.0, 0.4, 10.0, 0.5, 6.4, 5.44, 2.4, 1.67, 1.55, 100.0, 7.77,
-        0.1,
+        0.02, 0.12, 0.05, 0.26, 0.7, 5.0, 0.4, 10.0, 0.5, 6.4, 5.44, 2.4, 1.67, 1.55, 100.0, 7.77, 0.1,
     ]
 }

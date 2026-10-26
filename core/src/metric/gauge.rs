@@ -2,12 +2,11 @@
 
 use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
-use crate::{FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup, label::LabelGroupSet};
-
-use super::{
-    MetricEncoding, MetricLockGuard, MetricMut, MetricType, group::Encoding,
-    name::MetricNameEncoder,
-};
+use super::group::Encoding;
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricMut, MetricType};
+use crate::label::LabelGroupSet;
+use crate::{FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup};
 
 #[derive(Default)]
 /// The internal state that is used by [`Gauge`] and [`GaugeVec`]
@@ -17,9 +16,7 @@ pub struct GaugeState {
 
 impl GaugeState {
     pub fn new(value: i64) -> Self {
-        Self {
-            count: AtomicI64::new(value),
-        }
+        Self { count: AtomicI64::new(value) }
     }
 }
 
@@ -155,10 +152,7 @@ pub fn write_gauge<Enc: Encoding>(
 where
     GaugeState: MetricEncoding<Enc>,
 {
-    GaugeState {
-        count: AtomicI64::new(value),
-    }
-    .collect_into(&(), labels, name, enc)
+    GaugeState { count: AtomicI64::new(value) }.collect_into(&(), labels, name, enc)
 }
 
 #[derive(Default)]
@@ -169,9 +163,7 @@ pub struct FloatGaugeState {
 
 impl FloatGaugeState {
     pub fn new(value: f64) -> Self {
-        Self {
-            count: AtomicF64::new(value),
-        }
+        Self { count: AtomicF64::new(value) }
     }
 }
 
@@ -306,14 +298,10 @@ pub struct AtomicF64 {
 
 impl AtomicF64 {
     #[allow(clippy::declare_interior_mutable_const)]
-    pub const ZERO: Self = Self {
-        inner: AtomicU64::new(0),
-    };
+    pub const ZERO: Self = Self { inner: AtomicU64::new(0) };
 
     pub fn new(val: f64) -> AtomicF64 {
-        AtomicF64 {
-            inner: AtomicU64::new(val.to_bits()),
-        }
+        AtomicF64 { inner: AtomicU64::new(val.to_bits()) }
     }
 
     #[inline]
@@ -341,12 +329,9 @@ impl AtomicF64 {
         loop {
             let current = self.inner.load(Ordering::Acquire);
             let new = f64::from_bits(current) + delta;
-            let result = self.inner.compare_exchange_weak(
-                current,
-                new.to_bits(),
-                Ordering::Release,
-                Ordering::Relaxed,
-            );
+            let result = self
+                .inner
+                .compare_exchange_weak(current, new.to_bits(), Ordering::Release, Ordering::Relaxed);
             if result.is_ok() {
                 return;
             }
@@ -368,8 +353,5 @@ pub fn write_float_gauge<Enc: Encoding>(
 where
     FloatGaugeState: MetricEncoding<Enc>,
 {
-    FloatGaugeState {
-        count: AtomicF64::new(value),
-    }
-    .collect_into(&(), labels, name, enc)
+    FloatGaugeState { count: AtomicF64::new(value) }.collect_into(&(), labels, name, enc)
 }

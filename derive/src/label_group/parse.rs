@@ -1,9 +1,9 @@
-use syn::{Data, DeriveInput, Field, Fields, spanned::Spanned};
-
-use crate::Krate;
+use syn::spanned::Spanned;
+use syn::{Data, DeriveInput, Field, Fields};
 
 use super::attr::{ContainerAttrs, LabelGroupFieldAttrs};
 use super::{LabelGroup, LabelGroupField};
+use crate::Krate;
 
 impl TryFrom<Field> for LabelGroupField {
     type Error = syn::Error;
@@ -23,14 +23,7 @@ impl TryFrom<DeriveInput> for LabelGroup {
     type Error = syn::Error;
     fn try_from(input: DeriveInput) -> syn::Result<Self> {
         let span = input.span();
-        let DeriveInput {
-            ident,
-            data,
-            generics,
-            attrs,
-            vis,
-            ..
-        } = input;
+        let DeriveInput { ident, data, generics, attrs, vis, .. } = input;
 
         let args = ContainerAttrs::parse_attrs(&attrs)?;
         let Krate(krate) = args.krate.unwrap_or_default();

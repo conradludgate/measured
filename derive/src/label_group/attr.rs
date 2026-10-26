@@ -87,9 +87,7 @@ impl LabelGroupFieldAttrs {
                         }
                         () if meta.path.is_ident("fixed_with") => {
                             if kind
-                                .replace(LabelGroupFieldAttrsKind::FixedWith(
-                                    meta.value()?.parse()?,
-                                ))
+                                .replace(LabelGroupFieldAttrsKind::FixedWith(meta.value()?.parse()?))
                                 .is_some()
                             {
                                 return Err(meta.error("duplicate `label(fixed_with)` arg"));
@@ -128,10 +126,6 @@ impl LabelGroupFieldAttrs {
 
         // fixed implies default
         let default = default || matches!(kind, LabelGroupFieldAttrsKind::Fixed);
-        Ok(Self {
-            kind,
-            default,
-            rename,
-        })
+        Ok(Self { kind, default, rename })
     }
 }

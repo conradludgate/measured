@@ -2,18 +2,15 @@
 
 use std::io::Write;
 
-use encoding::{encode_key, encode_varint, encoded_len_varint, key_len, WireType::LengthDelimited};
-use measured::{
-    label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor},
-    metric::{
-        counter::CounterState,
-        gauge::{FloatGaugeState, GaugeState},
-        group::Encoding,
-        name::MetricNameEncoder,
-        MetricEncoding,
-    },
-    LabelGroup,
-};
+use encoding::WireType::LengthDelimited;
+use encoding::{encode_key, encode_varint, encoded_len_varint, key_len};
+use measured::LabelGroup;
+use measured::label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
+use measured::metric::MetricEncoding;
+use measured::metric::counter::CounterState;
+use measured::metric::gauge::{FloatGaugeState, GaugeState};
+use measured::metric::group::Encoding;
+use measured::metric::name::MetricNameEncoder;
 
 mod encoding;
 
@@ -86,14 +83,11 @@ pub enum MetricType {
 impl<W: Write> Encoding for ProtoEncoder<W> {
     type Err = std::io::Error;
 
-    const MIME_TYPE: &'static str = "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited";
+    const MIME_TYPE: &'static str =
+        "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited";
 
     /// Write the help line for a metric
-    fn write_help(
-        &mut self,
-        name: impl MetricNameEncoder,
-        help: &str,
-    ) -> Result<(), std::io::Error> {
+    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), std::io::Error> {
         self.flush_buf()?;
 
         // optional string     name   = 1;
@@ -180,12 +174,7 @@ impl LabelVisitor for Visitor<'_> {
     }
 }
 
-fn encode_message(
-    tag: u32,
-    len: usize,
-    buf: &mut Vec<u8>,
-    message: impl for<'a> FnOnce(&'a mut Vec<u8>),
-) {
+fn encode_message(tag: u32, len: usize, buf: &mut Vec<u8>, message: impl for<'a> FnOnce(&'a mut Vec<u8>)) {
     encode_key(tag, LengthDelimited, buf);
     encode_varint(len as u64, buf);
 
@@ -221,10 +210,7 @@ impl LabelGroupVisitor for GroupVisitor<'_> {
 }
 
 impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut ProtoEncoder<W>) -> Result<(), std::io::Error> {
         enc.flush_buf()?;
 
         if enc.state == State::Init {
@@ -276,10 +262,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for CounterState {
 }
 
 impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut ProtoEncoder<W>) -> Result<(), std::io::Error> {
         enc.flush_buf()?;
 
         if enc.state == State::Init {
@@ -331,10 +314,7 @@ impl<W: Write> MetricEncoding<ProtoEncoder<W>> for GaugeState {
 }
 
 impl<W: Write> MetricEncoding<ProtoEncoder<W>> for FloatGaugeState {
-    fn write_type(
-        name: impl MetricNameEncoder,
-        enc: &mut ProtoEncoder<W>,
-    ) -> Result<(), std::io::Error> {
+    fn write_type(name: impl MetricNameEncoder, enc: &mut ProtoEncoder<W>) -> Result<(), std::io::Error> {
         enc.flush_buf()?;
 
         if enc.state == State::Init {
@@ -393,20 +373,14 @@ mod tests {
     use std::vec;
 
     use bytes::{BufMut, BytesMut};
-    use measured::{
-        metric::{
-            group::Encoding,
-            name::{MetricName, Total},
-            MetricFamilyEncoding,
-        },
-        CounterVec, GaugeVec,
-    };
+    use measured::metric::MetricFamilyEncoding;
+    use measured::metric::group::Encoding;
+    use measured::metric::name::{MetricName, Total};
+    use measured::{CounterVec, GaugeVec};
     use prost::Message;
 
-    use crate::{
-        generated::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType},
-        ProtoEncoder,
-    };
+    use crate::ProtoEncoder;
+    use crate::generated::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 
     #[derive(Clone, Copy, PartialEq, Debug, measured::LabelGroup)]
     #[label(set = RequestLabelSet)]
@@ -555,9 +529,7 @@ mod tests {
                             value: Some("200".to_owned()),
                         },
                     ],
-                    gauge: Some(Gauge {
-                        value: Some(1027.0),
-                    }),
+                    gauge: Some(Gauge { value: Some(1027.0) }),
                     counter: None,
                     summary: None,
                     untyped: None,

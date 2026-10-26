@@ -38,7 +38,7 @@ impl ToTokens for FixedCardinalityLabel {
         });
 
         let singleton = singleton.as_ref().map(|s| {
-            quote!{
+            quote! {
                 impl #krate::label::LabelGroup for #ident {
                     fn visit_values(&self, v: &mut impl #krate::label::LabelGroupVisitor) {
                         const NAME: &#krate::label::LabelName = #krate::label::LabelName::from_str(#s);

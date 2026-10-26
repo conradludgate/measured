@@ -17,10 +17,7 @@ pub trait MetricNameEncoder {
     where
         Self: Sized,
     {
-        WithSuffix {
-            suffix,
-            metric_name: self,
-        }
+        WithSuffix { suffix, metric_name: self }
     }
 
     /// Get a reference to this metric name
@@ -43,9 +40,7 @@ pub enum InvalidMetricName {
 impl core::fmt::Display for InvalidMetricName {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            InvalidMetricName::InvalidChars => {
-                f.write_str("metric name contained invalid characters")
-            }
+            InvalidMetricName::InvalidChars => f.write_str("metric name contained invalid characters"),
             InvalidMetricName::Empty => f.write_str("metric name was empty"),
             InvalidMetricName::StartsWithNumber => f.write_str("metric name started with a number"),
         }
@@ -132,10 +127,7 @@ impl MetricName {
     /// Adds a semantic suffix to this metric name.
     #[must_use]
     pub const fn with_suffix<S: Suffix>(&self, suffix: S) -> WithSuffix<S, &'_ Self> {
-        WithSuffix {
-            suffix,
-            metric_name: self,
-        }
+        WithSuffix { suffix, metric_name: self }
     }
 }
 
@@ -192,10 +184,7 @@ impl<T> WithNamespace<T> {
 
     /// Adds a semantic suffix to this metric name.
     pub const fn with_suffix<S: Suffix>(self, suffix: S) -> WithSuffix<S, Self> {
-        WithSuffix {
-            suffix,
-            metric_name: self,
-        }
+        WithSuffix { suffix, metric_name: self }
     }
 }
 

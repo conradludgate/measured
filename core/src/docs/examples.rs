@@ -5,10 +5,10 @@
 //! The most basic usage is defining a single counter. This is very easy.
 //!
 //! ```
-//! use measured::{Counter, MetricGroup};
-//! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
+//! use measured::metric::name::MetricName;
 //! use measured::text::BufferedTextEncoder;
+//! use measured::{Counter, MetricGroup};
 //!
 //! // Define a metric group, consisting of 1 or more metrics
 //! #[derive(MetricGroup)]
@@ -34,7 +34,8 @@
 //!     r#"# HELP my_first_counter counts things
 //! ## TYPE my_first_counter counter
 //! my_first_counter 1
-//! "#);
+//! "#
+//! );
 //! ```
 //!
 //! ## With labels
@@ -45,11 +46,11 @@
 //! Multiple label pairs are collected into a [`LabelGroup`](crate::LabelGroup).
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup, FixedCardinalityLabel};
 //! use measured::label::StaticLabelSet;
-//! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
+//! use measured::metric::name::MetricName;
 //! use measured::text::BufferedTextEncoder;
+//! use measured::{CounterVec, FixedCardinalityLabel, LabelGroup, MetricGroup};
 //!
 //! // Define a fixed cardinality label
 //!
@@ -80,8 +81,12 @@
 //! let metrics = MyMetricGroup::new();
 //!
 //! // increment the counter at a given label
-//! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Create });
-//! metrics.my_first_counter.inc(MyLabelGroup { operation: Operation::Delete });
+//! metrics
+//!     .my_first_counter
+//!     .inc(MyLabelGroup { operation: Operation::Create });
+//! metrics
+//!     .my_first_counter
+//!     .inc(MyLabelGroup { operation: Operation::Delete });
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = BufferedTextEncoder::new();
@@ -94,7 +99,8 @@
 //! ## TYPE my_first_counter counter
 //! my_first_counter{operation="create"} 1
 //! my_first_counter{operation="delete"} 1
-//! "#);
+//! "#
+//! );
 //! ```
 //!
 //! ## With dynamic labels and label sets
@@ -108,10 +114,10 @@
 //! I recommend the latter for string-based labels that are not `&'static` as it will offer the most efficient use of memory.
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup};
-//! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
+//! use measured::metric::name::MetricName;
 //! use measured::text::BufferedTextEncoder;
+//! use measured::{CounterVec, LabelGroup, MetricGroup};
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!
@@ -132,16 +138,16 @@
 //! }
 //!
 //! // create the metrics
-//! let paths = lasso::Rodeo::from_iter([
-//!     "/api/v1/products",
-//!     "/api/v1/users",
-//! ])
-//! .into_reader();
+//! let paths = lasso::Rodeo::from_iter(["/api/v1/products", "/api/v1/users"]).into_reader();
 //! let metrics = MyMetricGroup::new(paths);
 //!
 //! // increment the counter at a given label
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
+//! metrics
+//!     .my_first_counter
+//!     .inc(MyLabelGroup { path: "/api/v1/products" });
+//! metrics
+//!     .my_first_counter
+//!     .inc(MyLabelGroup { path: "/api/v1/users" });
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = BufferedTextEncoder::new();
@@ -154,7 +160,8 @@
 //! ## TYPE my_first_counter counter
 //! my_first_counter{path="/api/v1/products"} 1
 //! my_first_counter{path="/api/v1/users"} 1
-//! "#);
+//! "#
+//! );
 //! ```
 //!
 //! In the rare case that the label cannot be determined even at startup, you can still use them. You will have to make use of the
@@ -163,10 +170,10 @@
 //! It's not advised to use this for high cardinality labels, but if you must, this still offers good performance.
 //!
 //! ```
-//! use measured::{CounterVec, LabelGroup, MetricGroup};
-//! use measured::metric::name::MetricName;
 //! use measured::metric::MetricFamilyEncoding;
+//! use measured::metric::name::MetricName;
 //! use measured::text::BufferedTextEncoder;
+//! use measured::{CounterVec, LabelGroup, MetricGroup};
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!
@@ -190,8 +197,12 @@
 //! let metrics = MyMetricGroup::new();
 //!
 //! // increment the counter at a given label
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/products" });
-//! metrics.my_first_counter.inc(MyLabelGroup { path: "/api/v1/users" });
+//! metrics
+//!     .my_first_counter
+//!     .inc(MyLabelGroup { path: "/api/v1/products" });
+//! metrics
+//!     .my_first_counter
+//!     .inc(MyLabelGroup { path: "/api/v1/users" });
 //!
 //! // sample the metrics and encode the values to a textual format.
 //! let mut text_encoder = BufferedTextEncoder::new();
@@ -204,5 +215,6 @@
 //! ## TYPE my_first_counter counter
 //! my_first_counter{path="/api/v1/products"} 1
 //! my_first_counter{path="/api/v1/users"} 1
-//! "#);
+//! "#
+//! );
 //! ```

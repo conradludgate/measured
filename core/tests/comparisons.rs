@@ -1,7 +1,8 @@
 #![cfg(feature = "lasso")]
 
 use lasso::{Rodeo, RodeoReader};
-use measured::{CounterVec, FixedCardinalityLabel, LabelGroup, MetricGroup, label::StaticLabelSet};
+use measured::label::StaticLabelSet;
+use measured::{CounterVec, FixedCardinalityLabel, LabelGroup, MetricGroup};
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
 
 const LOOPS: usize = 2000;

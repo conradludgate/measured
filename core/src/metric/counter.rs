@@ -2,12 +2,11 @@
 
 use core::sync::atomic::AtomicU64;
 
-use crate::{Counter, CounterVec, LabelGroup, label::LabelGroupSet};
-
-use super::{
-    MetricEncoding, MetricLockGuard, MetricMut, MetricType, group::Encoding,
-    name::MetricNameEncoder,
-};
+use super::group::Encoding;
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricMut, MetricType};
+use crate::label::LabelGroupSet;
+use crate::{Counter, CounterVec, LabelGroup};
 
 #[derive(Default)]
 /// The internal state that is used by [`Counter`] and [`CounterVec`]
@@ -22,9 +21,7 @@ pub type CounterMut<'a> = MetricMut<'a, CounterState>;
 
 impl CounterState {
     pub fn new(value: u64) -> Self {
-        Self {
-            count: AtomicU64::new(value),
-        }
+        Self { count: AtomicU64::new(value) }
     }
 
     /// Increment the counter value by 1
@@ -110,8 +107,5 @@ pub fn write_counter<Enc: Encoding>(
 where
     CounterState: MetricEncoding<Enc>,
 {
-    CounterState {
-        count: AtomicU64::new(value),
-    }
-    .collect_into(&(), labels, name, enc)
+    CounterState { count: AtomicU64::new(value) }.collect_into(&(), labels, name, enc)
 }

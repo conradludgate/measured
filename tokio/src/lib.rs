@@ -12,7 +12,6 @@
 //!     #[metric(namespace = "tokio")]
 //!     #[metric(init = measured_tokio::RuntimeCollector::current())]
 //!     tokio: measured_tokio::RuntimeCollector,
-//!
 //!     // other metrics
 //! }
 //!
@@ -26,19 +25,16 @@
 //! }
 //! ```
 
-use std::{borrow::Cow, sync::RwLock};
+use std::borrow::Cow;
+use std::sync::RwLock;
 
-use measured::{
-    FixedCardinalityLabel, LabelGroup, MetricGroup,
-    label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels},
-    metric::{
-        MetricEncoding,
-        counter::CounterState,
-        gauge::{FloatGaugeState, GaugeState},
-        group::Encoding,
-        name::MetricName,
-    },
-};
+use measured::label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels};
+use measured::metric::MetricEncoding;
+use measured::metric::counter::CounterState;
+use measured::metric::gauge::{FloatGaugeState, GaugeState};
+use measured::metric::group::Encoding;
+use measured::metric::name::MetricName;
+use measured::{FixedCardinalityLabel, LabelGroup, MetricGroup};
 use tokio::runtime::RuntimeMetrics;
 
 /// A collector which contains multiple named tokio runtimes
@@ -49,9 +45,7 @@ pub struct NamedRuntimesCollector {
 impl NamedRuntimesCollector {
     /// Create a new empty `NamedRuntimesCollector`
     pub fn new() -> Self {
-        Self {
-            runtimes: RwLock::new(vec![]),
-        }
+        Self { runtimes: RwLock::new(vec![]) }
     }
 
     /// Inserts a `RuntimeCollector` with the given runtime.
@@ -122,9 +116,7 @@ impl RuntimeCollector {
     pub fn with_name(self, name: impl Into<Cow<'static, str>>) -> Self {
         Self {
             runtime: self.runtime,
-            name: RuntimeName {
-                name: Some(name.into()),
-            },
+            name: RuntimeName { name: Some(name.into()) },
         }
     }
 }

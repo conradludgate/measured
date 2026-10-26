@@ -1,16 +1,15 @@
 //! All about metrics
 
 use core::hash::Hash;
-use std::{
-    hash::BuildHasher,
-    ops::{Deref, DerefMut},
-    sync::OnceLock,
-};
+use std::hash::BuildHasher;
+use std::ops::{Deref, DerefMut};
+use std::sync::OnceLock;
 
-use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use crossbeam_utils::CachePadded;
 
-use self::{group::Encoding, name::MetricNameEncoder};
+use self::group::Encoding;
+use self::name::MetricNameEncoder;
+use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 
 pub mod counter;
 pub mod gauge;
@@ -139,10 +138,7 @@ where
 impl<M: MetricType> Metric<M> {
     /// Create a new metric with the given metadata
     pub fn with_metadata(metadata: M::Metadata) -> Self {
-        Self {
-            metric: M::default(),
-            metadata,
-        }
+        Self { metric: M::default(), metadata }
     }
 
     /// Get a ref to the metric
@@ -274,11 +270,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
             _ => VecInner::Sparse(sparse::ShardedMap::new()),
         };
 
-        Self {
-            metrics,
-            metadata,
-            label_set,
-        }
+        Self { metrics, metadata, label_set }
     }
 
     /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
@@ -440,9 +432,7 @@ impl<M: MetricEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Metric<M> {
     }
 }
 
-impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T>
-    for MetricVec<M, L>
-{
+impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T> for MetricVec<M, L> {
     fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
         M::write_type(&name, enc)?;
         match &self.metrics {
@@ -520,12 +510,8 @@ mod tests {
         let errors = CounterVec::<ErrorsSet>::dense();
         assert_eq!(errors.get_cardinality(), (0, Some(3)));
 
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
+        errors.inc(Error { kind: ErrorKind::Internal });
+        errors.inc(Error { kind: ErrorKind::User });
         assert_eq!(errors.get_cardinality(), (2, Some(3)));
     }
 
@@ -534,12 +520,8 @@ mod tests {
         let errors = CounterVec::<ErrorsSet>::sparse();
         assert_eq!(errors.get_cardinality(), (0, Some(3)));
 
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
+        errors.inc(Error { kind: ErrorKind::Internal });
+        errors.inc(Error { kind: ErrorKind::User });
         assert_eq!(errors.get_cardinality(), (2, Some(3)));
     }
 
@@ -547,17 +529,11 @@ mod tests {
     fn remove() {
         let errors = CounterVec::<ErrorsSet>::sparse();
 
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
+        errors.inc(Error { kind: ErrorKind::Internal });
+        errors.inc(Error { kind: ErrorKind::User });
         assert_eq!(errors.get_cardinality(), (2, Some(3)));
         let user_errors = errors
-            .remove_metric(errors.with_labels(Error {
-                kind: ErrorKind::User,
-            }))
+            .remove_metric(errors.with_labels(Error { kind: ErrorKind::User }))
             .unwrap();
 
         assert_eq!(errors.get_cardinality(), (1, Some(3)));
@@ -576,7 +552,9 @@ mod tests {
     #[cfg(feature = "lasso")]
     #[test]
     fn dynamic_labels() {
-        use fake::{Fake, faker::name::raw::Name, locales::EN};
+        use fake::Fake;
+        use fake::faker::name::raw::Name;
+        use fake::locales::EN;
 
         use crate::GaugeVec;
 

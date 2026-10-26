@@ -1,5 +1,4 @@
-use divan::black_box;
-use divan::Bencher;
+use divan::{Bencher, black_box};
 use measured::lasso::{Spur, ThreadedRodeo};
 use measured::{CounterVec, LabelGroup, MetricGroup};
 use measured_prometheus_protobuf::ProtoEncoder;
@@ -26,9 +25,7 @@ fn measured<const N: usize>(bencher: Bencher) {
 
     let mut buf = itoa::Buffer::new();
     for i in 0..N {
-        metrics.counters.inc(Group {
-            kind: buf.format(i),
-        });
+        metrics.counters.inc(Group { kind: buf.format(i) });
     }
 
     let mut enc = ProtoEncoder::new(vec![]);
@@ -44,13 +41,8 @@ fn measured<const N: usize>(bencher: Bencher) {
 #[divan::bench(consts = SIZES)]
 fn prometheus<const N: usize>(bencher: Bencher) {
     let registry = prometheus::Registry::new();
-    let counter_vec = prometheus::register_int_counter_vec_with_registry!(
-        "counters",
-        "help text",
-        &["kind"],
-        registry
-    )
-    .unwrap();
+    let counter_vec =
+        prometheus::register_int_counter_vec_with_registry!("counters", "help text", &["kind"], registry).unwrap();
 
     let mut buf = itoa::Buffer::new();
     for i in 0..N {

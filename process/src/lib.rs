@@ -14,7 +14,6 @@
 //!     #[metric(namespace = "process")]
 //!     #[metric(init = measured_process::ProcessCollector::for_self())]
 //!     process: measured_process::ProcessCollector,
-//!
 //!     // other metrics
 //! }
 //!
@@ -28,14 +27,10 @@
 use std::sync::OnceLock;
 
 use libc::pid_t;
-use measured::{
-    MetricGroup,
-    metric::{
-        MetricEncoding,
-        gauge::{GaugeState, write_gauge},
-        group::Encoding,
-    },
-};
+use measured::MetricGroup;
+use measured::metric::MetricEncoding;
+use measured::metric::gauge::{GaugeState, write_gauge};
+use measured::metric::group::Encoding;
 
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 // https://github.com/tikv/rust-prometheus/blob/f49c724df0e123520554664436da68e555593af0/src/process_collector.rs

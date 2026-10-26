@@ -1,17 +1,13 @@
 use std::sync::Arc;
 
-use axum::{
-    extract::{MatchedPath, Request, State},
-    middleware::Next,
-    response::Response,
-    RequestExt,
-};
-use measured::{
-    label::{self, LabelValue},
-    metric::histogram::Thresholds,
-    text::BufferedTextEncoder,
-    CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup,
-};
+use axum::RequestExt;
+use axum::extract::{MatchedPath, Request, State};
+use axum::middleware::Next;
+use axum::response::Response;
+use measured::label::{self, LabelValue};
+use measured::metric::histogram::Thresholds;
+use measured::text::BufferedTextEncoder;
+use measured::{CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup};
 use tokio::sync::Mutex;
 
 /// Defines both the metrics and the metrics encoder.
@@ -44,19 +40,12 @@ pub struct AppMetrics {
 
 impl AppMetricsEncoder {
     pub fn new(metrics: AppMetrics) -> Self {
-        Self {
-            encoder: Mutex::default(),
-            metrics,
-        }
+        Self { encoder: Mutex::default(), metrics }
     }
 }
 
 /// Middleware wraps all HTTP requests to automatically report metrics
-pub async fn middleware(
-    s: State<Arc<AppMetricsEncoder>>,
-    mut request: Request,
-    next: Next,
-) -> Response {
+pub async fn middleware(s: State<Arc<AppMetricsEncoder>>, mut request: Request, next: Next) -> Response {
     let AppMetrics {
         http_requests,
         http_responses,

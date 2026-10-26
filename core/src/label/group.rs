@@ -184,9 +184,8 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{FixedCardinalityLabel, LabelGroup};
-
     use super::{ComposedGroup, LabelGroupSet};
+    use crate::{FixedCardinalityLabel, LabelGroup};
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
     #[label(crate = crate, set = ErrorsSet)]
@@ -222,21 +221,13 @@ mod tests {
         assert_eq!(composed.cardinality(), Some(6));
 
         let get_user = ComposedGroup(
-            Operation {
-                kind: OperationKind::Get,
-            },
-            Error {
-                kind: ErrorKind::User,
-            },
+            Operation { kind: OperationKind::Get },
+            Error { kind: ErrorKind::User },
         );
 
         let post_internal = ComposedGroup(
-            Operation {
-                kind: OperationKind::Post,
-            },
-            Error {
-                kind: ErrorKind::Internal,
-            },
+            Operation { kind: OperationKind::Post },
+            Error { kind: ErrorKind::Internal },
         );
 
         assert_eq!(composed.encode(get_user), Some(ComposedGroup(0, 0)),);

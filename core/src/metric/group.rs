@@ -2,12 +2,9 @@
 
 use std::sync::Arc;
 
+use super::MetricEncoding;
+use super::name::{MetricNameEncoder, WithNamespace};
 pub use crate::label::ComposedGroup;
-
-use super::{
-    MetricEncoding,
-    name::{MetricNameEncoder, WithNamespace},
-};
 
 /// Values that prometheus supports in the text format
 #[derive(Clone, Copy, Debug)]
@@ -74,10 +71,8 @@ where
     E: Encoding,
 {
     fn collect_group_into(&self, enc: &mut E) -> Result<(), E::Err> {
-        self.inner.collect_group_into(&mut WithNamespace {
-            namespace: self.namespace,
-            inner: enc,
-        })
+        self.inner
+            .collect_group_into(&mut WithNamespace { namespace: self.namespace, inner: enc })
     }
 }
 
@@ -103,10 +98,7 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
 
     fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Self::Err> {
         self.inner.write_help(
-            WithNamespace {
-                namespace: self.namespace,
-                inner: name,
-            },
+            WithNamespace { namespace: self.namespace, inner: name },
             help,
         )
     }
@@ -115,10 +107,7 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
 impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
     fn write_type(name: impl MetricNameEncoder, enc: &mut WithNamespace<E>) -> Result<(), E::Err> {
         M::write_type(
-            WithNamespace {
-                namespace: enc.namespace,
-                inner: name,
-            },
+            WithNamespace { namespace: enc.namespace, inner: name },
             &mut enc.inner,
         )
     }
@@ -132,10 +121,7 @@ impl<M: MetricEncoding<E>, E: Encoding> MetricEncoding<WithNamespace<E>> for M {
         self.collect_into(
             metadata,
             labels,
-            WithNamespace {
-                namespace: enc.namespace,
-                inner: name,
-            },
+            WithNamespace { namespace: enc.namespace, inner: name },
             &mut enc.inner,
         )
     }
@@ -162,12 +148,10 @@ mod tests {
     use measured_derive::{FixedCardinalityLabel, LabelGroup, MetricGroup};
     use prometheus_client::encoding::EncodeLabelValue;
 
-    use crate::{
-        Counter, CounterVec, Gauge, Histogram, metric::histogram::Thresholds,
-        text::BufferedTextEncoder,
-    };
-
     use super::MetricGroup;
+    use crate::metric::histogram::Thresholds;
+    use crate::text::BufferedTextEncoder;
+    use crate::{Counter, CounterVec, Gauge, Histogram};
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
     #[label(crate = crate, set = ErrorsSet)]

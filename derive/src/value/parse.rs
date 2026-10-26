@@ -1,11 +1,9 @@
-use syn::{Data, DeriveInput, Fields, Lit, Variant, spanned::Spanned};
+use syn::spanned::Spanned;
+use syn::{Data, DeriveInput, Fields, Lit, Variant};
 
+use super::attr::{ContainerAttrs, VariantAttrs};
+use super::{FixedCardinalityLabel, FixedCardinalityLabelVariant};
 use crate::Krate;
-
-use super::{
-    FixedCardinalityLabel, FixedCardinalityLabelVariant,
-    attr::{ContainerAttrs, VariantAttrs},
-};
 
 impl TryFrom<Variant> for FixedCardinalityLabelVariant {
     type Error = syn::Error;
@@ -42,9 +40,7 @@ impl TryFrom<DeriveInput> for FixedCardinalityLabel {
     type Error = syn::Error;
     fn try_from(input: DeriveInput) -> syn::Result<Self> {
         let span = input.span();
-        let DeriveInput {
-            ident, data, attrs, ..
-        } = input;
+        let DeriveInput { ident, data, attrs, .. } = input;
 
         let args = ContainerAttrs::parse_attrs(&attrs)?;
         let Krate(krate) = args.krate.unwrap_or_default();
