@@ -52,6 +52,7 @@ impl std::error::Error for InvalidMetricName {}
 /// Represents a string-based [`MetricNameEncoder`]
 ///
 /// Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex `[a-zA-Z_:][a-zA-Z0-9_:]*`.
+#[repr(transparent)]
 pub struct MetricName(str);
 
 const fn const_assert_metric_name(name: &str) {
@@ -78,7 +79,7 @@ fn try_assert_metric_name(value: &str) -> Result<(), InvalidMetricName> {
     }
 
     value.bytes().try_fold((), |(), b| match b {
-        b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => Ok(()),
+        b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' | b':' => Ok(()),
         _ => Err(InvalidMetricName::InvalidChars),
     })?;
 
@@ -106,7 +107,7 @@ impl MetricName {
     /// Construct a [`MetricName`] from a string
     ///
     /// # Errors
-    /// Will panic if the string contains invalid characters
+    /// Will error if the string is empty, contains invalid characters, or starts with a digit
     pub fn try_from_str(value: &str) -> Result<&Self, InvalidMetricName> {
         try_assert_metric_name(value)?;
 
@@ -257,5 +258,34 @@ impl Suffix for Bucket {
     }
     fn encode_len(&self) -> usize {
         7
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InvalidMetricName, MetricName};
+
+    #[test]
+    fn try_from_str() {
+        for valid in ["a", "_a", ":a", "a_b:c1"] {
+            assert!(MetricName::try_from_str(valid).is_ok(), "{valid}");
+        }
+        assert!(matches!(
+            MetricName::try_from_str(""),
+            Err(InvalidMetricName::Empty)
+        ));
+        assert!(matches!(
+            MetricName::try_from_str("1a"),
+            Err(InvalidMetricName::StartsWithNumber)
+        ));
+        for invalid in ["a-b", "-a", "a b", "a.b"] {
+            assert!(
+                matches!(
+                    MetricName::try_from_str(invalid),
+                    Err(InvalidMetricName::InvalidChars)
+                ),
+                "{invalid}"
+            );
+        }
     }
 }

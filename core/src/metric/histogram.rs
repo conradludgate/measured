@@ -99,7 +99,8 @@ impl<const N: usize> Thresholds<N> {
     /// The final +Inf bucket is not counted and not included.
     ///
     /// # Panics
-    /// The function panics if `start` is zero or negative, or if `factor` is less than or equal 1.
+    /// The function panics if `start` is zero or negative, if `factor` is less than or equal 1,
+    /// or if the buckets are not strictly increasing (for example, due to overflowing to infinity).
     pub fn exponential_buckets(start: f64, factor: f64) -> Self {
         assert!(
             start > 0.0,
@@ -113,14 +114,15 @@ impl<const N: usize> Thresholds<N> {
 
         let buckets = core::array::from_fn(|i| start * factor.powi(i as i32));
 
-        Thresholds { le: buckets }
+        Self::with_buckets(buckets)
     }
 
     /// Create `N` buckets, each `width`  wide, where the lowest bucket has an upper bound of `start`.
     /// The final +Inf bucket is not counted and not included.
     ///
     /// # Panics
-    /// The function panics `width` is zero or negative.
+    /// The function panics if `width` is zero or negative, or if the buckets are not strictly increasing
+    /// (for example, if `width` is too small relative to `start`).
     pub fn linear_buckets(start: f64, width: f64) -> Self {
         assert!(
             width > 0.0,
@@ -129,21 +131,41 @@ impl<const N: usize> Thresholds<N> {
 
         let buckets = core::array::from_fn(|i| start + width * i as f64);
 
-        Thresholds { le: buckets }
+        Self::with_buckets(buckets)
     }
 
     /// Create the histogram thresholds with the given sizes
     ///
     /// # Panics
-    /// Will panic if the buckets are not strictly monotonically increasing
+    /// Will panic if the buckets are not strictly monotonically increasing, or contain NaN or +Inf.
+    /// The +Inf bucket is always included implicitly.
     pub fn with_buckets(buckets: [f64; N]) -> Self {
-        for i in 0..N - 1 {
+        assert!(
+            !buckets.iter().any(|b| b.is_nan()),
+            "histogram buckets must not be NaN",
+        );
+        assert!(
+            !buckets.contains(&f64::INFINITY),
+            "histogram buckets must not contain +Inf, it is included implicitly",
+        );
+        for w in buckets.windows(2) {
             assert!(
-                buckets[i] < buckets[i + 1],
+                w[0] < w[1],
                 "consecutive histogram buckets must not decrease or be equal",
             );
         }
         Thresholds { le: buckets }
+    }
+
+    /// The index of the bucket that `x` should be counted in. `N` represents the +Inf bucket.
+    ///
+    /// NaN is not less than or equal to any bound, so it is only counted in the +Inf bucket.
+    fn bucket(&self, x: f64) -> usize {
+        if x.is_nan() {
+            N
+        } else {
+            self.le.partition_point(|le| x > *le)
+        }
     }
 
     /// View the bucket upper bounds
@@ -155,7 +177,7 @@ impl<const N: usize> Thresholds<N> {
 impl<const N: usize> HistogramLockGuard<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
-        let bucket = self.metadata().le.partition_point(|le| x > *le);
+        let bucket = self.metadata().bucket(x);
         self.inner.read().observe(bucket, x);
     }
 
@@ -175,7 +197,7 @@ impl<const N: usize> HistogramLockGuard<'_, N> {
 impl<const N: usize> HistogramMut<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(mut self, x: f64) {
-        let bucket = self.metadata().le.partition_point(|le| x > *le);
+        let bucket = self.metadata().bucket(x);
         self.inner.get_mut().observe(bucket, x);
     }
 
