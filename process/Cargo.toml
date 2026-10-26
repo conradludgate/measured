@@ -25,3 +25,6 @@ procfs = { version = "^0.16", default-features = false }
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 targets = ["x86_64-unknown-linux-gnu"]
+
+[dev-dependencies]
+measured-prometheus-text = { path = "../prometheus-text" }

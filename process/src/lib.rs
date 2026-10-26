@@ -1,6 +1,8 @@
 //! Monitor a process.
 //!
 //! This crate only supports **Linux** platform.
+//! Unlimited soft file-descriptor and address-space limits are omitted. Finite limits above
+//! `i64::MAX` are reported as `i64::MAX`.
 //!
 //! # Usage
 //!
@@ -86,16 +88,26 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                 )?;
                 enc.write_gauge(fd, NoLabels, fd_count as i64)?;
             }
-            if let Ok(limits) = p.limits()
-                && let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit
-            {
-                let fd = MetricName::from_str("max_fds");
-                enc.write_family(
-                    fd,
-                    Some("Maximum number of open file descriptors."),
-                    MetricKind::Gauge,
-                )?;
-                enc.write_gauge(fd, NoLabels, max as i64)?;
+            if let Ok(limits) = p.limits() {
+                if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
+                    let fd = MetricName::from_str("max_fds");
+                    enc.write_family(
+                        fd,
+                        Some("Maximum number of open file descriptors."),
+                        MetricKind::Gauge,
+                    )?;
+                    enc.write_gauge(fd, NoLabels, i64::try_from(max).unwrap_or(i64::MAX))?;
+                }
+
+                if let procfs::process::LimitValue::Value(max) = limits.max_address_space.soft_limit {
+                    let name = MetricName::from_str("virtual_memory_max_bytes");
+                    enc.write_family(
+                        name,
+                        Some("Maximum amount of virtual memory available in bytes."),
+                        MetricKind::Gauge,
+                    )?;
+                    enc.write_gauge(name, NoLabels, i64::try_from(max).unwrap_or(i64::MAX))?;
+                }
             }
 
             if let Ok(stat) = p.stat() {
@@ -138,6 +150,42 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                     MetricKind::Gauge,
                 )?;
                 enc.write_gauge(threads, NoLabels, stat.num_threads)?;
+
+                for (name, help, value) in [
+                    (
+                        "minor_page_faults_total",
+                        "Total minor page faults (page loads that did not require disk access).",
+                        stat.minflt,
+                    ),
+                    (
+                        "major_page_faults_total",
+                        "Total major page faults (page loads that required disk access).",
+                        stat.majflt,
+                    ),
+                ] {
+                    let name = MetricName::from_str(name);
+                    enc.write_family(name, Some(help), MetricKind::Counter)?;
+                    enc.write_counter(name, NoLabels, value, SampleExtras::NONE)?;
+                }
+            }
+
+            if let Ok(io) = p.io() {
+                for (name, help, value) in [
+                    (
+                        "io_read_bytes_total",
+                        "Total bytes read from the storage layer, as accounted by Linux procfs.",
+                        io.read_bytes,
+                    ),
+                    (
+                        "io_write_bytes_total",
+                        "Total bytes written to the storage layer, as accounted by Linux procfs.",
+                        io.write_bytes,
+                    ),
+                ] {
+                    let name = MetricName::from_str(name);
+                    enc.write_family(name, Some(help), MetricKind::Counter)?;
+                    enc.write_counter(name, NoLabels, value, SampleExtras::NONE)?;
+                }
             }
 
             if let Some(start_time) = self.start_time {
@@ -179,4 +227,76 @@ fn clk_tck() -> i64 {
 fn pagesize() -> i64 {
     static PAGESIZE: OnceLock<i64> = OnceLock::new();
     *PAGESIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use measured::MetricGroup;
+    use measured_prometheus_text::BufferedTextEncoder;
+
+    use super::ProcessCollector;
+
+    fn scrape(collector: &ProcessCollector) -> String {
+        let mut encoder = BufferedTextEncoder::new();
+        collector.collect_group_into(&mut encoder).unwrap();
+        String::from_utf8(encoder.finish().to_vec()).unwrap()
+    }
+
+    #[test]
+    fn unavailable_process_emits_no_metrics() {
+        assert_eq!(scrape(&ProcessCollector::new(-1)), "");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn self_process_exports_available_procfs_values() {
+        let output = scrape(&ProcessCollector::for_self());
+        if procfs::process::Process::myself()
+            .and_then(|process| process.io())
+            .is_ok()
+        {
+            for name in ["io_read_bytes_total", "io_write_bytes_total"] {
+                assert!(
+                    output.contains(&format!("# TYPE {name} counter\n")),
+                    "{output}"
+                );
+                let value = output
+                    .lines()
+                    .find_map(|line| line.strip_prefix(&format!("{name} ")))
+                    .unwrap();
+                assert!(value.parse::<u64>().is_ok(), "{name}: {value}");
+            }
+        }
+        if procfs::process::Process::myself()
+            .and_then(|process| process.stat())
+            .is_ok()
+        {
+            for (name, kind) in [
+                ("virtual_memory_bytes", "gauge"),
+                ("resident_memory_bytes", "gauge"),
+                ("cpu_seconds_total", "counter"),
+                ("threads", "gauge"),
+                ("minor_page_faults_total", "counter"),
+                ("major_page_faults_total", "counter"),
+            ] {
+                assert!(
+                    output.contains(&format!("# TYPE {name} {kind}\n")),
+                    "{name}: {output}"
+                );
+                let value = output
+                    .lines()
+                    .find_map(|line| line.strip_prefix(&format!("{name} ")))
+                    .unwrap();
+                assert!(value.parse::<f64>().unwrap() >= 0.0, "{name}: {value}");
+            }
+        } else {
+            assert!(!output.contains("# TYPE cpu_seconds_total"));
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn unsupported_platform_emits_no_metrics() {
+        assert_eq!(scrape(&ProcessCollector::for_self()), "");
+    }
 }

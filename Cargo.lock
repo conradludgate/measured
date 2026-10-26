@@ -681,6 +681,7 @@ dependencies = [
  "libc",
  "measured",
  "procfs",
+ "measured-prometheus-text",
 ]
 
 [[package]]

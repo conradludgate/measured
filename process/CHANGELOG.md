@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Export the soft virtual-memory limit, process storage I/O, and minor/major page faults.
+
 ### Breaking
 - The minimum supported Rust version is now 1.98.
 
