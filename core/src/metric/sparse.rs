@@ -1,11 +1,10 @@
 use core::hash::Hash;
+use std::hash::{BuildHasher, BuildHasherDefault};
+use std::sync::OnceLock;
+
 use crossbeam_utils::CachePadded;
 use hashbrown::HashTable;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::{
-    hash::{BuildHasher, BuildHasherDefault},
-    sync::OnceLock,
-};
 
 use super::{LabelIdInner, MetricType};
 
@@ -25,9 +24,8 @@ pub(super) struct ShardedMap<K, V> {
 // taken from dashmap
 fn default_shard_amount() -> usize {
     static DEFAULT_SHARD_AMOUNT: OnceLock<usize> = OnceLock::new();
-    *DEFAULT_SHARD_AMOUNT.get_or_init(|| {
-        (std::thread::available_parallelism().map_or(1, usize::from) * 4).next_power_of_two()
-    })
+    *DEFAULT_SHARD_AMOUNT
+        .get_or_init(|| (std::thread::available_parallelism().map_or(1, usize::from) * 4).next_power_of_two())
 }
 
 pub(super) type SparseLockGuard<'a, M> = MappedRwLockReadGuard<'a, M>;
@@ -73,11 +71,20 @@ impl<M: MetricType, U: Hash + Eq + Copy> ShardedMap<U, M> {
         };
 
         RwLockReadGuard::map(shard, |shard| {
-            let (_, v) = shard.find(id.hash, |(k, _v)| *k == id.id).expect(
-                "the entry was just inserted into the map without allowing any writes inbetween",
-            );
+            let (_, v) = shard
+                .find(id.hash, |(k, _v)| *k == id.id)
+                .expect("the entry was just inserted into the map without allowing any writes inbetween");
             v
         })
+    }
+
+    pub(super) fn find_metric(&self, id: LabelIdInner<U>) -> Option<SparseLockGuard<'_, M>> {
+        let shard = &self.shards[((id.hash as usize) << 7) >> self.shift];
+
+        RwLockReadGuard::try_map(shard.read(), |shard| {
+            shard.find(id.hash, |(k, _v)| *k == id.id).map(|(_, v)| v)
+        })
+        .ok()
     }
 
     pub(super) fn remove_metric(&self, id: LabelIdInner<U>) -> Option<M> {

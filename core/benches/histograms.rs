@@ -4,18 +4,18 @@ fn main() {
 
 #[divan::bench_group(sample_size = 100000, sample_count = 500)]
 mod fixed_cardinality {
-    use std::{
-        cell::RefCell,
-        hash::{BuildHasher, BuildHasherDefault},
-    };
+    use std::cell::RefCell;
+    use std::hash::{BuildHasher, BuildHasherDefault};
 
     use divan::{Bencher, black_box};
     use lasso::{Rodeo, RodeoReader, Spur};
-    use measured::{label::StaticLabelSet, metric::histogram::Thresholds};
+    use measured::label::StaticLabelSet;
+    use measured::metric::histogram::Thresholds;
     use measured_derive::{FixedCardinalityLabel, LabelGroup};
     use prometheus::exponential_buckets;
     use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-    use rand::{Rng, SeedableRng, rngs::SmallRng};
+    use rand::rngs::SmallRng;
+    use rand::{Rng, SeedableRng};
     use rustc_hash::FxHasher;
 
     const N: usize = 8;
@@ -132,8 +132,7 @@ mod fixed_cardinality {
     #[divan::bench]
     fn prometheus_client(bencher: Bencher) {
         use prometheus_client::metrics::family::Family;
-        use prometheus_client::metrics::histogram::Histogram;
-        use prometheus_client::metrics::histogram::exponential_buckets;
+        use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
         use prometheus_client::registry::Registry;
 
         let mut registry = <Registry>::default();
@@ -163,9 +162,7 @@ mod fixed_cardinality {
     }
 
     fn thread_rng() -> SmallRng {
-        SmallRng::seed_from_u64(
-            BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()),
-        )
+        SmallRng::seed_from_u64(BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()))
     }
 
     fn get(rng: &mut impl Rng) -> (ErrorKind, &'static str, f64) {
@@ -233,8 +230,7 @@ mod no_cardinality {
 
     #[divan::bench]
     fn measured(bencher: Bencher) {
-        let h =
-            measured::Histogram::with_metadata(Thresholds::<N>::exponential_buckets(0.00001, 2.0));
+        let h = measured::Histogram::with_metadata(Thresholds::<N>::exponential_buckets(0.00001, 2.0));
 
         bencher.bench(|| drop(h.start_timer()));
     }
@@ -292,8 +288,7 @@ mod no_cardinality {
 
     #[divan::bench]
     fn prometheus_client(bencher: Bencher) {
-        use prometheus_client::metrics::histogram::Histogram;
-        use prometheus_client::metrics::histogram::exponential_buckets;
+        use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
         use prometheus_client::registry::Registry;
 
         let mut registry = <Registry>::default();

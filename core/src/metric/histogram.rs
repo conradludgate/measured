@@ -1,32 +1,34 @@
 //! All things histograms. See [`Histogram`]
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::time::Duration;
 
 use parking_lot::RwLock;
 
-use super::{MetricLockGuard, MetricMut, MetricType, gauge::AtomicF64};
-use crate::{Histogram, HistogramVec, label::LabelGroupSet};
+use super::gauge::AtomicF64;
+use super::group::{Encoding, HistogramExtras, MetricKind};
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricMut, MetricType};
+use crate::label::{LabelGroup, LabelGroupSet};
+use crate::{GaugeHistogram, GaugeHistogramVec, Histogram, HistogramVec};
 
 /// The inner state of a histogram.
 ///
 /// A histogram is comprised of 'buckets' where each bucket tracks a range or possible observations.
 /// For instance, an observation of 1.5 would increment a counter in the bucket `1.0..2.0`.
 /// If there is no suitable bucket, 'inf' is incremented.
-pub struct HistogramStateInner<const N: usize> {
+pub(crate) struct HistogramStateInner<const N: usize> {
     /// The buckets count the number of observed values in the ranges described by [`Thresholds`]
-    pub buckets: [AtomicU64; N],
+    buckets: [AtomicU64; N],
     /// The number of observed values that are greater than described by [`Thresholds`]
-    pub inf: AtomicU64,
+    inf: AtomicU64,
     /// The accumulated sum
-    pub sum: AtomicF64,
+    sum: AtomicF64,
 }
 
 impl<const N: usize> HistogramStateInner<N> {
     /// Add a single observation to the [`Histogram`].
-    pub fn observe(&self, bucket: usize, x: f64) {
+    fn observe(&self, bucket: usize, x: f64) {
         assert!(bucket <= N);
         if bucket < N {
             self.buckets[bucket].fetch_add(1, Ordering::Relaxed);
@@ -37,7 +39,7 @@ impl<const N: usize> HistogramStateInner<N> {
     }
 
     /// Add a single observation to the [`Histogram`].
-    pub fn observe_mut(&mut self, bucket: usize, x: f64) {
+    fn observe_mut(&mut self, bucket: usize, x: f64) {
         assert!(bucket <= N);
         if bucket < N {
             *self.buckets[bucket].get_mut() += 1;
@@ -48,22 +50,58 @@ impl<const N: usize> HistogramStateInner<N> {
         self.sum.set_mut(v + x);
     }
 
-    pub(crate) fn sample(&mut self) -> ([u64; N], u64, f64) {
-        let mut output = [0; N];
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..N {
-            output[i] = *self.buckets[i].get_mut();
+    fn sample(&mut self) -> HistogramSample<N> {
+        HistogramSample {
+            buckets: core::array::from_fn(|i| *self.buckets[i].get_mut()),
+            inf: *self.inf.get_mut(),
+            sum: self.sum.get_ex(),
         }
-        (output, *self.inf.get_mut(), self.sum.get_ex())
     }
 }
 
-/// The state of a histogram. See also [`HistogramStateInner`]
+/// A consistent snapshot of the state of a histogram. See [`HistogramState::sample`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct HistogramSample<const N: usize> {
+    /// The number of observations in each bucket described by [`Thresholds`].
+    ///
+    /// These are *not* cumulative: `buckets[i]` counts the observations `x` where `le[i-1] < x <= le[i]`.
+    pub buckets: [u64; N],
+    /// The number of observations greater than all of the [`Thresholds`], including NaN.
+    pub inf: u64,
+    /// The sum of all observations.
+    pub sum: f64,
+}
+
+impl<const N: usize> Default for HistogramSample<N> {
+    fn default() -> Self {
+        Self { buckets: [0; N], inf: 0, sum: 0.0 }
+    }
+}
+
+impl<const N: usize> HistogramSample<N> {
+    /// The total number of observations.
+    pub fn count(&self) -> u64 {
+        self.buckets.iter().sum::<u64>() + self.inf
+    }
+}
+
+/// The state of a histogram.
 pub struct HistogramState<const N: usize> {
     /// A rwlock over the inner histogram state.
     /// The read lock is acquired for observations.
     /// The write lock is acquired for sampling.
-    pub inner: RwLock<HistogramStateInner<N>>,
+    inner: RwLock<HistogramStateInner<N>>,
+}
+
+impl<const N: usize> HistogramState<N> {
+    /// Take a consistent snapshot of the histogram.
+    ///
+    /// This briefly takes the histogram's write lock, so it blocks concurrent observations
+    /// until the snapshot is taken.
+    pub fn sample(&self) -> HistogramSample<N> {
+        self.inner.write().sample()
+    }
 }
 
 /// A shared ref to an individual histogram
@@ -90,6 +128,7 @@ impl<const N: usize> MetricType for HistogramState<N> {
 }
 
 /// `Thresholds` defines the size of buckets used in a [`Histogram`]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Thresholds<const N: usize> {
     le: [f64; N],
 }
@@ -99,7 +138,8 @@ impl<const N: usize> Thresholds<N> {
     /// The final +Inf bucket is not counted and not included.
     ///
     /// # Panics
-    /// The function panics if `start` is zero or negative, or if `factor` is less than or equal 1.
+    /// The function panics if `start` is zero or negative, if `factor` is less than or equal 1,
+    /// or if the buckets are not strictly increasing (for example, due to overflowing to infinity).
     pub fn exponential_buckets(start: f64, factor: f64) -> Self {
         assert!(
             start > 0.0,
@@ -113,14 +153,15 @@ impl<const N: usize> Thresholds<N> {
 
         let buckets = core::array::from_fn(|i| start * factor.powi(i as i32));
 
-        Thresholds { le: buckets }
+        Self::with_buckets(buckets)
     }
 
     /// Create `N` buckets, each `width`  wide, where the lowest bucket has an upper bound of `start`.
     /// The final +Inf bucket is not counted and not included.
     ///
     /// # Panics
-    /// The function panics `width` is zero or negative.
+    /// The function panics if `width` is zero or negative, or if the buckets are not strictly increasing
+    /// (for example, if `width` is too small relative to `start`).
     pub fn linear_buckets(start: f64, width: f64) -> Self {
         assert!(
             width > 0.0,
@@ -129,21 +170,41 @@ impl<const N: usize> Thresholds<N> {
 
         let buckets = core::array::from_fn(|i| start + width * i as f64);
 
-        Thresholds { le: buckets }
+        Self::with_buckets(buckets)
     }
 
     /// Create the histogram thresholds with the given sizes
     ///
     /// # Panics
-    /// Will panic if the buckets are not strictly monotonically increasing
+    /// Will panic if the buckets are not strictly monotonically increasing, or contain NaN or +Inf.
+    /// The +Inf bucket is always included implicitly.
     pub fn with_buckets(buckets: [f64; N]) -> Self {
-        for i in 0..N - 1 {
+        assert!(
+            !buckets.iter().any(|b| b.is_nan()),
+            "histogram buckets must not be NaN",
+        );
+        assert!(
+            !buckets.contains(&f64::INFINITY),
+            "histogram buckets must not contain +Inf, it is included implicitly",
+        );
+        for w in buckets.windows(2) {
             assert!(
-                buckets[i] < buckets[i + 1],
+                w[0] < w[1],
                 "consecutive histogram buckets must not decrease or be equal",
             );
         }
         Thresholds { le: buckets }
+    }
+
+    /// The index of the bucket that `x` should be counted in. `N` represents the +Inf bucket.
+    ///
+    /// NaN is not less than or equal to any bound, so it is only counted in the +Inf bucket.
+    fn bucket(&self, x: f64) -> usize {
+        if x.is_nan() {
+            N
+        } else {
+            self.le.partition_point(|le| x > *le)
+        }
     }
 
     /// View the bucket upper bounds
@@ -152,11 +213,20 @@ impl<const N: usize> Thresholds<N> {
     }
 }
 
+impl<const N: usize> HistogramState<N> {
+    /// Add a single observation, returning the index of the bucket it was counted in.
+    /// `N` is the `+Inf` bucket.
+    pub(crate) fn observe_with(&self, thresholds: &Thresholds<N>, x: f64) -> usize {
+        let bucket = thresholds.bucket(x);
+        self.inner.read().observe(bucket, x);
+        bucket
+    }
+}
+
 impl<const N: usize> HistogramLockGuard<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(self, x: f64) {
-        let bucket = self.metadata().le.partition_point(|le| x > *le);
-        self.inner.read().observe(bucket, x);
+        self.observe_with(self.metadata(), x);
     }
 
     /// Observe the duration in seconds
@@ -175,8 +245,8 @@ impl<const N: usize> HistogramLockGuard<'_, N> {
 impl<const N: usize> HistogramMut<'_, N> {
     /// Add a single observation to the [`Histogram`].
     pub fn observe(mut self, x: f64) {
-        let bucket = self.metadata().le.partition_point(|le| x > *le);
-        self.inner.get_mut().observe(bucket, x);
+        let bucket = self.metadata().bucket(x);
+        self.inner.get_mut().observe_mut(bucket, x);
     }
 
     /// Observe the duration in seconds
@@ -198,12 +268,29 @@ impl<const N: usize> Histogram<N> {
         self.get_metric().observe(x);
     }
 
-    /// Create a [`HistogramVecTimer`] object that automatically observes a duration when the timer is dropped.
+    /// Create a [`HistogramTimer`] object that automatically observes a duration when the timer is dropped.
     pub fn start_timer(&self) -> HistogramTimer<'_, N> {
         HistogramTimer {
             vec: Some(self),
             start: std::time::Instant::now(),
         }
+    }
+
+    /// Observe the duration in seconds
+    pub fn observe_duration(&self, duration: std::time::Duration) {
+        self.observe(duration.as_secs_f64());
+    }
+
+    /// Observe the duration in seconds since the given instant
+    pub fn observe_duration_since(&self, since: std::time::Instant) -> Duration {
+        let d = since.elapsed();
+        self.observe_duration(d);
+        d
+    }
+
+    /// Take a consistent snapshot of the histogram.
+    pub fn sample(&self) -> HistogramSample<N> {
+        self.get_metric().sample()
     }
 }
 
@@ -231,14 +318,20 @@ impl<L: LabelGroupSet, const N: usize> HistogramVec<L, N> {
     }
 
     /// Observe the duration in seconds since the given instant
-    pub fn observe_duration_since(
-        &self,
-        label: L::Group<'_>,
-        since: std::time::Instant,
-    ) -> Duration {
+    pub fn observe_duration_since(&self, label: L::Group<'_>, since: std::time::Instant) -> Duration {
         let d = since.elapsed();
         self.observe_duration(label, d);
         d
+    }
+
+    /// Take a consistent snapshot of the histogram for the label group.
+    /// Returns an empty sample if the histogram has not been used yet.
+    ///
+    /// This does not create a new histogram for the label group, or add its values to dynamic label sets.
+    pub fn sample(&self, label: L::Group<'_>) -> HistogramSample<N> {
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
+            .map_or(HistogramSample::default(), |m| m.sample())
     }
 }
 
@@ -294,5 +387,194 @@ impl<'a, const N: usize> Drop for HistogramTimer<'a, N> {
         if let Some(v) = self.vec {
             v.get_metric().observe_duration_since(self.start);
         }
+    }
+}
+
+impl<const N: usize> MetricEncoding for HistogramState<N> {
+    const KIND: MetricKind = MetricKind::Histogram;
+
+    fn collect_into<E: Encoding>(
+        &self,
+        metadata: &Thresholds<N>,
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        let sample = self.sample();
+        enc.write_histogram(
+            name,
+            labels,
+            metadata.get(),
+            &sample.buckets,
+            sample.inf,
+            sample.sum,
+            HistogramExtras::NONE,
+        )
+    }
+}
+
+/// The state of a gauge histogram, a distribution of values that can be added and removed.
+///
+/// For instance, the ages of items currently in a queue: an item is observed when it is added,
+/// and removed when it leaves the queue.
+///
+/// The sum uses IEEE floating-point arithmetic: removing values can leave rounding error.
+/// NaN observations, or removing an infinite observation, can leave the sum permanently NaN
+/// even after all observations are removed. Use finite observations when a recovering sum is needed.
+pub struct GaugeHistogramState<const N: usize> {
+    /// The read lock is acquired for observations. The write lock is acquired for sampling.
+    inner: RwLock<GaugeHistogramStateInner<N>>,
+}
+
+struct GaugeHistogramStateInner<const N: usize> {
+    buckets: [AtomicI64; N],
+    inf: AtomicI64,
+    sum: AtomicF64,
+}
+
+impl<const N: usize> Default for GaugeHistogramState<N> {
+    fn default() -> Self {
+        Self {
+            inner: RwLock::new(GaugeHistogramStateInner {
+                buckets: core::array::from_fn(|_| AtomicI64::new(0)),
+                inf: AtomicI64::new(0),
+                sum: AtomicF64::ZERO,
+            }),
+        }
+    }
+}
+
+impl<const N: usize> MetricType for GaugeHistogramState<N> {
+    type Metadata = Thresholds<N>;
+}
+
+/// A consistent snapshot of the state of a gauge histogram. See [`GaugeHistogramState::sample`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct GaugeHistogramSample<const N: usize> {
+    /// The number of values in each bucket described by [`Thresholds`]. These are *not* cumulative.
+    pub buckets: [i64; N],
+    /// The number of values greater than all of the [`Thresholds`], including NaN.
+    pub inf: i64,
+    /// The sum of all values.
+    pub sum: f64,
+}
+
+impl<const N: usize> Default for GaugeHistogramSample<N> {
+    fn default() -> Self {
+        Self { buckets: [0; N], inf: 0, sum: 0.0 }
+    }
+}
+
+impl<const N: usize> GaugeHistogramSample<N> {
+    /// The total number of values.
+    pub fn count(&self) -> i64 {
+        self.buckets.iter().sum::<i64>() + self.inf
+    }
+}
+
+impl<const N: usize> GaugeHistogramState<N> {
+    /// Take a consistent snapshot of the gauge histogram.
+    ///
+    /// This briefly takes the write lock, so it blocks concurrent observations
+    /// until the snapshot is taken.
+    pub fn sample(&self) -> GaugeHistogramSample<N> {
+        let mut inner = self.inner.write();
+        GaugeHistogramSample {
+            buckets: core::array::from_fn(|i| *inner.buckets[i].get_mut()),
+            inf: *inner.inf.get_mut(),
+            sum: inner.sum.get_ex(),
+        }
+    }
+
+    fn add(&self, thresholds: &Thresholds<N>, x: f64, n: i64) {
+        let inner = self.inner.read();
+        let bucket = thresholds.bucket(x);
+        if bucket < N {
+            inner.buckets[bucket].fetch_add(n, Ordering::Relaxed);
+        } else {
+            inner.inf.fetch_add(n, Ordering::Relaxed);
+        }
+        inner.sum.inc_by(x * n as f64);
+    }
+}
+
+/// A shared ref to an individual gauge histogram
+pub type GaugeHistogramLockGuard<'a, const N: usize> = MetricLockGuard<'a, GaugeHistogramState<N>>;
+
+impl<const N: usize> GaugeHistogramLockGuard<'_, N> {
+    /// Add a value to the gauge histogram
+    pub fn observe(self, x: f64) {
+        self.add(self.metadata(), x, 1);
+    }
+
+    /// Remove a value that was previously added with [`observe`](Self::observe)
+    pub fn remove(self, x: f64) {
+        self.add(self.metadata(), x, -1);
+    }
+}
+
+impl<const N: usize> GaugeHistogram<N> {
+    /// Add a value to the gauge histogram
+    pub fn observe(&self, x: f64) {
+        self.get_metric().observe(x);
+    }
+
+    /// Remove a value that was previously added with [`observe`](Self::observe)
+    pub fn remove(&self, x: f64) {
+        self.get_metric().remove(x);
+    }
+
+    /// Take a consistent snapshot of the gauge histogram.
+    pub fn sample(&self) -> GaugeHistogramSample<N> {
+        self.get_metric().sample()
+    }
+}
+
+impl<L: LabelGroupSet, const N: usize> GaugeHistogramVec<L, N> {
+    /// Add a value to the gauge histogram, keyed by the label group
+    pub fn observe(&self, label: L::Group<'_>, x: f64) {
+        self.get_metric(self.with_labels(label)).observe(x);
+    }
+
+    /// Remove a value that was previously added with [`observe`](Self::observe), keyed by the label group
+    ///
+    /// Does nothing if no value was ever added for the label group.
+    pub fn remove(&self, label: L::Group<'_>, x: f64) {
+        if let Some(metric) = self.find_labels(label).and_then(|id| self.find_metric(id)) {
+            metric.remove(x);
+        }
+    }
+
+    /// Take a consistent snapshot of the gauge histogram for the label group.
+    /// Returns an empty sample if the gauge histogram has not been used yet.
+    ///
+    /// This does not create a new gauge histogram for the label group, or add its values to dynamic label sets.
+    pub fn sample(&self, label: L::Group<'_>) -> GaugeHistogramSample<N> {
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
+            .map_or(GaugeHistogramSample::default(), |m| m.sample())
+    }
+}
+
+impl<const N: usize> MetricEncoding for GaugeHistogramState<N> {
+    const KIND: MetricKind = MetricKind::GaugeHistogram;
+
+    fn collect_into<E: Encoding>(
+        &self,
+        metadata: &Thresholds<N>,
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        let sample = self.sample();
+        enc.write_gauge_histogram(
+            name,
+            labels,
+            metadata.get(),
+            &sample.buckets,
+            sample.inf,
+            sample.sum,
+        )
     }
 }

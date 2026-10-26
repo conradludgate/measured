@@ -3,6 +3,8 @@
 use std::io::Write;
 
 /// `MetricName` represents a type that can be encoded into the name of a metric when collected.
+/// Implementations must emit a valid UTF-8 name accepted by [`MetricName::try_from_str`],
+/// and `encode_len` must match the number of bytes emitted. Encoders rely on these contracts.
 pub trait MetricNameEncoder {
     /// Encoded this name into the given bytes buffer according to the Prometheus metric name encoding specification.
     ///
@@ -17,10 +19,7 @@ pub trait MetricNameEncoder {
     where
         Self: Sized,
     {
-        WithSuffix {
-            suffix,
-            metric_name: self,
-        }
+        WithSuffix { suffix, metric_name: self }
     }
 
     /// Get a reference to this metric name
@@ -31,6 +30,7 @@ pub trait MetricNameEncoder {
 
 /// Error returned by [`MetricName::try_from_str`]
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum InvalidMetricName {
     /// The metric name contained invalid characters
     InvalidChars,
@@ -43,9 +43,7 @@ pub enum InvalidMetricName {
 impl core::fmt::Display for InvalidMetricName {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            InvalidMetricName::InvalidChars => {
-                f.write_str("metric name contained invalid characters")
-            }
+            InvalidMetricName::InvalidChars => f.write_str("metric name contained invalid characters"),
             InvalidMetricName::Empty => f.write_str("metric name was empty"),
             InvalidMetricName::StartsWithNumber => f.write_str("metric name started with a number"),
         }
@@ -57,6 +55,7 @@ impl std::error::Error for InvalidMetricName {}
 /// Represents a string-based [`MetricNameEncoder`]
 ///
 /// Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex `[a-zA-Z_:][a-zA-Z0-9_:]*`.
+#[repr(transparent)]
 pub struct MetricName(str);
 
 const fn const_assert_metric_name(name: &str) {
@@ -83,7 +82,7 @@ fn try_assert_metric_name(value: &str) -> Result<(), InvalidMetricName> {
     }
 
     value.bytes().try_fold((), |(), b| match b {
-        b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b':' => Ok(()),
+        b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'_' | b':' => Ok(()),
         _ => Err(InvalidMetricName::InvalidChars),
     })?;
 
@@ -111,7 +110,7 @@ impl MetricName {
     /// Construct a [`MetricName`] from a string
     ///
     /// # Errors
-    /// Will panic if the string contains invalid characters
+    /// Will error if the string is empty, contains invalid characters, or starts with a digit
     pub fn try_from_str(value: &str) -> Result<&Self, InvalidMetricName> {
         try_assert_metric_name(value)?;
 
@@ -132,10 +131,7 @@ impl MetricName {
     /// Adds a semantic suffix to this metric name.
     #[must_use]
     pub const fn with_suffix<S: Suffix>(&self, suffix: S) -> WithSuffix<S, &'_ Self> {
-        WithSuffix {
-            suffix,
-            metric_name: self,
-        }
+        WithSuffix { suffix, metric_name: self }
     }
 }
 
@@ -192,10 +188,7 @@ impl<T> WithNamespace<T> {
 
     /// Adds a semantic suffix to this metric name.
     pub const fn with_suffix<S: Suffix>(self, suffix: S) -> WithSuffix<S, Self> {
-        WithSuffix {
-            suffix,
-            metric_name: self,
-        }
+        WithSuffix { suffix, metric_name: self }
     }
 }
 
@@ -227,13 +220,41 @@ impl<S: Suffix, T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithSuffix<
 }
 
 /// `_total`. A [`Suffix`] that is good for counters
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Total;
 /// `_count`. A [`Suffix`] that is used internally for histograms
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Count;
 /// `_sum`. A [`Suffix`] that is used internally for histograms
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Sum;
 /// `_bucket`. A [`Suffix`] that is used internally for histograms
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Bucket;
+/// `_gcount`. A [`Suffix`] that is used internally for gauge histograms
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GCount;
+/// `_gsum`. A [`Suffix`] that is used internally for gauge histograms
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GSum;
+
+impl Suffix for GCount {
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_gcount")
+    }
+    fn encode_len(&self) -> usize {
+        7
+    }
+}
+
+impl Suffix for GSum {
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_gsum")
+    }
+    fn encode_len(&self) -> usize {
+        5
+    }
+}
 
 impl Suffix for Total {
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
@@ -268,5 +289,34 @@ impl Suffix for Bucket {
     }
     fn encode_len(&self) -> usize {
         7
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InvalidMetricName, MetricName};
+
+    #[test]
+    fn try_from_str() {
+        for valid in ["a", "_a", ":a", "a_b:c1"] {
+            assert!(MetricName::try_from_str(valid).is_ok(), "{valid}");
+        }
+        assert!(matches!(
+            MetricName::try_from_str(""),
+            Err(InvalidMetricName::Empty)
+        ));
+        assert!(matches!(
+            MetricName::try_from_str("1a"),
+            Err(InvalidMetricName::StartsWithNumber)
+        ));
+        for invalid in ["a-b", "-a", "a b", "a.b", "café", "a\nb"] {
+            assert!(
+                matches!(
+                    MetricName::try_from_str(invalid),
+                    Err(InvalidMetricName::InvalidChars)
+                ),
+                "{invalid}"
+            );
+        }
     }
 }

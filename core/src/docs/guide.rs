@@ -25,13 +25,16 @@
 //!
 //! ## `Histogram`
 //!
-//! A [`Histogram`](crate::Histogram) is a `Metric` that represents dynamically sized observations throughout the lifetime of the program.
+//! A [`Histogram`](crate::Histogram) records observations into a fixed set of buckets configured
+//! when the metric is created. It retains counts for those ranges, not each observed value.
 //!
 //! For instance:
 //! * Latencies for DB queries
 //! * Sizes of HTTP request bodies
 //!
-//! When sampled over time, the histogram bucket increases can be used to calculate quantiles, such as P50s, P99s, etc.
+//! The bucket counts can be aggregated across instances and used to estimate quantiles such as P50
+//! and P99. Estimates depend on the chosen bucket boundaries, which should be consistent across
+//! instances that will be aggregated.
 //!
 //! # `MetricVec`
 //!

@@ -2,24 +2,27 @@
 
 use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
-use crate::{FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup, label::LabelGroupSet};
-
-use super::{
-    MetricEncoding, MetricLockGuard, MetricMut, MetricType, group::Encoding,
-    name::MetricNameEncoder,
-};
+use super::group::{Encoding, MetricKind};
+use super::name::MetricNameEncoder;
+use super::{MetricEncoding, MetricLockGuard, MetricMut, MetricType};
+use crate::label::LabelGroupSet;
+use crate::{FloatGauge, FloatGaugeVec, Gauge, GaugeVec, LabelGroup};
 
 #[derive(Default)]
 /// The internal state that is used by [`Gauge`] and [`GaugeVec`]
 pub struct GaugeState {
-    pub count: AtomicI64,
+    count: AtomicI64,
 }
 
 impl GaugeState {
+    /// Create a new gauge state with the given initial value
     pub fn new(value: i64) -> Self {
-        Self {
-            count: AtomicI64::new(value),
-        }
+        Self { count: AtomicI64::new(value) }
+    }
+
+    /// Get the current gauge value
+    pub fn get(&self) -> i64 {
+        self.count.load(Ordering::Relaxed)
     }
 }
 
@@ -53,6 +56,36 @@ impl Gauge {
     /// Set the gauge value to `x`
     pub fn set(&self, x: i64) {
         self.get_metric().set(x)
+    }
+
+    /// Increment the gauge value by 1
+    pub fn inc_mut(&mut self) {
+        self.get_metric_mut().inc()
+    }
+
+    /// Increment the gauge value by `x`
+    pub fn inc_by_mut(&mut self, x: i64) {
+        self.get_metric_mut().inc_by(x)
+    }
+
+    /// Decrement the gauge value by 1
+    pub fn dec_mut(&mut self) {
+        self.get_metric_mut().dec()
+    }
+
+    /// Decrement the gauge value by `x`
+    pub fn dec_by_mut(&mut self, x: i64) {
+        self.get_metric_mut().dec_by(x)
+    }
+
+    /// Set the gauge value to `x`
+    pub fn set_mut(&mut self, x: i64) {
+        self.get_metric_mut().set(x)
+    }
+
+    /// Get the current gauge value
+    pub fn get(&self) -> i64 {
+        self.get_metric().get()
     }
 }
 
@@ -89,23 +122,25 @@ impl GaugeLockGuard<'_> {
 
 impl GaugeMut<'_> {
     /// Increment the gauge value by 1
-    pub fn inc(mut self) {
-        *self.count.get_mut() += 1;
+    pub fn inc(self) {
+        self.inc_by(1);
     }
 
-    /// Increment the gauge value by `x`
+    /// Increment the gauge value by `x`. Wraps on overflow, like the atomic methods
     pub fn inc_by(mut self, x: i64) {
-        *self.count.get_mut() += x;
+        let count = self.count.get_mut();
+        *count = count.wrapping_add(x);
     }
 
     /// Decrement the gauge value by 1
-    pub fn dec(mut self) {
-        *self.count.get_mut() -= 1;
+    pub fn dec(self) {
+        self.dec_by(1);
     }
 
-    /// Decrement the gauge value by `x`
+    /// Decrement the gauge value by `x`. Wraps on overflow, like the atomic methods
     pub fn dec_by(mut self, x: i64) {
-        *self.count.get_mut() -= x;
+        let count = self.count.get_mut();
+        *count = count.wrapping_sub(x);
     }
 
     /// Set the gauge value to `x`
@@ -139,6 +174,40 @@ impl<L: LabelGroupSet> GaugeVec<L> {
     pub fn set(&self, label: L::Group<'_>, y: i64) {
         self.get_metric(self.with_labels(label)).set(y);
     }
+
+    /// Increment the gauge value by 1, keyed by the label group
+    pub fn inc_mut(&mut self, label: L::Group<'_>) {
+        self.get_metric_mut(self.with_labels(label)).inc();
+    }
+
+    /// Increment the gauge value by `y`, keyed by the label group
+    pub fn inc_by_mut(&mut self, label: L::Group<'_>, y: i64) {
+        self.get_metric_mut(self.with_labels(label)).inc_by(y);
+    }
+
+    /// Decrement the gauge value by 1, keyed by the label group
+    pub fn dec_mut(&mut self, label: L::Group<'_>) {
+        self.get_metric_mut(self.with_labels(label)).dec();
+    }
+
+    /// Decrement the gauge value by `y`, keyed by the label group
+    pub fn dec_by_mut(&mut self, label: L::Group<'_>, y: i64) {
+        self.get_metric_mut(self.with_labels(label)).dec_by(y);
+    }
+
+    /// Set the gauge value to `y`, keyed by the label group
+    pub fn set_mut(&mut self, label: L::Group<'_>, y: i64) {
+        self.get_metric_mut(self.with_labels(label)).set(y);
+    }
+
+    /// Get the gauge value for the label group. Returns 0 if the gauge has not been used yet.
+    ///
+    /// This does not create a new gauge for the label group, or add its values to dynamic label sets.
+    pub fn get(&self, label: L::Group<'_>) -> i64 {
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
+            .map_or(0, |m| m.get())
+    }
 }
 
 impl MetricType for GaugeState {
@@ -146,32 +215,21 @@ impl MetricType for GaugeState {
     type Metadata = ();
 }
 
-pub fn write_gauge<Enc: Encoding>(
-    enc: &mut Enc,
-    name: impl MetricNameEncoder,
-    labels: impl LabelGroup,
-    value: i64,
-) -> Result<(), Enc::Err>
-where
-    GaugeState: MetricEncoding<Enc>,
-{
-    GaugeState {
-        count: AtomicI64::new(value),
-    }
-    .collect_into(&(), labels, name, enc)
-}
-
 #[derive(Default)]
 /// The internal state that is used by [`FloatGauge`] and [`FloatGaugeVec`]
 pub struct FloatGaugeState {
-    pub count: AtomicF64,
+    count: AtomicF64,
 }
 
 impl FloatGaugeState {
+    /// Create a new gauge state with the given initial value
     pub fn new(value: f64) -> Self {
-        Self {
-            count: AtomicF64::new(value),
-        }
+        Self { count: AtomicF64::new(value) }
+    }
+
+    /// Get the current gauge value
+    pub fn get(&self) -> f64 {
+        self.count.get()
     }
 }
 
@@ -205,6 +263,36 @@ impl FloatGauge {
     /// Set the gauge value to `x`
     pub fn set(&self, x: f64) {
         self.get_metric().set(x)
+    }
+
+    /// Increment the gauge value by 1
+    pub fn inc_mut(&mut self) {
+        self.get_metric_mut().inc()
+    }
+
+    /// Increment the gauge value by `x`
+    pub fn inc_by_mut(&mut self, x: f64) {
+        self.get_metric_mut().inc_by(x)
+    }
+
+    /// Decrement the gauge value by 1
+    pub fn dec_mut(&mut self) {
+        self.get_metric_mut().dec()
+    }
+
+    /// Decrement the gauge value by `x`
+    pub fn dec_by_mut(&mut self, x: f64) {
+        self.get_metric_mut().dec_by(x)
+    }
+
+    /// Set the gauge value to `x`
+    pub fn set_mut(&mut self, x: f64) {
+        self.get_metric_mut().set(x)
+    }
+
+    /// Get the current gauge value
+    pub fn get(&self) -> f64 {
+        self.get_metric().get()
     }
 }
 
@@ -291,6 +379,40 @@ impl<L: LabelGroupSet> FloatGaugeVec<L> {
     pub fn set(&self, label: L::Group<'_>, y: f64) {
         self.get_metric(self.with_labels(label)).set(y);
     }
+
+    /// Increment the gauge value by 1, keyed by the label group
+    pub fn inc_mut(&mut self, label: L::Group<'_>) {
+        self.get_metric_mut(self.with_labels(label)).inc();
+    }
+
+    /// Increment the gauge value by `y`, keyed by the label group
+    pub fn inc_by_mut(&mut self, label: L::Group<'_>, y: f64) {
+        self.get_metric_mut(self.with_labels(label)).inc_by(y);
+    }
+
+    /// Decrement the gauge value by 1, keyed by the label group
+    pub fn dec_mut(&mut self, label: L::Group<'_>) {
+        self.get_metric_mut(self.with_labels(label)).dec();
+    }
+
+    /// Decrement the gauge value by `y`, keyed by the label group
+    pub fn dec_by_mut(&mut self, label: L::Group<'_>, y: f64) {
+        self.get_metric_mut(self.with_labels(label)).dec_by(y);
+    }
+
+    /// Set the gauge value to `y`, keyed by the label group
+    pub fn set_mut(&mut self, label: L::Group<'_>, y: f64) {
+        self.get_metric_mut(self.with_labels(label)).set(y);
+    }
+
+    /// Get the gauge value for the label group. Returns 0 if the gauge has not been used yet.
+    ///
+    /// This does not create a new gauge for the label group, or add its values to dynamic label sets.
+    pub fn get(&self, label: L::Group<'_>) -> f64 {
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
+            .map_or(0.0, |m| m.get())
+    }
 }
 
 impl MetricType for FloatGaugeState {
@@ -300,53 +422,46 @@ impl MetricType for FloatGaugeState {
 
 /// A atomic float.
 #[derive(Debug, Default)]
-pub struct AtomicF64 {
+pub(crate) struct AtomicF64 {
     inner: AtomicU64,
 }
 
 impl AtomicF64 {
     #[allow(clippy::declare_interior_mutable_const)]
-    pub const ZERO: Self = Self {
-        inner: AtomicU64::new(0),
-    };
+    pub(crate) const ZERO: Self = Self { inner: AtomicU64::new(0) };
 
-    pub fn new(val: f64) -> AtomicF64 {
-        AtomicF64 {
-            inner: AtomicU64::new(val.to_bits()),
-        }
+    pub(crate) fn new(val: f64) -> AtomicF64 {
+        AtomicF64 { inner: AtomicU64::new(val.to_bits()) }
     }
 
     #[inline]
-    pub fn set(&self, val: f64) {
+    pub(crate) fn set(&self, val: f64) {
         self.inner.store(val.to_bits(), Ordering::Relaxed);
     }
 
     #[inline]
-    pub fn get(&self) -> f64 {
+    pub(crate) fn get(&self) -> f64 {
         f64::from_bits(self.inner.load(Ordering::Relaxed))
     }
 
     #[inline]
-    pub fn get_ex(&mut self) -> f64 {
+    pub(crate) fn get_ex(&mut self) -> f64 {
         f64::from_bits(*self.inner.get_mut())
     }
 
     #[inline]
-    pub fn set_mut(&mut self, f: f64) {
+    pub(crate) fn set_mut(&mut self, f: f64) {
         *self.inner.get_mut() = f.to_bits();
     }
 
     #[inline]
-    pub fn inc_by(&self, delta: f64) {
+    pub(crate) fn inc_by(&self, delta: f64) {
         loop {
             let current = self.inner.load(Ordering::Acquire);
             let new = f64::from_bits(current) + delta;
-            let result = self.inner.compare_exchange_weak(
-                current,
-                new.to_bits(),
-                Ordering::Release,
-                Ordering::Relaxed,
-            );
+            let result = self
+                .inner
+                .compare_exchange_weak(current, new.to_bits(), Ordering::Release, Ordering::Relaxed);
             if result.is_ok() {
                 return;
             }
@@ -354,22 +469,35 @@ impl AtomicF64 {
     }
 
     #[inline]
-    pub fn dec_by(&self, delta: f64) {
+    pub(crate) fn dec_by(&self, delta: f64) {
         self.inc_by(-delta);
     }
 }
 
-pub fn write_float_gauge<Enc: Encoding>(
-    enc: &mut Enc,
-    name: impl MetricNameEncoder,
-    labels: impl LabelGroup,
-    value: f64,
-) -> Result<(), Enc::Err>
-where
-    FloatGaugeState: MetricEncoding<Enc>,
-{
-    FloatGaugeState {
-        count: AtomicF64::new(value),
+impl MetricEncoding for GaugeState {
+    const KIND: MetricKind = MetricKind::Gauge;
+
+    fn collect_into<E: Encoding>(
+        &self,
+        _: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_gauge(name, labels, self.get())
     }
-    .collect_into(&(), labels, name, enc)
+}
+
+impl MetricEncoding for FloatGaugeState {
+    const KIND: MetricKind = MetricKind::Gauge;
+
+    fn collect_into<E: Encoding>(
+        &self,
+        _: &(),
+        labels: impl LabelGroup,
+        name: impl MetricNameEncoder,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_float_gauge(name, labels, self.get())
+    }
 }

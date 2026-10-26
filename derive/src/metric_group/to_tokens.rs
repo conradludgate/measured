@@ -1,22 +1,14 @@
-use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote, quote_spanned};
+use syn::ext::IdentExt;
 use syn::{parse_quote, parse_quote_spanned};
 
-use super::{
-    MetricGroup, MetricGroupField,
-    attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind},
-};
+use super::attr::{MetricGroupFieldAttrsInit, MetricGroupFieldAttrsKind};
+use super::{MetricGroup, MetricGroupField};
 
 impl ToTokens for MetricGroup {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self {
-            krate,
-            ident,
-            generics,
-            fields,
-            inputs,
-        } = self;
+        let Self { krate, ident, generics, fields, inputs } = self;
 
         let enc = format_ident!("__MetricGroupEncodingT");
 
@@ -31,10 +23,12 @@ impl ToTokens for MetricGroup {
             let MetricGroupField { ty, attrs, .. } = field;
             match attrs.kind {
                 MetricGroupFieldAttrsKind::Metric { .. } => {
-                    wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding<#enc> ));
+                    wc.predicates
+                        .push(parse_quote_spanned!(field.span => #ty: #krate::metric::MetricFamilyEncoding ));
                 }
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {
-                    wc.predicates.push(parse_quote_spanned!(field.span => #ty: #krate::metric::group::MetricGroup<#enc> ));
+                    wc.predicates
+                        .push(parse_quote_spanned!(field.span => #ty: #krate::metric::group::MetricGroup<#enc> ));
                 }
                 MetricGroupFieldAttrsKind::Group { namespace: Some(_) } => {
                     wc.predicates.push(parse_quote_spanned!(field.span =>
@@ -52,21 +46,32 @@ impl ToTokens for MetricGroup {
             let MetricGroupField { name,ty, attrs, .. } = x;
             match &attrs.kind {
                 MetricGroupFieldAttrsKind::Metric { rename } => {
-                    let name_string = rename.as_ref().map_or_else(|| name.to_string(), |l| l.value());
-                    let ident = format_ident!("{}", name_string.to_shouty_snake_case(), span = x.span);
+                    let name_string = rename.as_ref().map_or_else(|| name.unraw().to_string(), |l| l.value());
+                    let mut meta = quote_spanned!(
+                        x.span => #krate::metric::group::FamilyMeta::new()
+                    );
+                    if let Some(doc) = attrs.docs.as_deref().map(str::trim) {
+                        meta = quote_spanned!(x.span => #meta.with_help(#doc));
+                    }
+                    if let Some(unit) = &attrs.unit {
+                        meta = quote_spanned!(x.span => #meta.with_unit(#unit));
+                    }
 
-                    let help = attrs.docs.as_deref().map(|doc|{
-                        let doc = doc.trim();
-                        quote_spanned!(x.span => {
-                            <#enc as #krate::metric::group::Encoding>::write_help(enc, #ident, #doc)?;
-                        })
+                    let unit_check = attrs.unit.as_ref().map(|_| {
+                        let counter_suffix = name_string.ends_with("_total");
+                        quote_spanned! { x.span => const {
+                            use #krate::metric::group::MetricKind;
+                            let kind = <#ty as #krate::metric::MetricFamilyEncoding>::KIND;
+                            assert!(!matches!(kind, ::core::option::Option::Some(MetricKind::Info | MetricKind::StateSet)), "info and state set metrics cannot have units");
+                            assert!(!#counter_suffix || matches!(kind, ::core::option::Option::Some(MetricKind::Counter)), "only counter units may precede a _total suffix");
+                        }; }
                     });
 
-                    quote_spanned! { x.span =>
-                        const #ident: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
-                        #help
-                        <#ty as #krate::metric::MetricFamilyEncoding<#enc>>::collect_family_into(&self.#name, #ident, enc)?;
-                    }
+                    quote_spanned! { x.span => {
+                        #unit_check
+                        const NAME: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
+                        <#ty as #krate::metric::MetricFamilyEncoding>::collect_family_into(&self.#name, NAME, #meta, enc)?;
+                    }}
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {
                     quote_spanned! { x.span =>
@@ -87,26 +92,26 @@ impl ToTokens for MetricGroup {
         tokens.extend(quote! {
             #[automatically_derived]
             impl #group_impl_generics #krate::metric::group::MetricGroup<#enc> for #ident #ty_generics #group_where_clause {
-                fn collect_group_into(&self, enc: &mut #enc) -> Result<(), #enc::Err>{
+                fn collect_group_into(&self, enc: &mut #enc) -> ::core::result::Result<(), #enc::Err>{
                     #(#visits)*
-                    Ok(())
+                    ::core::result::Result::Ok(())
                 }
             }
         });
 
         if let Some(inputs) = inputs {
             let inits = fields.iter().map(|x| {
-                let MetricGroupField { name,ty, attrs, .. } = x;
+                let MetricGroupField { name, ty, attrs, .. } = x;
                 match &attrs.init {
-                    Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: #init,),
-                    Some(MetricGroupFieldAttrsInit::Metric { metadata, label_set }) => {
-                        match (label_set, metadata) {
-                            (Some(ls), Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #meta),),
-                            (Some(ls), None) => quote_spanned!(x.span => #name: <#ty>::with_label_set(#ls),),
-                            (None, Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_metadata(#meta),),
-                            (None, None) => quote_spanned!(x.span => #name: <#ty>::new(),),
+                    Some(MetricGroupFieldAttrsInit::Raw(init)) => quote_spanned!(x.span => #name: { #init },),
+                    Some(MetricGroupFieldAttrsInit::Metric { metadata, label_set }) => match (label_set, metadata) {
+                        (Some(ls), Some(meta)) => {
+                            quote_spanned!(x.span => #name: <#ty>::with_label_set_and_metadata(#ls, #meta),)
                         }
-                    }
+                        (Some(ls), None) => quote_spanned!(x.span => #name: <#ty>::with_label_set(#ls),),
+                        (None, Some(meta)) => quote_spanned!(x.span => #name: <#ty>::with_metadata(#meta),),
+                        (None, None) => quote_spanned!(x.span => #name: <#ty>::new(),),
+                    },
                     None => quote_spanned!(x.span => #name: <#ty as ::core::default::Default>::default(),),
                 }
             });

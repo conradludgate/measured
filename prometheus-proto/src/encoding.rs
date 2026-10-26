@@ -72,6 +72,19 @@ where
     encode_varint(value as u64, buf);
 }
 
+pub fn encode_u64<B>(tag: u32, value: u64, buf: &mut B)
+where
+    B: BufMut,
+{
+    encode_key(tag, WireType::Varint, buf);
+    encode_varint(value, buf);
+}
+
+#[inline]
+pub fn encoded_len_u64(tag: u32, value: u64) -> usize {
+    key_len(tag) + encoded_len_varint(value)
+}
+
 pub fn encode_f64<B>(tag: u32, value: f64, buf: &mut B)
 where
     B: BufMut,

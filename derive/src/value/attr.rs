@@ -1,7 +1,5 @@
-use syn::{
-    Attribute, LitStr, Token,
-    parse::{Parse, ParseStream},
-};
+use syn::parse::{Parse, ParseStream};
+use syn::{Attribute, LitStr, Token};
 
 use crate::Krate;
 
@@ -111,8 +109,8 @@ pub enum RenameAll {
 impl RenameAll {
     pub fn apply(&self, s: &str) -> String {
         use heck::{
-            ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
-            ToTitleCase, ToTrainCase, ToUpperCamelCase,
+            ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToTrainCase,
+            ToUpperCamelCase,
         };
         match self {
             RenameAll::UpperCamel => s.to_upper_camel_case(),

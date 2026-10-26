@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-24
+          components: rustfmt
+      - run: cargo +nightly-2026-10-24 fmt --all -- --check
+
+  clippy:
+    name: Clippy (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: stable-api
+            features: ''
+            rustflags: ''
+          - mode: unstable-api
+            features: --all-features
+            rustflags: --cfg tokio_unstable
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy-${{ matrix.mode }}
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes protobuf-compiler
+      - run: cargo clippy --workspace --all-targets --locked ${{ matrix.features }} -- -D warnings
+
+  tests:
+    name: Tests (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: default
+            features: ''
+            rustflags: ''
+          - mode: all-features
+            features: --all-features
+            rustflags: --cfg tokio_unstable
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: tests-${{ matrix.mode }}
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes protobuf-compiler
+      - run: cargo check --workspace --all-targets --locked ${{ matrix.features }}
+      - run: cargo test --workspace --locked ${{ matrix.features }}
+      - name: Test release-mode counter validation
+        if: matrix.features == '--all-features'
+        run: cargo test -p measured --all-features --release --test regressions --locked
+
+  msrv:
+    name: Rust 1.98 minimum version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: --cfg tokio_unstable
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes protobuf-compiler
+      - run: cargo check --workspace --all-features --all-targets --locked
+
+  features:
+    name: Feature powerset without dev dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: --cfg tokio_unstable
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: features
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack@0.6.45
+      # cargo-hack temporarily removes dev dependencies and restores the manifests.
+      - run: cargo hack check --workspace --feature-powerset --no-dev-deps
+
+  docs:
+    name: Documentation and doctest powerset
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: --cfg tokio_unstable
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: docs
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack@0.6.45
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes protobuf-compiler
+      - run: cargo doc -p measured --no-default-features --no-deps --locked
+      - run: cargo doc --workspace --all-features --no-deps --locked
+      # The Axum example is a binary without a library doctest target.
+      - run: cargo hack test --workspace --exclude axum-example --feature-powerset --doc --locked
+
+  ci:
+    name: CI
+    if: always()
+    needs: [format, clippy, tests, msrv, features, docs]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all checks to pass
+        run: |
+          test '${{ needs.format.result }}' = success
+          test '${{ needs.clippy.result }}' = success
+          test '${{ needs.tests.result }}' = success
+          test '${{ needs.msrv.result }}' = success
+          test '${{ needs.features.result }}' = success
+          test '${{ needs.docs.result }}' = success

@@ -1,0 +1,16 @@
+[package]
+name = "measured-prometheus-text"
+version = "0.1.0"
+edition = "2024"
+description = "Prometheus text exposition format for measured"
+authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/conradludgate/measured"
+readme = "README.md"
+rust-version = "1.98"
+
+[dependencies]
+measured = { path = "../core", version = "0.1.0" }
+bytes = "1"
+memchr = "2"
+zmij = "1"

@@ -1,8 +1,7 @@
 use core::marker::PhantomData;
 
-use crate::LabelGroup;
-
 use super::LabelGroupSet;
+use crate::LabelGroup;
 
 /// `StaticLabelSet` is a [`LabelSet`] for a [`FixedCardinalityLabel`]
 pub struct StaticLabelSet<T>(PhantomData<T>);
@@ -10,6 +9,20 @@ pub struct StaticLabelSet<T>(PhantomData<T>);
 impl<T> Default for StaticLabelSet<T> {
     fn default() -> Self {
         Self(Default::default())
+    }
+}
+
+impl<T> Clone for StaticLabelSet<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for StaticLabelSet<T> {}
+
+impl<T> core::fmt::Debug for StaticLabelSet<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("StaticLabelSet")
     }
 }
 
@@ -75,7 +88,7 @@ pub struct LabelTestVisitor;
 impl LabelVisitor for LabelTestVisitor {
     type Output = String;
     fn write_int(self, x: i64) -> String {
-        self.write_str(itoa::Buffer::new().format(x))
+        self.write_str(x.format_into(&mut core::fmt::NumBuffer::new()))
     }
 
     fn write_float(self, x: f64) -> String {
@@ -88,7 +101,7 @@ impl LabelVisitor for LabelTestVisitor {
         } else if x.is_nan() {
             self.write_str("NaN")
         } else {
-            self.write_str(ryu::Buffer::new().format(x))
+            self.write_str(zmij::Buffer::new().format(x))
         }
     }
 
@@ -166,6 +179,9 @@ pub trait FixedCardinalitySet: LabelSet {
 /// 1. Compatibility with your existing setup
 /// 2. Not exporting to prometheus
 /// 3. You know there wont be many labels but you just don't know what they are
+///
+/// Implementations that intern values must override [`LabelSet::find`] to perform a lookup
+/// without inserting. Its default delegates to `encode` and does not provide that guarantee.
 pub trait DynamicLabelSet: LabelSet {
     #[doc(hidden)]
     fn __private_check_dynamic() {}
@@ -174,9 +190,9 @@ pub trait DynamicLabelSet: LabelSet {
 /// `LabelSet` defines a way to take a label value, eg a `&str`, and encode it into a compressed integer for more efficient encoding.
 ///
 /// How this encoding is done is up to the application, but several ways are provided.
-/// * [`lasso::RodeoReader`] is an immutable label set that stores a `&str` into a larger `String` allocation. It has a `HashMap` to quickly find the index of the string
-/// * [`lasso::ThreadedRodeo`] is a mutable label set that works similarly to the `RodeoReader`.
-/// * [`indexmap::IndexSet`] is an immutable `HashSet` that stores an associated index position of the inserted elements.
+/// * [`lasso::RodeoReader`](https://docs.rs/lasso/latest/lasso/struct.RodeoReader.html) is an immutable label set that stores a `&str` into a larger `String` allocation. It has a `HashMap` to quickly find the index of the string
+/// * [`lasso::ThreadedRodeo`](https://docs.rs/lasso/latest/lasso/struct.ThreadedRodeo.html) is a mutable label set that works similarly to the `RodeoReader`.
+/// * [`indexmap::IndexSet`](https://docs.rs/indexmap/latest/indexmap/struct.IndexSet.html) is an immutable `HashSet` that stores an associated index position of the inserted elements.
 pub trait LabelSet {
     /// The label value this set can encode
     type Value<'a>: LabelValue;
@@ -187,35 +203,17 @@ pub trait LabelSet {
     /// Encode the label value into an integer. Returns `None` if the value is not in the set
     fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
 
+    /// Like [`encode`](Self::encode), but never adds the value to a dynamic label set.
+    /// Returns `None` if the value is not in the set yet.
+    ///
+    /// The default implementation calls [`encode`](Self::encode), so label sets that can insert values should override it.
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        self.encode(value)
+    }
+
     /// Decode the integer into the associated label value.
     ///
     /// If the integer is outside the range of this set, the behaviour is not defined.
     /// It would most likely panic.
     fn decode(&self, value: usize) -> Self::Value<'_>;
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(dead_code)]
-
-    use measured_derive::MetricGroup;
-
-    use crate::CounterVec;
-
-    use super::StaticLabelSet;
-
-    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
-    #[label(crate = crate)]
-    #[label(singleton = "kind")]
-    enum ErrorKind {
-        User,
-        Internal,
-        Network,
-    }
-
-    #[derive(MetricGroup, Default)]
-    #[metric(crate = crate)]
-    struct Metrics {
-        errors: CounterVec<StaticLabelSet<ErrorKind>>,
-    }
 }

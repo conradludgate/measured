@@ -12,9 +12,7 @@ impl<T: LabelValue + core::hash::Hash + Eq + Clone, S: core::hash::BuildHasher> 
 }
 
 #[cfg(feature = "indexmap")]
-impl<T: LabelValue + core::hash::Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet
-    for indexmap::IndexSet<T, S>
-{
+impl<T: LabelValue + core::hash::Hash + Eq + Clone, S: core::hash::BuildHasher> LabelSet for indexmap::IndexSet<T, S> {
     type Value<'a> = T;
 
     fn dynamic_cardinality(&self) -> Option<usize> {
@@ -48,6 +46,68 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
     }
 }
 
+impl LabelValue for std::borrow::Cow<'_, str> {
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_str(self)
+    }
+}
+
+impl LabelValue for f64 {
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_float(*self)
+    }
+}
+
+impl LabelValue for bool {
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_str(if *self { "true" } else { "false" })
+    }
+}
+
+macro_rules! int_label_value {
+    ($($t:ty),*) => {$(
+        impl LabelValue for $t {
+            fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+                v.write_int(i64::from(*self))
+            }
+        }
+    )*};
+}
+int_label_value!(i8, i16, i32, i64, u8, u16, u32);
+
+macro_rules! large_int_label_value {
+    ($($t:ty),*) => {$(
+        impl LabelValue for $t {
+            fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+                match i64::try_from(*self) {
+                    Ok(x) => v.write_int(x),
+                    Err(_) => v.write_str((*self).format_into(&mut core::fmt::NumBuffer::new())),
+                }
+            }
+        }
+    )*};
+}
+large_int_label_value!(u64, usize, isize);
+
+/// A range of integer label values, eg worker IDs `0..num_workers`.
+impl LabelSet for core::ops::Range<usize> {
+    type Value<'a> = usize;
+
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        Some(self.len())
+    }
+
+    fn encode(&self, value: usize) -> Option<usize> {
+        self.contains(&value).then(|| value - self.start)
+    }
+
+    fn decode(&self, value: usize) -> usize {
+        self.start + value
+    }
+}
+
+impl FixedCardinalitySet for core::ops::Range<usize> {}
+
 #[cfg(feature = "paracord")]
 impl<S: core::hash::BuildHasher> DynamicLabelSet for paracord::ParaCord<S> {}
 
@@ -61,6 +121,10 @@ impl<S: core::hash::BuildHasher> LabelSet for paracord::ParaCord<S> {
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.get_or_intern(value).into_repr() as usize)
+    }
+
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        Some(self.get(value)?.into_repr() as usize)
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
@@ -100,9 +164,7 @@ impl<K: lasso::Key, S: core::hash::BuildHasher> LabelSet for lasso::RodeoReader<
 }
 
 #[cfg(feature = "lasso")]
-impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> LabelSet
-    for lasso::ThreadedRodeo<K, S>
-{
+impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> LabelSet for lasso::ThreadedRodeo<K, S> {
     type Value<'a> = &'a str;
 
     fn dynamic_cardinality(&self) -> Option<usize> {
@@ -111,6 +173,10 @@ impl<K: lasso::Key + core::hash::Hash, S: core::hash::BuildHasher + Clone> Label
 
     fn encode(&self, value: Self::Value<'_>) -> Option<usize> {
         Some(self.try_get_or_intern(value).ok()?.into_usize())
+    }
+
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        Some(self.get(value)?.into_usize())
     }
 
     fn decode(&self, value: usize) -> Self::Value<'_> {
@@ -161,153 +227,94 @@ impl<T: LabelSet + ?Sized> LabelSet for Arc<T> {
         T::encode(self, value)
     }
 
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        T::find(self, value)
+    }
+
     fn decode(&self, value: usize) -> Self::Value<'_> {
         T::decode(self, value)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        feature = "phf",
+        feature = "indexmap",
+        feature = "lasso",
+        feature = "paracord"
+    )
+))]
 mod tests {
-    use crate::label::{FixedCardinalitySet, LabelSet};
+    #[cfg(any(feature = "phf", feature = "indexmap", feature = "lasso"))]
+    use crate::label::FixedCardinalitySet;
+    use crate::label::LabelSet;
+    const VALUES: [&str; 5] = ["loop", "continue", "break", "fn", "extern"];
+
+    macro_rules! check_values {
+        ($set:expr) => {{
+            let set = &$set;
+            for (index, value) in VALUES.into_iter().enumerate() {
+                assert_eq!(set.encode(value), Some(index), "encode {value}");
+                assert_eq!(set.decode(index), value, "decode {index}");
+                assert_eq!(set.find(value), Some(index), "find {value}");
+            }
+        }};
+    }
 
     #[cfg(feature = "phf")]
     #[test]
     fn phf_ordered_set() {
-        let set = phf::phf_ordered_set! {
-            "loop",
-            "continue",
-            "break",
-            "fn",
-            "extern",
-        };
-
+        let set = phf::phf_ordered_set! { "loop", "continue", "break", "fn", "extern" };
+        check_values!(set);
         assert_eq!(set.cardinality(), 5);
-
-        // make sure it's repeatable
-        for _ in 0..2 {
-            assert_eq!(set.encode("loop"), Some(0));
-            assert_eq!(set.decode(0), "loop");
-
-            assert_eq!(set.encode("continue"), Some(1));
-            assert_eq!(set.decode(1), "continue");
-
-            assert_eq!(set.encode("break"), Some(2));
-            assert_eq!(set.decode(2), "break");
-
-            assert_eq!(set.encode("fn"), Some(3));
-            assert_eq!(set.decode(3), "fn");
-
-            assert_eq!(set.encode("extern"), Some(4));
-            assert_eq!(set.decode(4), "extern");
-        }
+        assert_eq!(set.encode("missing"), None);
+        assert_eq!(set.find("missing"), None);
     }
 
     #[cfg(feature = "indexmap")]
     #[test]
     fn indexset() {
-        use indexmap::IndexSet;
-
-        let set: IndexSet<&'static str> = ["loop", "continue", "break", "fn", "extern"]
-            .into_iter()
-            .collect();
-
+        let set: indexmap::IndexSet<&str> = VALUES.into_iter().collect();
+        check_values!(set);
         assert_eq!(set.cardinality(), 5);
-
-        // make sure it's repeatable
-        for _ in 0..2 {
-            assert_eq!(set.encode("loop"), Some(0));
-            assert_eq!(set.decode(0), "loop");
-
-            assert_eq!(set.encode("continue"), Some(1));
-            assert_eq!(set.decode(1), "continue");
-
-            assert_eq!(set.encode("break"), Some(2));
-            assert_eq!(set.decode(2), "break");
-
-            assert_eq!(set.encode("fn"), Some(3));
-            assert_eq!(set.decode(3), "fn");
-
-            assert_eq!(set.encode("extern"), Some(4));
-            assert_eq!(set.decode(4), "extern");
-        }
+        assert_eq!(set.encode("missing"), None);
+        assert_eq!(set.find("missing"), None);
     }
 
     #[cfg(feature = "lasso")]
     #[test]
     fn lasso_reader() {
-        let set = ["loop", "continue", "break", "fn", "extern"]
-            .into_iter()
-            .collect::<lasso::Rodeo>()
-            .into_reader();
-
+        let set = VALUES.into_iter().collect::<lasso::Rodeo>().into_reader();
+        check_values!(set);
         assert_eq!(set.cardinality(), 5);
-
-        // make sure it's repeatable
-        for _ in 0..2 {
-            assert_eq!(set.encode("loop"), Some(0));
-            assert_eq!(set.decode(0), "loop");
-
-            assert_eq!(set.encode("continue"), Some(1));
-            assert_eq!(set.decode(1), "continue");
-
-            assert_eq!(set.encode("break"), Some(2));
-            assert_eq!(set.decode(2), "break");
-
-            assert_eq!(set.encode("fn"), Some(3));
-            assert_eq!(set.decode(3), "fn");
-
-            assert_eq!(set.encode("extern"), Some(4));
-            assert_eq!(set.decode(4), "extern");
-        }
+        assert_eq!(set.encode("missing"), None);
+        assert_eq!(set.find("missing"), None);
     }
 
     #[cfg(feature = "lasso")]
     #[test]
     fn lasso_dynamic() {
-        use lasso::Spur;
-
-        let set = lasso::ThreadedRodeo::<Spur>::new();
-
-        // make sure it's repeatable
-        for _ in 0..2 {
-            assert_eq!(set.encode("loop"), Some(0));
-            assert_eq!(set.decode(0), "loop");
-
-            assert_eq!(set.encode("continue"), Some(1));
-            assert_eq!(set.decode(1), "continue");
-
-            assert_eq!(set.encode("break"), Some(2));
-            assert_eq!(set.decode(2), "break");
-
-            assert_eq!(set.encode("fn"), Some(3));
-            assert_eq!(set.decode(3), "fn");
-
-            assert_eq!(set.encode("extern"), Some(4));
-            assert_eq!(set.decode(4), "extern");
-        }
+        let set = lasso::ThreadedRodeo::<lasso::Spur>::new();
+        assert_eq!(set.find("missing"), None);
+        assert!(set.is_empty());
+        check_values!(set);
+        check_values!(set); // Existing values must retain their IDs without new entries.
+        assert_eq!(set.len(), 5);
+        assert_eq!(set.find("missing"), None);
+        assert_eq!(set.len(), 5);
     }
 
     #[cfg(feature = "paracord")]
     #[test]
     fn paracord() {
         let set = paracord::ParaCord::default();
-
-        // make sure it's repeatable
-        for _ in 0..2 {
-            assert_eq!(set.encode("loop"), Some(0));
-            assert_eq!(set.decode(0), "loop");
-
-            assert_eq!(set.encode("continue"), Some(1));
-            assert_eq!(set.decode(1), "continue");
-
-            assert_eq!(set.encode("break"), Some(2));
-            assert_eq!(set.decode(2), "break");
-
-            assert_eq!(set.encode("fn"), Some(3));
-            assert_eq!(set.decode(3), "fn");
-
-            assert_eq!(set.encode("extern"), Some(4));
-            assert_eq!(set.decode(4), "extern");
-        }
+        assert_eq!(set.find("missing"), None);
+        assert!(set.is_empty());
+        check_values!(set);
+        check_values!(set);
+        assert_eq!(set.len(), 5);
+        assert_eq!(set.find("missing"), None);
+        assert_eq!(set.len(), 5);
     }
 }

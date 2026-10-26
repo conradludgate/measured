@@ -1,7 +1,6 @@
-use divan::Bencher;
-use divan::black_box;
-use measured::text::BufferedTextEncoder;
+use divan::{Bencher, black_box};
 use measured::{CounterVec, LabelGroup, MetricGroup};
+use measured_prometheus_text::BufferedTextEncoder;
 use paracord::ParaCord;
 use prometheus_client::encoding::EncodeLabelSet;
 
@@ -18,16 +17,14 @@ const SIZES: &[usize] = &[100, 1000, 10000, 100000];
 #[divan::bench(consts = SIZES)]
 fn measured<const N: usize>(bencher: Bencher) {
     let metrics = Metrics {
-        counters: measured::CounterVec::with_label_set(GroupSet {
-            kind: ParaCord::default(),
-        }),
+        counters: measured::CounterVec::with_label_set(GroupSet { kind: ParaCord::default() }),
     };
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        metrics.counters.inc(Group {
-            kind: buf.format(i),
-        });
+        metrics
+            .counters
+            .inc(Group { kind: i.format_into(&mut buf) });
     }
 
     let mut enc = BufferedTextEncoder::new();
@@ -41,17 +38,14 @@ fn measured<const N: usize>(bencher: Bencher) {
 #[divan::bench(consts = SIZES)]
 fn prometheus<const N: usize>(bencher: Bencher) {
     let registry = prometheus::Registry::new();
-    let counter_vec = prometheus::register_int_counter_vec_with_registry!(
-        "counters",
-        "help text",
-        &["kind"],
-        registry
-    )
-    .unwrap();
+    let counter_vec =
+        prometheus::register_int_counter_vec_with_registry!("counters", "help text", &["kind"], registry).unwrap();
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        counter_vec.with_label_values(&[buf.format(i)]).inc();
+        counter_vec
+            .with_label_values(&[i.format_into(&mut buf)])
+            .inc();
     }
 
     let mut enc = String::new();
@@ -71,9 +65,9 @@ fn metrics<const N: usize>(bencher: Bencher) {
 
     metrics::with_local_recorder(&recorder, || {
         metrics::describe_counter!("counters", "help text");
-        let mut buf = itoa::Buffer::new();
+        let mut buf = core::fmt::NumBuffer::new();
         for i in 0..N {
-            let labels = [("kind", buf.format(i).to_owned())];
+            let labels = [("kind", i.format_into(&mut buf).to_owned())];
             metrics::counter!("counters", &labels).increment(1);
         }
     });
@@ -94,9 +88,9 @@ fn prometheus_client<const N: usize>(bencher: Bencher) {
 
     registry.register("counters", "help text", counter_vec.clone());
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        let kind = buf.format(i).to_owned();
+        let kind = i.format_into(&mut buf).to_owned();
         counter_vec.get_or_create(&GroupStatic { kind }).inc();
     }
 

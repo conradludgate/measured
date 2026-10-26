@@ -1,7 +1,5 @@
-use syn::{
-    Attribute, Expr, ExprLit, FnArg, Lit, LitStr, Token, parenthesized, punctuated::Punctuated,
-    spanned::Spanned,
-};
+use syn::punctuated::Punctuated;
+use syn::{Attribute, Expr, ExprLit, FnArg, Lit, LitStr, Meta, MetaNameValue, Token, parenthesized};
 
 use crate::Krate;
 
@@ -29,8 +27,7 @@ impl ContainerAttrs {
                         () if meta.path.is_ident("new") => {
                             let content;
                             parenthesized!(content in meta.input);
-                            let inputs =
-                                Punctuated::<FnArg, Token![,]>::parse_terminated(&content)?;
+                            let inputs = Punctuated::<FnArg, Token![,]>::parse_terminated(&content)?;
 
                             if args.inputs.replace(inputs).is_some() {
                                 return Err(meta.error("duplicate `metric(new)` arg"));
@@ -51,6 +48,7 @@ impl ContainerAttrs {
 pub struct MetricGroupFieldAttrs {
     pub kind: MetricGroupFieldAttrsKind,
     pub docs: Option<String>,
+    pub unit: Option<LitStr>,
     pub init: Option<MetricGroupFieldAttrsInit>,
 }
 
@@ -73,6 +71,7 @@ impl MetricGroupFieldAttrs {
     pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut args = None;
         let mut docs = None;
+        let mut unit = None;
         let mut init = None;
 
         for attr in attrs {
@@ -80,19 +79,20 @@ impl MetricGroupFieldAttrs {
                 attr.meta.require_list()?.parse_nested_meta(|meta| {
                     match () {
                         () if meta.path.is_ident("rename") => {
-                            let arg = MetricGroupFieldAttrsKind::Metric {
-                                rename: Some(meta.value()?.parse()?),
-                            };
+                            let arg = MetricGroupFieldAttrsKind::Metric { rename: Some(meta.value()?.parse()?) };
                             if args.replace(arg).is_some() {
                                 return Err(meta.error("duplicate `metric(rename)` attr"));
                             }
                         }
                         () if meta.path.is_ident("namespace") => {
-                            let arg = MetricGroupFieldAttrsKind::Group {
-                                namespace: Some(meta.value()?.parse()?),
-                            };
+                            let arg = MetricGroupFieldAttrsKind::Group { namespace: Some(meta.value()?.parse()?) };
                             if args.replace(arg).is_some() {
                                 return Err(meta.error("duplicate `metric(namespace)` attr"));
+                            }
+                        }
+                        () if meta.path.is_ident("unit") => {
+                            if unit.replace(meta.value()?.parse()?).is_some() {
+                                return Err(meta.error("duplicate `metric(unit)` attr"));
                             }
                         }
                         () if meta.path.is_ident("flatten") => {
@@ -111,47 +111,34 @@ impl MetricGroupFieldAttrs {
                         }
                         () if meta.path.is_ident("metadata") => {
                             const DEFAULT: MetricGroupFieldAttrsInit =
-                                MetricGroupFieldAttrsInit::Metric {
-                                    metadata: None,
-                                    label_set: None,
-                                };
+                                MetricGroupFieldAttrsInit::Metric { metadata: None, label_set: None };
                             match init.get_or_insert(DEFAULT) {
-                                MetricGroupFieldAttrsInit::Metric {
-                                    metadata: metadata @ None,
-                                    ..
-                                } => {
+                                MetricGroupFieldAttrsInit::Metric { metadata: metadata @ None, .. } => {
                                     *metadata = Some(meta.value()?.parse()?);
                                 }
-                                MetricGroupFieldAttrsInit::Metric {
-                                    metadata: Some(_), ..
-                                } => {
+                                MetricGroupFieldAttrsInit::Metric { metadata: Some(_), .. } => {
                                     return Err(meta.error("duplicate `metric(metadata)` attr"));
                                 }
                                 MetricGroupFieldAttrsInit::Raw(_) => {
-                                    return Err(meta.error("`metric(metadata)` and `metric(init)` attributes are not compatible"));
+                                    return Err(meta
+                                        .error("`metric(metadata)` and `metric(init)` attributes are not compatible"));
                                 }
                             }
                         }
                         () if meta.path.is_ident("label_set") => {
                             const DEFAULT: MetricGroupFieldAttrsInit =
-                                MetricGroupFieldAttrsInit::Metric {
-                                    metadata: None,
-                                    label_set: None,
-                                };
+                                MetricGroupFieldAttrsInit::Metric { metadata: None, label_set: None };
                             match init.get_or_insert(DEFAULT) {
-                                MetricGroupFieldAttrsInit::Metric {
-                                    label_set: label_set @ None,
-                                    ..
-                                } => {
+                                MetricGroupFieldAttrsInit::Metric { label_set: label_set @ None, .. } => {
                                     *label_set = Some(meta.value()?.parse()?);
                                 }
-                                MetricGroupFieldAttrsInit::Metric {
-                                    label_set: Some(_), ..
-                                } => {
+                                MetricGroupFieldAttrsInit::Metric { label_set: Some(_), .. } => {
                                     return Err(meta.error("duplicate `metric(label_set)` attr"));
                                 }
                                 MetricGroupFieldAttrsInit::Raw(_) => {
-                                    return Err(meta.error("`metric(label_set)` and `metric(init)` attributes are not compatible"));
+                                    return Err(meta.error(
+                                        "`metric(label_set)` and `metric(init)` attributes are not compatible",
+                                    ));
                                 }
                             }
                         }
@@ -161,19 +148,21 @@ impl MetricGroupFieldAttrs {
                     Ok(())
                 })?;
             } else if attr.path().is_ident("doc") {
-                let expr = &attr.meta.require_name_value()?.value;
-                let s = match expr {
-                    Expr::Lit(ExprLit {
-                        lit: Lit::Str(s), ..
-                    }) => s,
-                    _ => return Err(syn::Error::new(attr.span(), "invalid doc comment")),
-                };
-                docs.get_or_insert_with(String::new).push_str(&s.value());
+                // only literal doc comments are used as help text.
+                // others, such as `#[doc(hidden)]` or `#[doc = include_str!(..)]`, are ignored.
+                if let Meta::NameValue(MetaNameValue {
+                    value: Expr::Lit(ExprLit { lit: Lit::Str(s), .. }),
+                    ..
+                }) = &attr.meta
+                {
+                    docs.get_or_insert_with(String::new).push_str(&s.value());
+                }
             }
         }
         Ok(Self {
             kind: args.unwrap_or(MetricGroupFieldAttrsKind::Metric { rename: None }),
             docs,
+            unit,
             init,
         })
     }

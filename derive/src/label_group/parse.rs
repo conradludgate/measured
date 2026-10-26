@@ -1,9 +1,10 @@
-use syn::{Data, DeriveInput, Field, Fields, spanned::Spanned};
-
-use crate::Krate;
+use syn::ext::IdentExt;
+use syn::spanned::Spanned;
+use syn::{Data, DeriveInput, Field, Fields};
 
 use super::attr::{ContainerAttrs, LabelGroupFieldAttrs};
 use super::{LabelGroup, LabelGroupField};
+use crate::Krate;
 
 impl TryFrom<Field> for LabelGroupField {
     type Error = syn::Error;
@@ -19,24 +20,25 @@ impl TryFrom<Field> for LabelGroupField {
     }
 }
 
+impl LabelGroupField {
+    /// The label name, from `label(rename)` or the field name
+    pub(super) fn label_name(&self) -> String {
+        self.attrs
+            .rename
+            .as_ref()
+            .map_or_else(|| self.name.unraw().to_string(), |r| r.value())
+    }
+}
+
 impl TryFrom<DeriveInput> for LabelGroup {
     type Error = syn::Error;
     fn try_from(input: DeriveInput) -> syn::Result<Self> {
         let span = input.span();
-        let DeriveInput {
-            ident,
-            data,
-            generics,
-            attrs,
-            vis,
-            ..
-        } = input;
+        let DeriveInput { ident, data, generics, attrs, vis, .. } = input;
 
         let args = ContainerAttrs::parse_attrs(&attrs)?;
         let Krate(krate) = args.krate.unwrap_or_default();
-        let set_ident = args
-            .set
-            .ok_or_else(|| syn::Error::new(span, "missing `set` attribute"))?;
+        let set_ident = args.set;
 
         let fields = match data {
             Data::Enum(_) => return Err(syn::Error::new(span, "enums not supported")),
@@ -53,6 +55,16 @@ impl TryFrom<DeriveInput> for LabelGroup {
                 Fields::Unit => return Err(syn::Error::new(span, "unit structs not supported")),
             },
         };
+
+        for (i, field) in fields.iter().enumerate() {
+            let name = field.label_name();
+            if fields[..i].iter().any(|f| f.label_name() == name) {
+                return Err(syn::Error::new(
+                    field.span,
+                    format!("duplicate label name `{name}`"),
+                ));
+            }
+        }
 
         Ok(Self {
             vis,

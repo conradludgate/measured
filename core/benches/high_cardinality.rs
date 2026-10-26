@@ -6,26 +6,25 @@ fn main() {
         .run_benches();
 }
 
-use std::{
-    cell::RefCell,
-    hash::{BuildHasher, BuildHasherDefault},
-};
+use std::cell::RefCell;
+use std::hash::{BuildHasher, BuildHasherDefault};
 
 use divan::{Bencher, black_box};
-use fake::{Fake, faker::name::raw::Name, locales::EN};
+use fake::Fake;
+use fake::faker::name::raw::Name;
+use fake::locales::EN;
 use lasso::{Rodeo, RodeoReader, Spur};
 use measured::label::StaticLabelSet;
 use measured_derive::{FixedCardinalityLabel, LabelGroup};
 use metrics::SharedString;
 use paracord::ParaCord;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use rustc_hash::FxHasher;
 
 fn thread_rng() -> SmallRng {
-    SmallRng::seed_from_u64(
-        BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()),
-    )
+    SmallRng::seed_from_u64(BuildHasherDefault::<FxHasher>::default().hash_one(std::thread::current().id()))
 }
 
 fn get(rng: &mut impl Rng) -> (ErrorKind, &'static str, String) {
@@ -83,11 +82,7 @@ fn measured(bencher: Bencher) {
     bencher
         .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
         .bench_values(|(kind, route, name)| {
-            counter_vec.inc(Error {
-                kind,
-                route,
-                user_name: &name,
-            });
+            counter_vec.inc(Error { kind, route, user_name: &name });
             name
         });
 }
@@ -170,11 +165,7 @@ fn prometheus_client(bencher: Bencher) {
         .with_inputs(|| RNG.with(|rng| get(&mut *rng.borrow_mut())))
         .bench_values(|(kind, route, name)| {
             counter_vec
-                .get_or_create(&ErrorStatic {
-                    kind,
-                    route,
-                    user_name: name,
-                })
+                .get_or_create(&ErrorStatic { kind, route, user_name: name })
                 .inc();
         });
 }

@@ -50,11 +50,21 @@ pub trait LabelGroupSet {
 
     /// Encode the label groups into the unique compressed representation
     fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique>;
+
+    /// Like [`encode`](Self::encode), but never adds new values to a dynamic label set.
+    /// Returns `None` if any value is not in its label set yet.
+    ///
+    /// This is used to read metrics without growing the label sets.
+    /// The default implementation calls [`encode`](Self::encode), so label sets that can insert values should override it.
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        self.encode(value)
+    }
     /// Decodes the compressed representation into the label values
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_>;
 }
 
 /// A [`LabelGroup`] with no label pairs
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NoLabels;
 
 impl LabelGroup for NoLabels {
@@ -112,6 +122,10 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
         ))
     }
 
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        Some(ComposedGroup(self.0.find(value.0)?, self.1.find(value.1)?))
+    }
+
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
         ComposedGroup(self.0.decode(&value.0), self.1.decode(&value.1))
     }
@@ -151,6 +165,10 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for &'static T {
         T::encode(self, value)
     }
 
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        T::find(self, value)
+    }
+
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
         T::decode(self, value)
     }
@@ -177,6 +195,10 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
         T::encode(self, value)
     }
 
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        T::find(self, value)
+    }
+
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
         T::decode(self, value)
     }
@@ -184,9 +206,8 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{FixedCardinalityLabel, LabelGroup};
-
     use super::{ComposedGroup, LabelGroupSet};
+    use crate::{FixedCardinalityLabel, LabelGroup};
 
     #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
     #[label(crate = crate, set = ErrorsSet)]
@@ -222,21 +243,13 @@ mod tests {
         assert_eq!(composed.cardinality(), Some(6));
 
         let get_user = ComposedGroup(
-            Operation {
-                kind: OperationKind::Get,
-            },
-            Error {
-                kind: ErrorKind::User,
-            },
+            Operation { kind: OperationKind::Get },
+            Error { kind: ErrorKind::User },
         );
 
         let post_internal = ComposedGroup(
-            Operation {
-                kind: OperationKind::Post,
-            },
-            Error {
-                kind: ErrorKind::Internal,
-            },
+            Operation { kind: OperationKind::Post },
+            Error { kind: ErrorKind::Internal },
         );
 
         assert_eq!(composed.encode(get_user), Some(ComposedGroup(0, 0)),);
@@ -248,5 +261,13 @@ mod tests {
         assert_eq!(composed.encode_dense(ComposedGroup(1, 1)), Some(4));
         assert_eq!(composed.decode_dense(4), post_internal);
         assert_eq!(composed.decode(&ComposedGroup(1, 1)), post_internal);
+        for first in 0..2 {
+            for second in 0..3 {
+                let id = ComposedGroup(first, second);
+                let dense = composed.encode_dense(id).unwrap();
+                assert_eq!(dense, first * 3 + second);
+                assert_eq!(composed.encode(composed.decode_dense(dense)), Some(id));
+            }
+        }
     }
 }

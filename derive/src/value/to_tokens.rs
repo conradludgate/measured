@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote, quote_spanned};
+use syn::ext::IdentExt;
 
 use super::FixedCardinalityLabel;
 
@@ -27,7 +28,7 @@ impl ToTokens for FixedCardinalityLabel {
                     if let Some(int) = &var.value {
                         quote_spanned!(int.span() => v.write_int(#int))
                     } else {
-                        let name = rename_all.apply(&var.ident.to_string());
+                        let name = rename_all.apply(&var.ident.unraw().to_string());
                         quote_spanned!(var.span => v.write_str(#name))
                     }
                 },
@@ -38,7 +39,7 @@ impl ToTokens for FixedCardinalityLabel {
         });
 
         let singleton = singleton.as_ref().map(|s| {
-            quote!{
+            quote! {
                 impl #krate::label::LabelGroup for #ident {
                     fn visit_values(&self, v: &mut impl #krate::label::LabelGroupVisitor) {
                         const NAME: &#krate::label::LabelName = #krate::label::LabelName::from_str(#s);
@@ -64,7 +65,7 @@ impl ToTokens for FixedCardinalityLabel {
                 fn decode(value: usize) -> Self {
                     match value {
                         #(#count2 => #ident :: #var_idents2,)*
-                        _ => panic!("invalid value"),
+                        _ => ::core::panic!("invalid value"),
                     }
                 }
             }

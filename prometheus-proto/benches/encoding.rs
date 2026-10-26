@@ -1,5 +1,4 @@
-use divan::black_box;
-use divan::Bencher;
+use divan::{Bencher, black_box};
 use measured::lasso::{Spur, ThreadedRodeo};
 use measured::{CounterVec, LabelGroup, MetricGroup};
 use measured_prometheus_protobuf::ProtoEncoder;
@@ -24,37 +23,34 @@ fn measured<const N: usize>(bencher: Bencher) {
         }),
     };
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        metrics.counters.inc(Group {
-            kind: buf.format(i),
-        });
+        metrics
+            .counters
+            .inc(Group { kind: i.format_into(&mut buf) });
     }
 
     let mut enc = ProtoEncoder::new(vec![]);
 
     bencher.bench_local(|| {
-        enc.writer.clear();
+        enc.writer_mut().clear();
         metrics.collect_group_into(&mut enc).unwrap();
         enc.flush().unwrap();
-        black_box(&enc.writer);
+        black_box(enc.writer());
     });
 }
 
 #[divan::bench(consts = SIZES)]
 fn prometheus<const N: usize>(bencher: Bencher) {
     let registry = prometheus::Registry::new();
-    let counter_vec = prometheus::register_int_counter_vec_with_registry!(
-        "counters",
-        "help text",
-        &["kind"],
-        registry
-    )
-    .unwrap();
+    let counter_vec =
+        prometheus::register_int_counter_vec_with_registry!("counters", "help text", &["kind"], registry).unwrap();
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        counter_vec.with_label_values(&[buf.format(i)]).inc();
+        counter_vec
+            .with_label_values(&[i.format_into(&mut buf)])
+            .inc();
     }
 
     let mut enc = Vec::new();
@@ -81,9 +77,9 @@ fn prometheus_client<const N: usize>(bencher: Bencher) {
 
     registry.register("counters", "help text", counter_vec.clone());
 
-    let mut buf = itoa::Buffer::new();
+    let mut buf = core::fmt::NumBuffer::new();
     for i in 0..N {
-        let kind = buf.format(i).to_owned();
+        let kind = i.format_into(&mut buf).to_owned();
         counter_vec.get_or_create(&GroupStatic { kind }).inc();
     }
 

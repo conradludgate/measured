@@ -5,7 +5,8 @@ publish = false
 edition = "2021"
 
 [dependencies]
-axum = "0.7"
+axum = { version = "0.7", default-features = false, features = ["http1", "matched-path", "tokio"] }
 lasso = { version = "0.7" }
 measured = { path = "../../core", features = ["lasso"] }
-tokio = { version = "1", features = ["full"] }
+measured-prometheus-text = { path = "../../prometheus-text" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }

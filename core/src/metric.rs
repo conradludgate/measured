@@ -1,23 +1,27 @@
 //! All about metrics
 
 use core::hash::Hash;
-use std::{
-    hash::BuildHasher,
-    ops::{Deref, DerefMut},
-    sync::OnceLock,
-};
+use std::hash::BuildHasher;
+use std::ops::{Deref, DerefMut};
+use std::sync::OnceLock;
 
-use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 use crossbeam_utils::CachePadded;
 
-use self::{group::Encoding, name::MetricNameEncoder};
+use self::group::{Encoding, FamilyMeta, MetricKind};
+use self::name::MetricNameEncoder;
+use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 
+pub mod callback;
 pub mod counter;
+pub mod created;
+pub mod exemplar;
 pub mod gauge;
 pub mod group;
 pub mod histogram;
+pub mod info;
 pub mod name;
 mod sparse;
+pub mod state_set;
 
 /// Defines a metric
 pub trait MetricType: Default {
@@ -27,7 +31,12 @@ pub trait MetricType: Default {
 
 /// A shared ref to an individual metric value.
 ///
-/// As the name implies, it might hold a lock (only applicable to sparse metric vecs, but this is not guaranteed behaviour)
+/// As the name implies, it might hold a lock (only applicable to sparse metric vecs, but this is not guaranteed behaviour).
+///
+/// # Deadlocks
+/// Do not hold onto this guard while calling other methods on the same metric vec.
+/// For sparse metric vecs, calling [`MetricVec::remove_metric`], or creating a new metric in the same shard,
+/// while this guard is alive can deadlock.
 pub struct MetricLockGuard<'a, M: MetricType>(MetricLockGuardRepr<'a, M>, &'a M::Metadata);
 
 enum MetricLockGuardRepr<'a, M> {
@@ -107,7 +116,7 @@ pub struct Metric<M: MetricType> {
 ///
 /// ## Sparse
 ///
-/// Sparse metric vecs are represented as a sharded hashmap. Because the implementation makes use of [`RwLock`]s, it does have
+/// Sparse metric vecs are represented as a sharded hashmap. Because the implementation makes use of [`RwLock`](parking_lot::RwLock)s, it does have
 /// slower performance compared to the dense representation.
 ///
 /// Currently the number of shards used is taken as the number of CPU cores, multiplied by 4 and rounded up to the next power of 2.
@@ -139,10 +148,7 @@ where
 impl<M: MetricType> Metric<M> {
     /// Create a new metric with the given metadata
     pub fn with_metadata(metadata: M::Metadata) -> Self {
-        Self {
-            metric: M::default(),
-            metadata,
-        }
+        Self { metric: M::default(), metadata }
     }
 
     /// Get a ref to the metric
@@ -251,6 +257,15 @@ impl<M: MetricType, U: Hash + Eq + Copy> VecInner<U, M> {
         }
     }
 
+    fn find_metric(&self, id: LabelIdInner<U>) -> Option<MetricLockGuardRepr<'_, M>> {
+        match self {
+            VecInner::Dense(metrics) => metrics[id.hash as usize]
+                .get()
+                .map(MetricLockGuardRepr::Dense),
+            VecInner::Sparse(metrics) => metrics.find_metric(id).map(MetricLockGuardRepr::Sparse),
+        }
+    }
+
     fn get_metric_mut(&mut self, id: LabelIdInner<U>) -> &mut M {
         match self {
             VecInner::Dense(metrics) => {
@@ -274,14 +289,13 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
             _ => VecInner::Sparse(sparse::ShardedMap::new()),
         };
 
-        Self {
-            metrics,
-            metadata,
-            label_set,
-        }
+        Self { metrics, metadata, label_set }
     }
 
     /// Create a new dense metric vec. Useful if you need to force a dense allocation for high performance and you are ok with the memory usage.
+    ///
+    /// # Panics
+    /// Panics if the label set does not have a fixed cardinality.
     pub fn dense_with_label_set_and_metadata(label_set: L, metadata: M::Metadata) -> Self {
         let c = label_set
             .cardinality()
@@ -340,7 +354,22 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// Returns None if the label group is not contained within the label set.
     pub fn try_with_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
         let id = self.label_set.encode(label)?;
+        Some(self.label_id(id))
+    }
 
+    /// Get an identifier for the specific metric identified by this label group,
+    /// without adding new values to any dynamic label sets.
+    ///
+    /// Use this to read metrics without growing the label sets.
+    ///
+    /// # Errors
+    /// Returns None if the label group is not contained within the label set.
+    pub fn find_labels(&self, label: L::Group<'_>) -> Option<LabelId<L>> {
+        let id = self.label_set.find(label)?;
+        Some(self.label_id(id))
+    }
+
+    fn label_id(&self, id: L::Unique) -> LabelId<L> {
         let hash = match &self.metrics {
             VecInner::Dense(metrics) => {
                 let index = self.label_set.encode_dense(id).expect("If the label set is fixed in cardinality, it must return a value here in the range of `0..cardinality`");
@@ -350,10 +379,12 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
             VecInner::Sparse(metrics) => metrics.hasher.hash_one(id),
         };
 
-        Some(LabelId(LabelIdInner { id, hash }))
+        LabelId(LabelIdInner { id, hash })
     }
 
-    /// Get the individual metric at the given identifier.
+    /// Get the individual metric at the given identifier, creating it if it does not exist yet.
+    ///
+    /// See [`MetricLockGuard`] for the deadlock hazards of holding onto the returned guard.
     ///
     /// # Panics
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
@@ -361,12 +392,37 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
         MetricLockGuard(self.metrics.get_metric(id.0), &self.metadata)
     }
 
+    /// Get the individual metric at the given identifier, if it exists.
+    ///
+    /// Unlike [`MetricVec::get_metric`], this does not create the metric.
+    ///
+    /// See [`MetricLockGuard`] for the deadlock hazards of holding onto the returned guard.
+    ///
+    /// # Panics
+    /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
+    pub fn find_metric(&self, id: LabelId<L>) -> Option<MetricLockGuard<'_, M>> {
+        Some(MetricLockGuard(
+            self.metrics.find_metric(id.0)?,
+            &self.metadata,
+        ))
+    }
+
+    /// Returns true if metrics can be removed from this metric vec with [`MetricVec::remove_metric`].
+    ///
+    /// Only 'sparse' metric vecs support removal.
+    pub fn supports_removal(&self) -> bool {
+        matches!(self.metrics, VecInner::Sparse(_))
+    }
+
     /// Remove the metric with the given label, returning it's inner state.
     ///
     /// # Note
     /// 'dense' metrics cannot be removed, and will always return None.
+    /// Use [`MetricVec::supports_removal`] to tell the difference between this and the metric not existing.
     /// If you need to support removal with a fixed-cardinality label set, use
     /// one of the sparse constructors.
+    ///
+    /// Use [`MetricVec::find_labels`] to get the label ID, so that removing a metric does not add values to dynamic label sets.
     ///
     /// # Panics
     /// Can panic or cause strange behaviour if the label ID comes from a different metric family.
@@ -402,78 +458,218 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     }
 }
 
-/// Defines the encoding of a metric
-pub trait MetricEncoding<T: Encoding>: MetricType {
-    /// Write the type information for this metric into the encoder
-    fn write_type(name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
-    /// Sample this metric into the encoder
-    fn collect_into(
+/// A metric state that can be written into any [`Encoding`].
+pub trait MetricEncoding: MetricType {
+    /// The type of the metric family this metric belongs to
+    const KIND: MetricKind;
+
+    /// Write the current value of this metric
+    fn collect_into<E: Encoding>(
         &self,
         metadata: &Self::Metadata,
         labels: impl LabelGroup,
         name: impl MetricNameEncoder,
-        enc: &mut T,
-    ) -> Result<(), T::Err>;
+        enc: &mut E,
+    ) -> Result<(), E::Err>;
 }
 
-/// The encoding visitor for a single [`Metric`] or [`MetricVec`]
-pub trait MetricFamilyEncoding<T: Encoding> {
-    /// Collect these metric values into the given encoder with the given metric name
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err>;
+/// A metric family, such as a [`Metric`] or [`MetricVec`], that can be written into any [`Encoding`].
+pub trait MetricFamilyEncoding {
+    /// The family kind, when known. Used by derives to validate unit conventions.
+    const KIND: Option<MetricKind> = None;
+
+    /// Write the family header and all samples of this metric family, with an optional unit.
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        meta: FamilyMeta<'_>,
+        enc: &mut E,
+    ) -> Result<(), E::Err>;
 }
 
-impl<M: MetricFamilyEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Option<M> {
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
+impl<M: MetricFamilyEncoding> MetricFamilyEncoding for Option<M> {
+    const KIND: Option<MetricKind> = M::KIND;
+
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        meta: FamilyMeta<'_>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
         if let Some(this) = self {
-            this.collect_family_into(name, enc)?;
+            this.collect_family_into(name, meta, enc)?;
         }
         Ok(())
     }
 }
 
-impl<M: MetricEncoding<T>, T: Encoding> MetricFamilyEncoding<T> for Metric<M> {
-    /// Collect this metric value into the given encoder with the given metric name
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
-        M::write_type(&name, enc)?;
+impl<M: MetricEncoding> MetricFamilyEncoding for Metric<M> {
+    const KIND: Option<MetricKind> = Some(M::KIND);
+
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        meta: FamilyMeta<'_>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_family(&name, M::KIND, meta)?;
         self.metric
             .collect_into(&self.metadata, NoLabels, name, enc)
     }
 }
 
-impl<M: MetricEncoding<T>, L: LabelGroupSet, T: Encoding> MetricFamilyEncoding<T>
-    for MetricVec<M, L>
-{
-    fn collect_family_into(&self, name: impl MetricNameEncoder, enc: &mut T) -> Result<(), T::Err> {
-        M::write_type(&name, enc)?;
+impl<M: MetricEncoding, L: LabelGroupSet> MetricFamilyEncoding for MetricVec<M, L> {
+    const KIND: Option<MetricKind> = Some(M::KIND);
+
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        meta: FamilyMeta<'_>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_family(&name, M::KIND, meta)?;
+        self.try_for_each(|labels, metric| metric.collect_into(&self.metadata, labels, &name, enc))
+    }
+}
+
+impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
+    /// Visit every metric in this vec that has been created, along with its labels.
+    ///
+    /// Stops at, and returns, the first error returned by `f`.
+    ///
+    /// # Deadlocks
+    /// For sparse metric vecs, the lock for a group of metrics is held while they are visited.
+    /// Do not access this vec from inside `f`, including through readers such as `get`,
+    /// `sample`, `find_metric` or collection. A waiting writer can make even a recursive
+    /// read lock deadlock.
+    pub fn try_for_each<E>(&self, mut f: impl FnMut(L::Group<'_>, &M) -> Result<(), E>) -> Result<(), E> {
         match &self.metrics {
             VecInner::Dense(m) => {
                 for (index, value) in m.iter().enumerate() {
                     if let Some(value) = value.get() {
-                        value.collect_into(
-                            &self.metadata,
-                            self.label_set.decode_dense(index),
-                            &name,
-                            enc,
-                        )?;
+                        f(self.label_set.decode_dense(index), value)?;
                     }
                 }
             }
             VecInner::Sparse(m) => {
                 for shard in &m.shards {
                     for (k, v) in shard.read().iter() {
-                        v.collect_into(&self.metadata, self.label_set.decode(k), &name, enc)?;
+                        f(self.label_set.decode(k), v)?;
                     }
                 }
             }
         }
         Ok(())
     }
+
+    /// A view of this metric vec that encodes part of each metric as its own metric family.
+    ///
+    /// This is useful for metrics that are made of other metrics. For instance, a pair of counters
+    /// that track how many connections were opened and closed, from which the number of open connections
+    /// can be calculated:
+    ///
+    /// ```
+    /// use measured::label::StaticLabelSet;
+    /// use measured::metric::counter::CounterState;
+    /// use measured::metric::group::{Encoding, FamilyMeta};
+    /// use measured::metric::name::MetricName;
+    /// use measured::metric::{MetricFamilyEncoding, MetricType, MetricVec};
+    /// use measured::{FixedCardinalityLabel, MetricGroup};
+    /// use measured_prometheus_text::BufferedTextEncoder;
+    ///
+    /// #[derive(Default)]
+    /// struct ConnectionsState {
+    ///     opened: CounterState,
+    ///     closed: CounterState,
+    /// }
+    ///
+    /// impl MetricType for ConnectionsState {
+    ///     type Metadata = ();
+    /// }
+    ///
+    /// #[derive(FixedCardinalityLabel, Clone, Copy)]
+    /// #[label(singleton = "protocol")]
+    /// enum Protocol {
+    ///     Tcp,
+    ///     Http,
+    /// }
+    ///
+    /// #[derive(Default)]
+    /// struct Connections(MetricVec<ConnectionsState, StaticLabelSet<Protocol>>);
+    ///
+    /// impl<E: Encoding> MetricGroup<E> for Connections {
+    ///     fn collect_group_into(&self, enc: &mut E) -> Result<(), E::Err> {
+    ///         const CLOSED: &MetricName = MetricName::from_str("connections_closed_total");
+    ///         const OPENED: &MetricName = MetricName::from_str("connections_opened_total");
+    ///
+    ///         // These relaxed loads are independent, not a transactional snapshot.
+    ///         self.0
+    ///             .project(|m| &m.closed)
+    ///             .collect_family_into(CLOSED, FamilyMeta::new(), enc)?;
+    ///         self.0
+    ///             .project(|m| &m.opened)
+    ///             .collect_family_into(OPENED, FamilyMeta::new(), enc)
+    ///     }
+    /// }
+    ///
+    /// let connections = Connections::default();
+    /// let tcp = connections
+    ///     .0
+    ///     .get_metric(connections.0.with_labels(Protocol::Tcp));
+    /// tcp.opened.inc_by(3);
+    /// tcp.closed.inc();
+    /// drop(tcp);
+    ///
+    /// let mut enc = BufferedTextEncoder::new();
+    /// connections.collect_group_into(&mut enc).unwrap();
+    /// assert_eq!(
+    ///     enc.finish(),
+    ///     "# TYPE connections_closed_total counter\n\
+    ///      connections_closed_total{protocol=\"tcp\"} 1\n\
+    ///      \n\
+    ///      ## TYPE connections_opened_total counter\n\
+    ///      connections_opened_total{protocol=\"tcp\"} 3\n",
+    /// );
+    /// ```
+    pub fn project<N, F>(&self, project: F) -> Projection<'_, M, L, F>
+    where
+        F: Fn(&M) -> &N,
+    {
+        Projection { vec: self, project }
+    }
+}
+
+/// A view of a [`MetricVec`] that encodes part of each metric. See [`MetricVec::project`].
+pub struct Projection<'a, M: MetricType, L: LabelGroupSet, F> {
+    vec: &'a MetricVec<M, L>,
+    project: F,
+}
+
+impl<M, L, N, F> MetricFamilyEncoding for Projection<'_, M, L, F>
+where
+    M: MetricType,
+    L: LabelGroupSet,
+    N: MetricEncoding<Metadata = M::Metadata>,
+    F: Fn(&M) -> &N,
+{
+    const KIND: Option<MetricKind> = Some(N::KIND);
+
+    fn collect_family_into<E: Encoding>(
+        &self,
+        name: impl MetricNameEncoder,
+        meta: FamilyMeta<'_>,
+        enc: &mut E,
+    ) -> Result<(), E::Err> {
+        enc.write_family(&name, N::KIND, meta)?;
+        self.vec
+            .try_for_each(|labels, metric| (self.project)(metric).collect_into(&self.vec.metadata, labels, &name, enc))
+    }
 }
 
 pub struct LabelId<L: LabelGroupSet>(LabelIdInner<L::Unique>);
 
 #[derive(Clone, Copy)]
-pub struct LabelIdInner<U> {
+pub(crate) struct LabelIdInner<U> {
     id: U,
     hash: u64,
 }
@@ -516,52 +712,38 @@ mod tests {
     }
 
     #[test]
-    fn dense_cardinality() {
-        let errors = CounterVec::<ErrorsSet>::dense();
-        assert_eq!(errors.get_cardinality(), (0, Some(3)));
-
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
-        assert_eq!(errors.get_cardinality(), (2, Some(3)));
-    }
-
-    #[test]
-    fn sparse_cardinality() {
-        let errors = CounterVec::<ErrorsSet>::sparse();
-        assert_eq!(errors.get_cardinality(), (0, Some(3)));
-
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
-        assert_eq!(errors.get_cardinality(), (2, Some(3)));
+    fn cardinality_counts_series_not_updates() {
+        for errors in [CounterVec::<ErrorsSet>::dense(), CounterVec::sparse()] {
+            assert_eq!(errors.get_cardinality(), (0, Some(3)));
+            for _ in 0..3 {
+                errors.inc(Error { kind: ErrorKind::Internal });
+            }
+            assert_eq!(errors.get_cardinality(), (1, Some(3)));
+            errors.inc(Error { kind: ErrorKind::User });
+            assert_eq!(errors.get_cardinality(), (2, Some(3)));
+        }
     }
 
     #[test]
     fn remove() {
         let errors = CounterVec::<ErrorsSet>::sparse();
 
-        errors.inc(Error {
-            kind: ErrorKind::Internal,
-        });
-        errors.inc(Error {
-            kind: ErrorKind::User,
-        });
+        errors.inc_by(Error { kind: ErrorKind::Internal }, 3);
+        errors.inc(Error { kind: ErrorKind::User });
         assert_eq!(errors.get_cardinality(), (2, Some(3)));
         let user_errors = errors
-            .remove_metric(errors.with_labels(Error {
-                kind: ErrorKind::User,
-            }))
+            .remove_metric(errors.with_labels(Error { kind: ErrorKind::User }))
             .unwrap();
 
         assert_eq!(errors.get_cardinality(), (1, Some(3)));
-        assert_eq!(user_errors.count.into_inner(), 1)
+        assert_eq!(user_errors.get(), 1);
+        assert_eq!(errors.get(Error { kind: ErrorKind::Internal }), 3);
+        assert_eq!(errors.get(Error { kind: ErrorKind::User }), 0);
+        assert!(
+            errors
+                .remove_metric(errors.with_labels(Error { kind: ErrorKind::User }))
+                .is_none()
+        );
     }
 
     #[cfg(feature = "lasso")]
@@ -575,36 +757,39 @@ mod tests {
 
     #[cfg(feature = "lasso")]
     #[test]
-    fn dynamic_labels() {
-        use fake::{Fake, faker::name::raw::Name, locales::EN};
-
+    fn dynamic_series_keep_independent_values_and_can_be_removed() {
         use crate::GaugeVec;
 
         let set = GaugeVec::with_label_set(ErrorsSet2::default());
 
-        let names = (0..64).map(|_| Name(EN).fake()).collect::<Vec<String>>();
+        let names = ["alice", "bob", "carol"];
 
         let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
 
-        for kind in error_kinds {
-            for name in &names {
+        for (index, kind) in error_kinds.into_iter().enumerate() {
+            for name in names {
                 let error = Error2 { kind, user: name };
-                set.inc(error);
+                set.inc_by(error, index as i64 + 1);
             }
         }
-        for kind in error_kinds {
-            for name in &names {
+        assert_eq!(set.get_cardinality(), (9, None));
+        for (index, kind) in error_kinds.into_iter().enumerate() {
+            for name in names {
                 let error = Error2 { kind, user: name };
                 set.inc_by(error, 2);
+                assert_eq!(set.get(error), index as i64 + 3);
             }
         }
 
-        for kind in error_kinds {
-            for name in &names {
+        for (index, kind) in error_kinds.into_iter().enumerate() {
+            for name in names {
                 let error = Error2 { kind, user: name };
-                let label = set.with_labels(error);
-                let _ = set.remove_metric(label);
+                let label = set.find_labels(error).unwrap();
+                assert_eq!(set.remove_metric(label).unwrap().get(), index as i64 + 3);
+                assert!(set.find_metric(label).is_none());
+                assert_eq!(set.get(error), 0);
             }
         }
+        assert_eq!(set.get_cardinality(), (0, None));
     }
 }
