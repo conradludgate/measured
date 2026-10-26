@@ -56,3 +56,9 @@ cargo install cargo-hack --version 0.6.45 --locked
 cargo install cargo-llvm-cov --version 0.9.1 --locked
 rustup component add llvm-tools-preview
 ```
+
+## Dependency updates
+
+The workspace lockfile temporarily retains bytes 1.10.1 while an upstream encoding performance fix
+settles. The manifests intentionally allow bytes 1.x, so this lockfile choice applies to workspace
+builds rather than downstream dependency resolution. Recheck encoding benchmarks before updating it.
