@@ -261,3 +261,58 @@ fn exemplars_and_created() {
     histogram.observe(0.5);
     assert_eq!(histogram.sample().count(), 1);
 }
+
+#[test]
+fn try_for_each() {
+    for vec in [CounterVec::<KindSet>::dense(), CounterVec::sparse()] {
+        vec.inc_by(KindLabels { kind: Kind::B }, 2);
+
+        let mut seen = vec![];
+        vec.try_for_each(|labels, metric| {
+            seen.push((labels.kind as u8, metric.get()));
+            Ok::<_, ()>(())
+        })
+        .unwrap();
+        // only metrics that have been created are visited
+        assert_eq!(seen, [(Kind::B as u8, 2)]);
+
+        vec.inc(KindLabels { kind: Kind::A });
+        let mut visited = 0;
+        let res = vec.try_for_each(|_, _| {
+            visited += 1;
+            Err("stop")
+        });
+        assert_eq!(res, Err("stop"));
+        assert_eq!(visited, 1);
+    }
+}
+
+#[test]
+fn gauge_histogram_remove_unobserved() {
+    let vec = measured::GaugeHistogramVec::with_label_set_and_metadata(
+        KindSet::new(),
+        measured::metric::histogram::Thresholds::<1>::with_buckets([1.0]),
+    );
+    vec.remove(KindLabels { kind: Kind::A }, 0.5);
+    assert_eq!(vec.sample(KindLabels { kind: Kind::A }).buckets, [0]);
+}
+
+#[cfg(feature = "lasso")]
+#[test]
+fn reads_do_not_grow_dynamic_label_sets() {
+    #[derive(measured::LabelGroup)]
+    #[label(set = NameLabelSet)]
+    struct NameLabels<'a> {
+        #[label(dynamic_with = measured::lasso::ThreadedRodeo, default)]
+        name: &'a str,
+    }
+
+    let vec = measured::CounterVec::<NameLabelSet>::new();
+    assert_eq!(vec.get(NameLabels { name: "a" }), 0);
+    assert!(vec.find_labels(NameLabels { name: "b" }).is_none());
+
+    let id = vec.with_labels(NameLabels { name: "c" });
+    vec.get_metric(id).inc();
+    assert_eq!(vec.get(NameLabels { name: "c" }), 1);
+    assert!(vec.find_labels(NameLabels { name: "a" }).is_none());
+}

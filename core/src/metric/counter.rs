@@ -80,9 +80,10 @@ impl<L: LabelGroupSet> CounterVec<L> {
 
     /// Get the counter value for the label group. Returns 0 if the counter has not been used yet.
     ///
-    /// This does not create a new counter, but may add values to dynamic label sets.
+    /// This does not create a new counter for the label group, or add its values to dynamic label sets.
     pub fn get(&self, label: L::Group<'_>) -> u64 {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(0, |m| m.get())
     }
 }
@@ -215,9 +216,10 @@ impl<L: LabelGroupSet> FloatCounterVec<L> {
 
     /// Get the counter value for the label group. Returns 0 if the counter has not been used yet.
     ///
-    /// This does not create a new counter, but may add values to dynamic label sets.
+    /// This does not create a new counter for the label group, or add its values to dynamic label sets.
     pub fn get(&self, label: L::Group<'_>) -> f64 {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(0.0, |m| m.get())
     }
 }

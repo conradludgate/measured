@@ -179,6 +179,9 @@ pub trait FixedCardinalitySet: LabelSet {
 /// 1. Compatibility with your existing setup
 /// 2. Not exporting to prometheus
 /// 3. You know there wont be many labels but you just don't know what they are
+///
+/// Implementations that intern values must override [`LabelSet::find`] to perform a lookup
+/// without inserting. Its default delegates to `encode` and does not provide that guarantee.
 pub trait DynamicLabelSet: LabelSet {
     #[doc(hidden)]
     fn __private_check_dynamic() {}
@@ -187,9 +190,9 @@ pub trait DynamicLabelSet: LabelSet {
 /// `LabelSet` defines a way to take a label value, eg a `&str`, and encode it into a compressed integer for more efficient encoding.
 ///
 /// How this encoding is done is up to the application, but several ways are provided.
-/// * [`lasso::RodeoReader`] is an immutable label set that stores a `&str` into a larger `String` allocation. It has a `HashMap` to quickly find the index of the string
-/// * [`lasso::ThreadedRodeo`] is a mutable label set that works similarly to the `RodeoReader`.
-/// * [`indexmap::IndexSet`] is an immutable `HashSet` that stores an associated index position of the inserted elements.
+/// * [`lasso::RodeoReader`](https://docs.rs/lasso/latest/lasso/struct.RodeoReader.html) is an immutable label set that stores a `&str` into a larger `String` allocation. It has a `HashMap` to quickly find the index of the string
+/// * [`lasso::ThreadedRodeo`](https://docs.rs/lasso/latest/lasso/struct.ThreadedRodeo.html) is a mutable label set that works similarly to the `RodeoReader`.
+/// * [`indexmap::IndexSet`](https://docs.rs/indexmap/latest/indexmap/struct.IndexSet.html) is an immutable `HashSet` that stores an associated index position of the inserted elements.
 pub trait LabelSet {
     /// The label value this set can encode
     type Value<'a>: LabelValue;
@@ -199,6 +202,14 @@ pub trait LabelSet {
 
     /// Encode the label value into an integer. Returns `None` if the value is not in the set
     fn encode(&self, value: Self::Value<'_>) -> Option<usize>;
+
+    /// Like [`encode`](Self::encode), but never adds the value to a dynamic label set.
+    /// Returns `None` if the value is not in the set yet.
+    ///
+    /// The default implementation calls [`encode`](Self::encode), so label sets that can insert values should override it.
+    fn find(&self, value: Self::Value<'_>) -> Option<usize> {
+        self.encode(value)
+    }
 
     /// Decode the integer into the associated label value.
     ///

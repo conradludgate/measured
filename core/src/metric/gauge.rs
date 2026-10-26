@@ -202,12 +202,10 @@ impl<L: LabelGroupSet> GaugeVec<L> {
 
     /// Get the gauge value for the label group. Returns 0 if the gauge has not been used yet.
     ///
-    /// This does not create a new gauge for the label group.
-    ///
-    /// # Panics
-    /// Panics if the label group is not contained within the label set.
+    /// This does not create a new gauge for the label group, or add its values to dynamic label sets.
     pub fn get(&self, label: L::Group<'_>) -> i64 {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(0, |m| m.get())
     }
 }
@@ -409,12 +407,10 @@ impl<L: LabelGroupSet> FloatGaugeVec<L> {
 
     /// Get the gauge value for the label group. Returns 0 if the gauge has not been used yet.
     ///
-    /// This does not create a new gauge for the label group.
-    ///
-    /// # Panics
-    /// Panics if the label group is not contained within the label set.
+    /// This does not create a new gauge for the label group, or add its values to dynamic label sets.
     pub fn get(&self, label: L::Group<'_>) -> f64 {
-        self.find_metric(self.with_labels(label))
+        self.find_labels(label)
+            .and_then(|id| self.find_metric(id))
             .map_or(0.0, |m| m.get())
     }
 }

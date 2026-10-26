@@ -177,6 +177,10 @@ impl ToTokens for Set<'_> {
             dynamics,
             cardinalities: &cardinalities,
         };
+        let find_fn = SetEncode {
+            method: format_ident!("find"),
+            ..encode_fn
+        };
 
         let decode_fn = SetDecode {
             group: self.0,
@@ -201,6 +205,7 @@ impl ToTokens for Set<'_> {
 
                 #encode_fn
 
+                #find_fn
 
                 #decode_fn
             }

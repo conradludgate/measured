@@ -50,6 +50,15 @@ pub trait LabelGroupSet {
 
     /// Encode the label groups into the unique compressed representation
     fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique>;
+
+    /// Like [`encode`](Self::encode), but never adds new values to a dynamic label set.
+    /// Returns `None` if any value is not in its label set yet.
+    ///
+    /// This is used to read metrics without growing the label sets.
+    /// The default implementation calls [`encode`](Self::encode), so label sets that can insert values should override it.
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        self.encode(value)
+    }
     /// Decodes the compressed representation into the label values
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_>;
 }
@@ -113,6 +122,10 @@ impl<A: LabelGroupSet, B: LabelGroupSet> LabelGroupSet for ComposedGroup<A, B> {
         ))
     }
 
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        Some(ComposedGroup(self.0.find(value.0)?, self.1.find(value.1)?))
+    }
+
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
         ComposedGroup(self.0.decode(&value.0), self.1.decode(&value.1))
     }
@@ -152,6 +165,10 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for &'static T {
         T::encode(self, value)
     }
 
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        T::find(self, value)
+    }
+
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {
         T::decode(self, value)
     }
@@ -176,6 +193,10 @@ impl<T: LabelGroupSet + ?Sized> LabelGroupSet for Arc<T> {
 
     fn encode(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
         T::encode(self, value)
+    }
+
+    fn find(&self, value: Self::Group<'_>) -> Option<Self::Unique> {
+        T::find(self, value)
     }
 
     fn decode(&self, value: &Self::Unique) -> Self::Group<'_> {

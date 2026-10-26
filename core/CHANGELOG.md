@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All histogram threshold constructors reject NaN, explicit +Inf, overflow into +Inf, and non-increasing bounds.
 - The text encoder moved from `measured::text` to `measured-prometheus-text`. `TextEncoder::new` becomes `from_writer`; the writer is private with accessors. `BufferedTextEncoder` is now an alias with `io::Error` instead of `Infallible`. `MetricValue` is removed, `MetricType` is non-exhaustive, and `write_type` takes names by value. The Axum example uses conventional metric suffixes and supplies Content-Type.
 - Encoding is organized around family headers and typed samples. Encoder and metric implementations must migrate to the new traits. State count fields, HistogramStateInner, AtomicF64, free write functions, and protobuf MetricType are private or removed; use the new accessors. Process CPU seconds are a fractional counter. Tokio thread, park/unpark and worker queue labels use their corrected names.
+- Metric readers return zero or an empty sample for labels outside the set. LabelIdInner is private. Dynamic sets should override find for non-inserting reads.
 
 ## [0.0.25](https://github.com/conradludgate/measured/compare/measured-v0.0.24...measured-v0.0.25) - 2026-04-14
 
