@@ -37,3 +37,5 @@ RUSTFLAGS='--cfg tokio_unstable' RUSTDOCFLAGS='-D warnings' cargo hack test --wo
 The Axum example is a binary without a library doctest target, so this command excludes it.
 
 The diagrams in this directory illustrate storage layouts; their `.d2` files are the editable sources.
+
+For the CI jobs, required-check setup, and scheduled coverage runs, see [Continuous integration](ci.md).
