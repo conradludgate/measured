@@ -261,5 +261,13 @@ mod tests {
         assert_eq!(composed.encode_dense(ComposedGroup(1, 1)), Some(4));
         assert_eq!(composed.decode_dense(4), post_internal);
         assert_eq!(composed.decode(&ComposedGroup(1, 1)), post_internal);
+        for first in 0..2 {
+            for second in 0..3 {
+                let id = ComposedGroup(first, second);
+                let dense = composed.encode_dense(id).unwrap();
+                assert_eq!(dense, first * 3 + second);
+                assert_eq!(composed.encode(composed.decode_dense(dense)), Some(id));
+            }
+        }
     }
 }

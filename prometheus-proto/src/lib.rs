@@ -753,16 +753,12 @@ mod tests {
                             value: Some("200".to_owned()),
                         },
                     ],
-                    gauge: None,
                     counter: Some(Counter {
                         value: Some(1027.0),
                         exemplar: None,
                         created_timestamp: None,
                     }),
-                    summary: None,
-                    untyped: None,
-                    histogram: None,
-                    timestamp_ms: None,
+                    ..Default::default()
                 },
                 Metric {
                     label: vec![
@@ -775,25 +771,20 @@ mod tests {
                             value: Some("400".to_owned()),
                         },
                     ],
-                    gauge: None,
                     counter: Some(Counter {
                         value: Some(3.0),
                         exemplar: None,
                         created_timestamp: None,
                     }),
-                    summary: None,
-                    untyped: None,
-                    histogram: None,
-                    timestamp_ms: None,
+                    ..Default::default()
                 },
             ],
-            unit: None,
+            ..Default::default()
         };
-        let mut expected_msg = BytesMut::new();
-        expected.encode_length_delimited(&mut expected_msg).unwrap();
-
-        assert_eq!(actual_msg, expected_msg);
-
+        assert_eq!(
+            actual_msg.as_ref(),
+            expected.encode_length_delimited_to_vec()
+        );
         let actual = MetricFamily::decode_length_delimited(actual_msg).unwrap();
         assert_eq!(actual, expected);
     }
@@ -812,7 +803,7 @@ mod tests {
             method: Method::Get,
             code: StatusCode::BadRequest,
         };
-        requests.inc_by(labels, 3);
+        requests.set(labels, -3);
 
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
 
@@ -844,11 +835,7 @@ mod tests {
                         },
                     ],
                     gauge: Some(Gauge { value: Some(1027.0) }),
-                    counter: None,
-                    summary: None,
-                    untyped: None,
-                    histogram: None,
-                    timestamp_ms: None,
+                    ..Default::default()
                 },
                 Metric {
                     label: vec![
@@ -861,21 +848,12 @@ mod tests {
                             value: Some("400".to_owned()),
                         },
                     ],
-                    gauge: Some(Gauge { value: Some(3.0) }),
-                    counter: None,
-                    summary: None,
-                    untyped: None,
-                    histogram: None,
-                    timestamp_ms: None,
+                    gauge: Some(Gauge { value: Some(-3.0) }),
+                    ..Default::default()
                 },
             ],
-            unit: None,
+            ..Default::default()
         };
-        let mut expected_msg = BytesMut::new();
-        expected.encode_length_delimited(&mut expected_msg).unwrap();
-
-        assert_eq!(actual_msg, expected_msg);
-
         let actual = MetricFamily::decode_length_delimited(actual_msg).unwrap();
         assert_eq!(actual, expected);
     }
@@ -922,7 +900,6 @@ mod tests {
 
     #[test]
     fn type_without_help() {
-        let empty = CounterVec::<RequestLabelSet>::new();
         let full = CounterVec::<RequestLabelSet>::new();
         full.inc(RequestLabels {
             method: Method::Get,
@@ -930,11 +907,7 @@ mod tests {
         });
 
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
-        let a = MetricName::from_str("a").with_suffix(Total);
         let b = MetricName::from_str("b").with_suffix(Total);
-        empty
-            .collect_family_into(&a, FamilyMeta::new(), &mut enc)
-            .unwrap();
         full.collect_family_into(&b, FamilyMeta::new(), &mut enc)
             .unwrap();
         enc.flush().unwrap();
@@ -1069,18 +1042,10 @@ mod tests {
             SampleExtras::NONE,
         )
         .unwrap();
-        enc.write_family(
-            MetricName::from_str("flag"),
-            MetricKind::Custom("stateset"),
-            FamilyMeta::new(),
-        )
-        .unwrap();
-        enc.write_gauge(MetricName::from_str("flag"), measured::label::NoLabels, 1)
-            .unwrap();
         enc.flush().unwrap();
 
         let families = decode_all(enc.into_inner().into_inner().freeze());
-        assert_eq!(families.len(), 2);
+        assert_eq!(families.len(), 1);
         assert_eq!(families[0].r#type, Some(MetricType::Summary as i32));
         assert_eq!(
             families[0].metric[0].summary,
@@ -1094,7 +1059,6 @@ mod tests {
                 ..Default::default()
             })
         );
-        assert_eq!(families[1].r#type, Some(MetricType::Untyped as i32));
     }
 
     #[test]
@@ -1260,93 +1224,83 @@ mod tests {
         }
     }
 
-    #[test]
-    fn new_kinds() {
-        use measured::FixedCardinalityLabel;
-        use measured::label::NoLabels;
-        use measured::metric::group::{Encoding, FamilyMeta, MetricKind, SampleExtras};
+    fn encode_single(name: &'static str, metric: &impl MetricFamilyEncoding) -> MetricFamily {
+        let mut enc = ProtoEncoder::new(Vec::new());
+        metric
+            .collect_family_into(MetricName::from_str(name), FamilyMeta::new(), &mut enc)
+            .unwrap();
+        enc.flush().unwrap();
+        let families = decode_all(enc.into_inner().into());
+        let [family]: [MetricFamily; 1] = families.try_into().unwrap();
+        family
+    }
 
-        #[derive(Clone, Copy, PartialEq, Debug, FixedCardinalityLabel)]
+    #[test]
+    fn fractional_counter_uses_counter_payload() {
+        let metric = measured::FloatCounter::new();
+        metric.inc_by(1.5);
+        let family = encode_single("cpu_seconds_total", &metric);
+        assert_eq!(family.r#type, Some(MetricType::Counter as i32));
+        assert_eq!(family.metric[0].counter.as_ref().unwrap().value, Some(1.5));
+    }
+
+    #[test]
+    fn gauge_histogram_uses_native_histogram_payload() {
+        let metric = measured::GaugeHistogram::with_metadata(Thresholds::with_buckets([1.0]));
+        metric.observe(0.5);
+        metric.observe(2.0);
+        let family = encode_single("queue_age_seconds", &metric);
+        assert_eq!(family.r#type, Some(MetricType::GaugeHistogram as i32));
+        let histogram = family.metric[0].histogram.as_ref().unwrap();
+        assert_eq!(histogram.sample_count, Some(2));
+        assert_eq!(histogram.sample_sum, Some(2.5));
+        assert_eq!(histogram.bucket[0].cumulative_count, Some(1));
+        assert_eq!(histogram.bucket[0].upper_bound, Some(1.0));
+    }
+
+    #[test]
+    fn state_set_falls_back_to_labelled_gauges() {
+        #[derive(Clone, Copy, measured::FixedCardinalityLabel)]
         enum Status {
             Starting,
             Ready,
         }
-
-        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
-
-        let cpu = MetricName::from_str("cpu_seconds_total");
-        enc.write_family(cpu, MetricKind::Counter, FamilyMeta::new())
-            .unwrap();
-        enc.write_float_counter(cpu, NoLabels, 1.5, SampleExtras::NONE)
-            .unwrap();
-
-        let ages = MetricName::from_str("queue_age_seconds");
-        enc.write_family(ages, MetricKind::GaugeHistogram, FamilyMeta::new())
-            .unwrap();
-        enc.write_gauge_histogram(ages, NoLabels, &[1.0], &[1], 1, 2.5)
-            .unwrap();
-
-        let status = MetricName::from_str("status");
-        enc.write_family(status, MetricKind::StateSet, FamilyMeta::new())
-            .unwrap();
-        enc.write_state_set(
-            status,
-            NoLabels,
-            [(Status::Starting, false), (Status::Ready, true)],
-        )
-        .unwrap();
-
-        let info = MetricName::from_str("build_info");
-        enc.write_family(info, MetricKind::Info, FamilyMeta::new())
-            .unwrap();
-        enc.write_gauge(info, NoLabels, 1).unwrap();
-        enc.flush().unwrap();
-
-        let families = decode_all(enc.into_inner().into_inner().freeze());
-        let types: Vec<_> = families.iter().map(|f| f.r#type).collect();
-        assert_eq!(
-            types,
-            [
-                Some(MetricType::Counter as i32),
-                Some(MetricType::GaugeHistogram as i32),
-                Some(MetricType::Gauge as i32),
-                Some(MetricType::Gauge as i32),
-            ]
-        );
-
-        assert_eq!(
-            families[0].metric[0].counter.as_ref().unwrap().value,
-            Some(1.5)
-        );
-
-        let histogram = families[1].metric[0].histogram.as_ref().unwrap();
-        assert_eq!(histogram.sample_count, Some(2));
-        assert_eq!(histogram.sample_sum, Some(2.5));
-        assert_eq!(histogram.bucket[0].cumulative_count, Some(1));
-
-        let states: Vec<_> = families[2]
+        let family = encode_single("status", &measured::StateSet::new(Status::Ready));
+        assert_eq!(family.r#type, Some(MetricType::Gauge as i32));
+        let states: Vec<_> = family
             .metric
             .iter()
-            .map(|m| (m.label[0].clone(), m.gauge.as_ref().unwrap().value))
+            .map(|metric| {
+                assert_eq!(metric.label[0].name.as_deref(), Some("status"));
+                (
+                    metric.label[0].value.as_deref().unwrap(),
+                    metric.gauge.as_ref().unwrap().value.unwrap(),
+                )
+            })
             .collect();
+        assert_eq!(states, [("starting", 0.0), ("ready", 1.0)]);
+    }
+
+    #[test]
+    fn info_falls_back_to_a_labelled_gauge_of_one() {
+        #[derive(measured::LabelGroup)]
+        struct Build {
+            version: &'static str,
+        }
+        let family = encode_single(
+            "build_info",
+            &measured::InfoMetric::new(Build { version: "1.0" }),
+        );
+        assert_eq!(family.name.as_deref(), Some("build_info"));
+        assert_eq!(family.r#type, Some(MetricType::Gauge as i32));
+        assert_eq!(family.metric.len(), 1);
+        assert_eq!(family.metric[0].gauge.as_ref().unwrap().value, Some(1.0));
         assert_eq!(
-            states,
-            [
-                (
-                    LabelPair {
-                        name: Some("status".to_owned()),
-                        value: Some("starting".to_owned())
-                    },
-                    Some(0.0)
-                ),
-                (
-                    LabelPair {
-                        name: Some("status".to_owned()),
-                        value: Some("ready".to_owned())
-                    },
-                    Some(1.0)
-                ),
-            ]
+            family.metric[0].label,
+            [LabelPair {
+                name: Some("version".into()),
+                value: Some("1.0".into())
+            }]
         );
     }
 

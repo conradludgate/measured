@@ -21,10 +21,10 @@ libc = { version = "^0.2" }
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "^0.16", default-features = false }
 
+[dev-dependencies]
+measured-prometheus-text = { path = "../prometheus-text" }
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 targets = ["x86_64-unknown-linux-gnu"]
-
-[dev-dependencies]
-measured-prometheus-text = { path = "../prometheus-text" }

@@ -15,9 +15,6 @@ pub use value::{
 
 #[cfg(all(test, feature = "lasso"))]
 mod tests {
-    use fake::Fake;
-    use fake::faker::name::raw::Name;
-    use fake::locales::EN;
     use lasso::{Rodeo, RodeoReader, ThreadedRodeo};
 
     use super::LabelGroupSet;
@@ -84,19 +81,19 @@ mod tests {
         assert_eq!(set.cardinality(), None);
 
         let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
+        let mut ids = std::collections::HashSet::new();
         for route in set.route.strings() {
             for kind in error_kinds {
-                for _ in 0..8 {
-                    let error = Error2 {
-                        kind,
-                        route,
-                        user: &Name(EN).fake::<String>(),
-                    };
+                for user in ["alice", "bob", "carol"] {
+                    let error = Error2 { kind, route, user };
                     let index: (usize, usize) = set.encode(error).unwrap();
+                    assert!(ids.insert(index), "distinct labels must have distinct IDs");
+                    assert_eq!(set.encode(error), Some(index));
                     let error2 = set.decode(&index);
                     assert_eq!(error, error2);
                 }
             }
         }
+        assert_eq!(ids.len(), 36);
     }
 }

@@ -217,28 +217,3 @@ pub trait LabelSet {
     /// It would most likely panic.
     fn decode(&self, value: usize) -> Self::Value<'_>;
 }
-
-#[cfg(test)]
-mod tests {
-    #![allow(dead_code)]
-
-    use measured_derive::MetricGroup;
-
-    use super::StaticLabelSet;
-    use crate::CounterVec;
-
-    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
-    #[label(crate = crate)]
-    #[label(singleton = "kind")]
-    enum ErrorKind {
-        User,
-        Internal,
-        Network,
-    }
-
-    #[derive(MetricGroup, Default)]
-    #[metric(crate = crate)]
-    struct Metrics {
-        errors: CounterVec<StaticLabelSet<ErrorKind>>,
-    }
-}

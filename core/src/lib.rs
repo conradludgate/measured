@@ -273,6 +273,32 @@ pub use measured_derive::LabelGroup;
 /// * `label_set = expr` - The [`LabelGroupSet`](label::LabelGroupSet) to initialise a [`MetricVec`] with.
 /// * `init = expr` - The expression needed to initialise the metric, if it cannot be defaulted.
 ///
+/// `_total` is accepted only for counter families. Info and state set metrics cannot have units.
+/// Type aliases and generic fields are checked using [`MetricFamilyEncoding::KIND`](metric::MetricFamilyEncoding::KIND).
+/// Custom families using counter unit suffixes must supply that associated constant.
+///
+/// ```compile_fail,E0080
+/// use measured::{Gauge, MetricGroup};
+/// #[derive(Default, MetricGroup)]
+/// struct Metrics {
+///     #[metric(unit = "seconds")]
+///     wait_seconds_total: Gauge,
+/// }
+/// let mut encoder = measured_prometheus_text::BufferedOpenMetricsEncoder::new();
+/// Metrics::default().collect_group_into(&mut encoder).unwrap();
+/// ```
+///
+/// ```compile_fail,E0080
+/// use measured::{InfoMetric, MetricGroup};
+/// #[derive(Default, MetricGroup)]
+/// struct Metrics {
+///     #[metric(unit = "seconds")]
+///     build_seconds: InfoMetric<measured::label::NoLabels>,
+/// }
+/// let mut encoder = measured_prometheus_text::BufferedOpenMetricsEncoder::new();
+/// Metrics::default().collect_group_into(&mut encoder).unwrap();
+/// ```
+///
 /// Literal field doc comments become the metric family's help text, with surrounding whitespace
 /// trimmed. Non-literal doc attributes, such as `#[doc = include_str!(...)]`, are ignored.
 /// Family help and units are distinct from `metadata`, which configures the metric's state,
@@ -300,32 +326,6 @@ pub use measured_derive::LabelGroup;
 /// let metrics = Metrics::new();
 /// metrics.request_duration_seconds.observe(0.05);
 /// assert_eq!(metrics.request_duration_seconds.sample().count(), 1);
-/// ```
-///
-/// `_total` is accepted only for counter families. Info and state set metrics cannot have units.
-/// Type aliases and generic fields are checked using [`MetricFamilyEncoding::KIND`](metric::MetricFamilyEncoding::KIND).
-/// Custom families using counter unit suffixes must supply that associated constant.
-///
-/// ```compile_fail,E0080
-/// use measured::{Gauge, MetricGroup};
-/// #[derive(Default, MetricGroup)]
-/// struct Metrics {
-///     #[metric(unit = "seconds")]
-///     wait_seconds_total: Gauge,
-/// }
-/// let mut encoder = measured_prometheus_text::BufferedOpenMetricsEncoder::new();
-/// Metrics::default().collect_group_into(&mut encoder).unwrap();
-/// ```
-///
-/// ```compile_fail,E0080
-/// use measured::{InfoMetric, MetricGroup};
-/// #[derive(Default, MetricGroup)]
-/// struct Metrics {
-///     #[metric(unit = "seconds")]
-///     build_seconds: InfoMetric<measured::label::NoLabels>,
-/// }
-/// let mut encoder = measured_prometheus_text::BufferedOpenMetricsEncoder::new();
-/// Metrics::default().collect_group_into(&mut encoder).unwrap();
 /// ```
 pub use measured_derive::MetricGroup;
 pub use metric::group::MetricGroup;

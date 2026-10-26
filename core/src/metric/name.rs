@@ -309,7 +309,7 @@ mod tests {
             MetricName::try_from_str("1a"),
             Err(InvalidMetricName::StartsWithNumber)
         ));
-        for invalid in ["a-b", "-a", "a b", "a.b"] {
+        for invalid in ["a-b", "-a", "a b", "a.b", "café", "a\nb"] {
             assert!(
                 matches!(
                     MetricName::try_from_str(invalid),

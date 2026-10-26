@@ -121,13 +121,23 @@ fn all_metric_reads_leave_dynamic_labels_and_series_unchanged() {
             assert_eq!(missing, Default::default());
             assert_eq!(labels.len(), 0);
             assert_eq!(metric.get_cardinality().0, 0);
+            assert!(
+                metric.find_labels(Name { name: "missing" }).is_none(),
+                "{}: missing labels",
+                stringify!($metric)
+            );
 
             // A label can exist in a shared interner without having a metric.
             labels.get_or_intern("known");
             assert_eq!(metric.$read(Name { name: "known" }), Default::default());
             assert_eq!(metric.get_cardinality().0, 0);
             metric.$write(Name { name: "known" }, $value);
-            assert_eq!(metric.$read(Name { name: "known" }), $expected);
+            assert_eq!(
+                metric.$read(Name { name: "known" }),
+                $expected,
+                "{}: present series",
+                stringify!($metric)
+            );
             assert_eq!(labels.len(), 1);
             assert_eq!(metric.get_cardinality().0, 1);
 
@@ -251,4 +261,43 @@ fn composed_shared_label_sets_find_without_interning() {
     let invalid_worker = ComposedGroup(Name { name: "present" }, Worker { worker: 4 });
     assert_eq!(metric.get(invalid_worker), 0);
     assert_eq!(interner.len(), 1);
+}
+
+#[test]
+fn static_reference_forwards_find_without_calling_encode() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use measured::label::{LabelGroupSet, NoLabels};
+    struct Labels {
+        encodes: AtomicUsize,
+    }
+    impl LabelGroupSet for Labels {
+        type Group<'a> = NoLabels;
+        type Unique = usize;
+        fn cardinality(&self) -> Option<usize> {
+            None
+        }
+        fn encode_dense(&self, _: usize) -> Option<usize> {
+            None
+        }
+        fn decode_dense(&self, _: usize) -> NoLabels {
+            unreachable!()
+        }
+        fn encode(&self, _: NoLabels) -> Option<usize> {
+            self.encodes.fetch_add(1, Ordering::Relaxed);
+            Some(7)
+        }
+        fn find(&self, _: NoLabels) -> Option<usize> {
+            Some(7)
+        }
+        fn decode(&self, _: &usize) -> NoLabels {
+            NoLabels
+        }
+    }
+    static LABELS: Labels = Labels { encodes: AtomicUsize::new(0) };
+    let counters = measured::CounterVec::with_label_set(&LABELS);
+    counters.inc_by(NoLabels, 4);
+    assert_eq!(LABELS.encodes.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.get(NoLabels), 4);
+    assert_eq!(LABELS.encodes.load(Ordering::Relaxed), 1);
 }

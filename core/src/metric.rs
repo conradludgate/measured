@@ -712,30 +712,23 @@ mod tests {
     }
 
     #[test]
-    fn dense_cardinality() {
-        let errors = CounterVec::<ErrorsSet>::dense();
-        assert_eq!(errors.get_cardinality(), (0, Some(3)));
-
-        errors.inc(Error { kind: ErrorKind::Internal });
-        errors.inc(Error { kind: ErrorKind::User });
-        assert_eq!(errors.get_cardinality(), (2, Some(3)));
-    }
-
-    #[test]
-    fn sparse_cardinality() {
-        let errors = CounterVec::<ErrorsSet>::sparse();
-        assert_eq!(errors.get_cardinality(), (0, Some(3)));
-
-        errors.inc(Error { kind: ErrorKind::Internal });
-        errors.inc(Error { kind: ErrorKind::User });
-        assert_eq!(errors.get_cardinality(), (2, Some(3)));
+    fn cardinality_counts_series_not_updates() {
+        for errors in [CounterVec::<ErrorsSet>::dense(), CounterVec::sparse()] {
+            assert_eq!(errors.get_cardinality(), (0, Some(3)));
+            for _ in 0..3 {
+                errors.inc(Error { kind: ErrorKind::Internal });
+            }
+            assert_eq!(errors.get_cardinality(), (1, Some(3)));
+            errors.inc(Error { kind: ErrorKind::User });
+            assert_eq!(errors.get_cardinality(), (2, Some(3)));
+        }
     }
 
     #[test]
     fn remove() {
         let errors = CounterVec::<ErrorsSet>::sparse();
 
-        errors.inc(Error { kind: ErrorKind::Internal });
+        errors.inc_by(Error { kind: ErrorKind::Internal }, 3);
         errors.inc(Error { kind: ErrorKind::User });
         assert_eq!(errors.get_cardinality(), (2, Some(3)));
         let user_errors = errors
@@ -743,7 +736,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(errors.get_cardinality(), (1, Some(3)));
-        assert_eq!(user_errors.get(), 1)
+        assert_eq!(user_errors.get(), 1);
+        assert_eq!(errors.get(Error { kind: ErrorKind::Internal }), 3);
+        assert_eq!(errors.get(Error { kind: ErrorKind::User }), 0);
+        assert!(
+            errors
+                .remove_metric(errors.with_labels(Error { kind: ErrorKind::User }))
+                .is_none()
+        );
     }
 
     #[cfg(feature = "lasso")]
@@ -757,38 +757,39 @@ mod tests {
 
     #[cfg(feature = "lasso")]
     #[test]
-    fn dynamic_labels() {
-        use fake::Fake;
-        use fake::faker::name::raw::Name;
-        use fake::locales::EN;
-
+    fn dynamic_series_keep_independent_values_and_can_be_removed() {
         use crate::GaugeVec;
 
         let set = GaugeVec::with_label_set(ErrorsSet2::default());
 
-        let names = (0..64).map(|_| Name(EN).fake()).collect::<Vec<String>>();
+        let names = ["alice", "bob", "carol"];
 
         let error_kinds = [ErrorKind::User, ErrorKind::Internal, ErrorKind::Network];
 
-        for kind in error_kinds {
-            for name in &names {
+        for (index, kind) in error_kinds.into_iter().enumerate() {
+            for name in names {
                 let error = Error2 { kind, user: name };
-                set.inc(error);
+                set.inc_by(error, index as i64 + 1);
             }
         }
-        for kind in error_kinds {
-            for name in &names {
+        assert_eq!(set.get_cardinality(), (9, None));
+        for (index, kind) in error_kinds.into_iter().enumerate() {
+            for name in names {
                 let error = Error2 { kind, user: name };
                 set.inc_by(error, 2);
+                assert_eq!(set.get(error), index as i64 + 3);
             }
         }
 
-        for kind in error_kinds {
-            for name in &names {
+        for (index, kind) in error_kinds.into_iter().enumerate() {
+            for name in names {
                 let error = Error2 { kind, user: name };
-                let label = set.with_labels(error);
-                let _ = set.remove_metric(label);
+                let label = set.find_labels(error).unwrap();
+                assert_eq!(set.remove_metric(label).unwrap().get(), index as i64 + 3);
+                assert!(set.find_metric(label).is_none());
+                assert_eq!(set.get(error), 0);
             }
         }
+        assert_eq!(set.get_cardinality(), (0, None));
     }
 }

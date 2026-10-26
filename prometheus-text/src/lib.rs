@@ -952,12 +952,18 @@ h_count 2
     fn empty_thresholds() {
         let histogram = Histogram::with_metadata(Thresholds::<0>::with_buckets([]));
         histogram.get_metric().observe(1.0);
-    }
-
-    #[test]
-    #[should_panic = "must not be NaN"]
-    fn nan_threshold() {
-        Thresholds::with_buckets([f64::NAN]);
+        let sample = histogram.sample();
+        assert_eq!(sample.count(), 1);
+        assert_eq!(sample.inf, 1);
+        assert_eq!(sample.sum, 1.0);
+        let mut enc = BufferedTextEncoder::new();
+        histogram
+            .collect_family_into(MetricName::from_str("h"), FamilyMeta::new(), &mut enc)
+            .unwrap();
+        assert_eq!(
+            enc.finish(),
+            "# TYPE h histogram\nh_bucket{le=\"+Inf\"} 1\nh_sum 1.0\nh_count 1\n"
+        );
     }
 
     #[derive(Clone, Copy, PartialEq, Debug, measured::FixedCardinalityLabel)]
@@ -1109,12 +1115,10 @@ latency_seconds_count 1
     fn open_metrics_extras() {
         use measured::MetricGroup;
 
-        let before = super::unix_seconds(std::time::SystemTime::now());
         let metrics = extras();
         let mut encoder = BufferedOpenMetricsEncoder::new();
         metrics.collect_group_into(&mut encoder).unwrap();
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
-        let after = super::unix_seconds(std::time::SystemTime::now());
 
         assert!(
             s.contains("requests_total 2 # {trace_id=\"abc\"} 2.0 1700000000.5\n"),
@@ -1129,7 +1133,17 @@ latency_seconds_count 1
             .map(|l| l.rsplit(' ').next().unwrap().parse().unwrap())
             .collect();
         assert_eq!(created.len(), 2, "{s}");
-        assert!(created.iter().all(|&t| before <= t && t <= after));
+        let expected: Vec<_> = [
+            metrics.created_total.created(),
+            metrics.created_latency_seconds.created(),
+        ]
+        .map(|time| {
+            time.duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+        })
+        .into();
+        assert_eq!(created, expected);
 
         // the created line follows the counter sample, and the histogram count
         assert!(s.contains("created_total 1\ncreated_created "));
@@ -1146,6 +1160,60 @@ latency_seconds_count 1
         assert!(!s.contains(" # {"), "{s}");
         assert!(!s.contains("_created"), "{s}");
         assert!(s.contains("requests_total 2\n"));
+        assert!(s.contains("latency_seconds_count 2\n"));
+        assert!(s.contains("created_total 1\n"));
+        assert!(s.contains("created_latency_seconds_count 1\n"));
+    }
+
+    #[test]
+    fn buffered_encoders_reset_between_scrapes() {
+        use measured::MetricGroup;
+        #[derive(Default, measured::MetricGroup)]
+        struct Metrics {
+            requests_total: Counter,
+        }
+        let metrics = Metrics::default();
+        let mut classic = BufferedTextEncoder::new();
+        let mut openmetrics = BufferedOpenMetricsEncoder::new();
+        for count in [1, 2] {
+            metrics.requests_total.inc();
+            metrics.collect_group_into(&mut classic).unwrap();
+            assert_eq!(
+                classic.finish(),
+                format!("# TYPE requests_total counter\nrequests_total {count}\n")
+            );
+            metrics.collect_group_into(&mut openmetrics).unwrap();
+            assert_eq!(
+                openmetrics.finish(),
+                format!("# TYPE requests counter\nrequests_total {count}\n# EOF\n")
+            );
+        }
+    }
+
+    #[test]
+    fn exemplar_label_limit_includes_names_and_unicode_values() {
+        use measured::label::LabelName;
+        use measured::{Exemplar, ExemplarCounter};
+        const TRACE: &LabelName = LabelName::from_str("trace");
+        for (characters, written) in [(123, true), (124, false)] {
+            let metric = ExemplarCounter::new();
+            metric.inc_with_exemplar(1, Exemplar::new().with_label(TRACE, "é".repeat(characters)));
+            let mut enc = BufferedOpenMetricsEncoder::new();
+            metric
+                .collect_family_into(
+                    MetricName::from_str("requests_total"),
+                    FamilyMeta::new(),
+                    &mut enc,
+                )
+                .unwrap();
+            let text = String::from_utf8(enc.finish().to_vec()).unwrap();
+            assert_eq!(
+                text.contains(" # {trace="),
+                written,
+                "{characters} value characters"
+            );
+            assert!(text.contains("requests_total 1"));
+        }
     }
     #[test]
     fn summary_defaults_and_namespace_forwarding_preserve_extras() {

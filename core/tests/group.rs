@@ -5,7 +5,6 @@ use lasso::{Rodeo, RodeoReader};
 use measured::metric::histogram::Thresholds;
 use measured::{Counter, CounterVec, FixedCardinalityLabel, Gauge, Histogram, LabelGroup, MetricGroup};
 use measured_prometheus_text::BufferedTextEncoder;
-use prometheus_client::encoding::EncodeLabelValue;
 
 #[derive(Clone, Copy, PartialEq, Debug, LabelGroup)]
 #[label(set = ErrorsSet)]
@@ -15,18 +14,17 @@ struct Error<'a> {
     route: &'a str,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel, EncodeLabelValue)]
+#[derive(Clone, Copy, PartialEq, Debug, Hash, Eq, FixedCardinalityLabel)]
 enum ErrorKind {
     User,
     Internal,
-    Network,
 }
 
 #[derive(MetricGroup)]
 #[metric(new(route: RodeoReader))]
 struct MyHttpMetrics {
     /// more help wow
-    #[metric(label_set = ErrorsSet::new(route))]
+    #[metric(label_set = ErrorsSet { route, kind: Default::default() })]
     errors: CounterVec<ErrorsSet>,
 }
 
@@ -50,18 +48,11 @@ struct MyMetrics {
 
 #[test]
 fn http_errors() {
-    let route_array = [
-        "/api/v1/users",
-        "/api/v1/users/:id",
-        "/api/v1/products",
-        "/api/v1/products/:id",
-        "/api/v1/products/:id/owner",
-        "/api/v1/products/:id/purchase",
-    ];
+    let route_array = ["/users", "/teams"];
     let routes = Rodeo::from_iter(route_array).into_reader();
     let group = MyMetrics::new(routes);
 
-    for kind in [ErrorKind::Internal, ErrorKind::Network, ErrorKind::User] {
+    for kind in [ErrorKind::Internal, ErrorKind::User] {
         for route in route_array {
             group
                 .http
@@ -103,24 +94,10 @@ latency_count 1
 
 # HELP http_request_errors more help wow
 # TYPE http_request_errors counter
-http_request_errors{kind="user",route="/api/v1/users"} 0
-http_request_errors{kind="user",route="/api/v1/users/:id"} 0
-http_request_errors{kind="user",route="/api/v1/products"} 0
-http_request_errors{kind="user",route="/api/v1/products/:id"} 0
-http_request_errors{kind="user",route="/api/v1/products/:id/owner"} 0
-http_request_errors{kind="user",route="/api/v1/products/:id/purchase"} 0
-http_request_errors{kind="internal",route="/api/v1/users"} 0
-http_request_errors{kind="internal",route="/api/v1/users/:id"} 0
-http_request_errors{kind="internal",route="/api/v1/products"} 0
-http_request_errors{kind="internal",route="/api/v1/products/:id"} 0
-http_request_errors{kind="internal",route="/api/v1/products/:id/owner"} 0
-http_request_errors{kind="internal",route="/api/v1/products/:id/purchase"} 0
-http_request_errors{kind="network",route="/api/v1/users"} 0
-http_request_errors{kind="network",route="/api/v1/users/:id"} 0
-http_request_errors{kind="network",route="/api/v1/products"} 0
-http_request_errors{kind="network",route="/api/v1/products/:id"} 0
-http_request_errors{kind="network",route="/api/v1/products/:id/owner"} 0
-http_request_errors{kind="network",route="/api/v1/products/:id/purchase"} 0
+http_request_errors{kind="user",route="/users"} 0
+http_request_errors{kind="user",route="/teams"} 0
+http_request_errors{kind="internal",route="/users"} 0
+http_request_errors{kind="internal",route="/teams"} 0
 "#
     );
 }
