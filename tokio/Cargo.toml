@@ -3,7 +3,7 @@ name = "measured-tokio"
 version = "0.0.25"
 edition = "2024"
 description = "Tokio metrics for measured"
-authors = ["Conrad Ludgate <conradludgate@gmail.com"]
+authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/conradludgate/measured"
 readme = "README.md"
@@ -14,18 +14,19 @@ rust-version = "1.88"
 [features]
 default = []
 net = ["tokio/net"]
+# Requires `--cfg tokio_unstable`. Not covered by semver.
+__tokio-unstable-schedule-latency = ["tokio/schedule-latency"]
 
 [dependencies]
 measured = { path = "../core", version = "0.0.25" }
-tokio = { version = "1.45.0", features = ["rt"] }
-itoa = "1"
+tokio = { version = "1.53.0", features = ["rt"] }
 
 [dev-dependencies]
 measured-prometheus-text = { path = "../prometheus-text" }
-tokio = { version = "1.45.0", features = ["rt", "rt-multi-thread"] }
+tokio = { version = "1.53.0", features = ["rt", "rt-multi-thread", "macros"] }
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["net"]
 rustdoc-args = ["--cfg=tokio_unstable"]
 
 [lints.rust]

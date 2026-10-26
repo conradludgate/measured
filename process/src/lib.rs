@@ -24,6 +24,7 @@
 //! # drop(metrics);
 //! ```
 
+#[cfg(target_os = "linux")]
 use std::sync::OnceLock;
 
 use libc::pid_t;
@@ -37,6 +38,9 @@ use measured::metric::group::Encoding;
 /// A collector which exports the current state of process metrics including
 /// CPU, memory and file descriptor usage, thread count, as well as the process
 /// start time for the given process id.
+///
+/// On platforms other than Linux, no metrics are collected.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct ProcessCollector {
     pid: pid_t,
     start_time: Option<i64>,
@@ -46,15 +50,7 @@ impl ProcessCollector {
     /// Create a `ProcessCollector` with the given process id and namespace.
     pub fn new(pid: pid_t) -> ProcessCollector {
         // proc_start_time init once because it is immutable
-        let mut start_time = None;
-        #[cfg(target_os = "linux")]
-        if let Ok(boot_time) = procfs::boot_time_secs() {
-            if let Ok(stat) = procfs::process::Process::myself().and_then(|p| p.stat()) {
-                start_time = Some(stat.starttime as i64 / clk_tck() + boot_time as i64);
-            }
-        }
-
-        ProcessCollector { pid, start_time }
+        ProcessCollector { pid, start_time: start_time(pid) }
     }
 
     /// Return a `ProcessCollector` of the calling process.
@@ -66,6 +62,9 @@ impl ProcessCollector {
 
 impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
+        #[cfg(not(target_os = "linux"))]
+        let _ = enc;
+
         #[cfg(target_os = "linux")]
         {
             use measured::label::NoLabels;
@@ -87,16 +86,16 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                 )?;
                 enc.write_gauge(fd, NoLabels, fd_count as i64)?;
             }
-            if let Ok(limits) = p.limits() {
-                if let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit {
-                    let fd = MetricName::from_str("max_fds");
-                    enc.write_family(
-                        fd,
-                        Some("Maximum number of open file descriptors."),
-                        MetricKind::Gauge,
-                    )?;
-                    enc.write_gauge(fd, NoLabels, max as i64)?;
-                }
+            if let Ok(limits) = p.limits()
+                && let procfs::process::LimitValue::Value(max) = limits.max_open_files.soft_limit
+            {
+                let fd = MetricName::from_str("max_fds");
+                enc.write_family(
+                    fd,
+                    Some("Maximum number of open file descriptors."),
+                    MetricKind::Gauge,
+                )?;
+                enc.write_gauge(fd, NoLabels, max as i64)?;
             }
 
             if let Ok(stat) = p.stat() {
@@ -156,11 +155,27 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn start_time(pid: pid_t) -> Option<i64> {
+    let boot_time = procfs::boot_time_secs().ok()?;
+    let stat = procfs::process::Process::new(pid)
+        .and_then(|p| p.stat())
+        .ok()?;
+    Some(stat.starttime as i64 / clk_tck() + boot_time as i64)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn start_time(_pid: pid_t) -> Option<i64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
 fn clk_tck() -> i64 {
     static CLK_TCK: OnceLock<i64> = OnceLock::new();
     *CLK_TCK.get_or_init(|| unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as i64)
 }
 
+#[cfg(target_os = "linux")]
 fn pagesize() -> i64 {
     static PAGESIZE: OnceLock<i64> = OnceLock::new();
     *PAGESIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as i64)
