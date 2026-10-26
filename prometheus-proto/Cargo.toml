@@ -2,17 +2,17 @@
 name = "measured-prometheus-protobuf"
 version = "0.0.25"
 edition = "2021"
-description = "Tokio metrics for measured"
-authors = ["Conrad Ludgate <conradludgate@gmail.com"]
+description = "Prometheus protobuf exposition format for measured"
+authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/conradludgate/measured"
 readme = "README.md"
+rust-version = "1.98"
 
 [dependencies]
 measured = { path = "../core", version = "0.0.25" }
 bytes = "1"
-ryu = "1"
-itoa = "1"
+zmij = "1"
 
 [dev-dependencies]
 prost = "0.12"
