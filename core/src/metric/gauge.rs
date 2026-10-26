@@ -15,6 +15,11 @@ pub struct GaugeState {
 }
 
 impl GaugeState {
+    /// Get the current metric value
+    pub fn get(&self) -> i64 {
+        self.count.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn new(value: i64) -> Self {
         Self { count: AtomicI64::new(value) }
     }
@@ -162,6 +167,11 @@ pub struct FloatGaugeState {
 }
 
 impl FloatGaugeState {
+    /// Get the current metric value
+    pub fn get(&self) -> f64 {
+        self.count.get()
+    }
+
     pub fn new(value: f64) -> Self {
         Self { count: AtomicF64::new(value) }
     }

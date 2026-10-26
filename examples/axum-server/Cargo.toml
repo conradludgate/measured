@@ -5,6 +5,7 @@ publish = false
 edition = "2021"
 
 [dependencies]
+measured-prometheus-text = { path = "../../prometheus-text" }
 axum = "0.7"
 lasso = { version = "0.7" }
 measured = { path = "../../core", features = ["lasso"] }

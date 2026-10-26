@@ -19,15 +19,12 @@ indexmap = ["dep:indexmap"]
 phf = ["dep:phf"]
 
 [dependencies]
-bytes = "1"
-memchr = "2"
 ryu = "1"
 itoa = "1"
 rustc-hash = "2"
 hashbrown = { version = "0.15" }
 parking_lot = "0.12"
 crossbeam-utils = "0.8.0"
-serde = "1"
 
 measured-derive = { path = "../derive", version = "0.0.25" }
 
@@ -37,6 +34,8 @@ paracord = { version = "0.1", optional = true }
 phf = { version = "0.13.1", optional = true }
 
 [dev-dependencies]
+# path-only to avoid a published dependency cycle
+measured-prometheus-text = { path = "../prometheus-text" }
 fake = "4.3.0"
 divan = "0.1.14"
 prometheus = { version = "0.14.0", default-features = false }

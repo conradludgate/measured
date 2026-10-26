@@ -1,24 +1,52 @@
-//! Prometheus Text based exporter
+//! The Prometheus text exposition format for [`measured`].
+//!
+//! ```
+//! use measured::{Counter, MetricGroup};
+//! use measured_prometheus_text::BufferedTextEncoder;
+//!
+//! #[derive(MetricGroup, Default)]
+//! struct Metrics {
+//!     /// total number of requests
+//!     requests_total: Counter,
+//! }
+//!
+//! let metrics = Metrics::default();
+//! metrics.requests_total.inc();
+//!
+//! // ideally, the encoder should be re-used between collections.
+//! let mut encoder = BufferedTextEncoder::new();
+//! metrics.collect_group_into(&mut encoder).unwrap();
+//! let bytes = encoder.finish();
+//!
+//! assert_eq!(bytes, "# HELP requests_total total number of requests\n# TYPE requests_total counter\nrequests_total 1\n");
+//! ```
 
-use std::convert::Infallible;
 use std::io::{self, Write};
 
 use bytes::{BufMut, Bytes, BytesMut};
+use measured::label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
+use measured::metric::MetricEncoding;
+use measured::metric::counter::CounterState;
+use measured::metric::gauge::{FloatGaugeState, GaugeState};
+use measured::metric::group::Encoding;
+use measured::metric::histogram::{HistogramState, Thresholds};
+use measured::metric::name::{Bucket, Count, MetricNameEncoder, Sum};
 use memchr::memchr3_iter;
 
-use crate::label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
-use crate::metric::MetricEncoding;
-use crate::metric::counter::CounterState;
-use crate::metric::gauge::{FloatGaugeState, GaugeState};
-use crate::metric::group::{Encoding, MetricValue};
-use crate::metric::histogram::{HistogramState, Thresholds};
-use crate::metric::name::{Bucket, Count, MetricNameEncoder, Sum};
+/// Values that prometheus supports in the text format
+#[derive(Clone, Copy, Debug)]
+enum MetricValue {
+    Int(i64),
+    Uint(u64),
+    Float(f64),
+}
 
-/// The prometheus text encoder helper
+/// The prometheus text encoder, writing into any [`Write`].
+///
+/// See [`BufferedTextEncoder`] for an encoder that writes into an in-memory buffer.
 pub struct TextEncoder<W> {
     state: State,
-    /// The inner writer for this text encoder.
-    pub writer: W,
+    writer: W,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,18 +55,19 @@ enum State {
     Metrics,
 }
 
-/// Prometheus only supports these 5 types of metrics
-#[derive(Clone, Copy, Debug)]
+/// The metric types that can be written with [`TextEncoder::write_type`]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MetricType {
-    /// Corresponds to [`Counter`](crate::Counter)
+    /// Corresponds to [`Counter`](measured::Counter)
     Counter,
-    /// Corresponds to [`Histogram`](crate::Histogram)
+    /// Corresponds to [`Histogram`](measured::Histogram)
     Histogram,
-    /// Corresponds to [`Gauge`](crate::Gauge)
+    /// Corresponds to [`Gauge`](measured::Gauge)
     Gauge,
-    /// Not currently supported
+    /// There is no summary metric in this crate, but this can be used when writing a summary by hand
     Summary,
-    /// Not currently supported
+    /// For metrics with no specific type
     Untyped,
 }
 
@@ -64,17 +93,32 @@ impl<W: Write> Encoding for TextEncoder<W> {
 }
 
 impl<W: Write> TextEncoder<W> {
-    /// Create a new text encoder.
-    ///
-    /// This should ideally be cached and re-used between collections to reduce re-allocating
-    pub fn new(w: W) -> Self {
+    /// Create a new text encoder that writes into `w`.
+    pub fn from_writer(w: W) -> Self {
         Self { state: State::Info, writer: w }
     }
 
-    /// Finish the text encoding and extract the bytes to send in a HTTP response.
+    /// Finish this collection and flush the inner writer.
     pub fn flush(&mut self) -> std::io::Result<()> {
         self.state = State::Info;
         self.writer.flush()
+    }
+
+    /// Borrow the inner writer.
+    pub fn writer(&self) -> &W {
+        &self.writer
+    }
+
+    /// Mutably borrow the inner writer.
+    ///
+    /// Writing to the inner writer directly in the middle of a collection can produce invalid output.
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
+    /// Return the inner writer.
+    pub fn into_inner(self) -> W {
+        self.writer
     }
 
     fn write_line(&mut self) -> std::io::Result<()> {
@@ -82,7 +126,7 @@ impl<W: Write> TextEncoder<W> {
     }
 
     /// Write the type line for a metric
-    pub fn write_type(&mut self, name: &impl MetricNameEncoder, typ: MetricType) -> Result<(), std::io::Error> {
+    pub fn write_type(&mut self, name: impl MetricNameEncoder, typ: MetricType) -> Result<(), std::io::Error> {
         if self.state == State::Metrics {
             self.write_line()?;
         }
@@ -199,20 +243,20 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
             }
         }
 
-        let (buckets, inf, sum) = self.inner.write().sample();
+        let sample = self.sample();
         let mut val = 0;
 
         #[allow(clippy::needless_range_loop)]
         for i in 0..N {
             let le = metadata.get()[i];
-            val += buckets[i];
+            val += sample.buckets[i];
             enc.write_metric_value(
                 name.by_ref().with_suffix(Bucket),
                 labels.by_ref().compose_with(HistogramLabelLe { le }),
                 MetricValue::Uint(val),
             )?;
         }
-        let count = val + inf;
+        let count = val + sample.inf;
         enc.write_metric_value(
             name.by_ref().with_suffix(Bucket),
             labels
@@ -223,7 +267,7 @@ impl<W: Write, const N: usize> MetricEncoding<TextEncoder<W>> for HistogramState
         enc.write_metric_value(
             name.by_ref().with_suffix(Sum),
             labels.by_ref(),
-            MetricValue::Float(sum),
+            MetricValue::Float(sample.sum),
         )?;
         enc.write_metric_value(
             name.by_ref().with_suffix(Count),
@@ -245,11 +289,7 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for CounterState {
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(
-            &name,
-            labels,
-            MetricValue::Uint(self.count.load(core::sync::atomic::Ordering::Relaxed)),
-        )
+        enc.write_metric_value(&name, labels, MetricValue::Uint(self.get()))
     }
 }
 
@@ -264,11 +304,7 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for GaugeState {
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(
-            &name,
-            labels,
-            MetricValue::Int(self.count.load(core::sync::atomic::Ordering::Relaxed)),
-        )
+        enc.write_metric_value(&name, labels, MetricValue::Int(self.get()))
     }
 }
 
@@ -283,14 +319,14 @@ impl<W: Write> MetricEncoding<TextEncoder<W>> for FloatGaugeState {
         name: impl MetricNameEncoder,
         enc: &mut TextEncoder<W>,
     ) -> Result<(), std::io::Error> {
-        enc.write_metric_value(&name, labels, MetricValue::Float(self.count.get()))
+        enc.write_metric_value(&name, labels, MetricValue::Float(self.get()))
     }
 }
 
-/// The prometheus text encoder helper
-pub struct BufferedTextEncoder {
-    inner: TextEncoder<BytesWriter>,
-}
+/// A [`TextEncoder`] that writes into an in-memory buffer.
+///
+/// Writing into the buffer never fails.
+pub type BufferedTextEncoder = TextEncoder<BytesWriter>;
 
 impl Default for BufferedTextEncoder {
     fn default() -> Self {
@@ -298,63 +334,18 @@ impl Default for BufferedTextEncoder {
     }
 }
 
-trait Unreachable<T> {
-    fn unreachable(self) -> T;
-}
-
-impl<T, E: std::fmt::Debug> Unreachable<T> for Result<T, E> {
-    fn unreachable(self) -> T {
-        match self {
-            Ok(t) => t,
-            Err(e) => unreachable!("BytesMut should not error when writing: {e:?}"),
-        }
-    }
-}
-
-impl Encoding for BufferedTextEncoder {
-    type Err = Infallible;
-
-    const MIME_TYPE: &'static str = TextEncoder::<BytesWriter>::MIME_TYPE;
-
-    /// Write the help line for a metric
-    fn write_help(&mut self, name: impl MetricNameEncoder, help: &str) -> Result<(), Infallible> {
-        self.inner.write_help(name, help).unreachable();
-        Ok(())
-    }
-}
-
 impl BufferedTextEncoder {
-    /// Create a new text encoder.
+    /// Create a new buffered text encoder.
     ///
     /// This should ideally be cached and re-used between collections to reduce re-allocating
     pub fn new() -> Self {
-        Self {
-            inner: TextEncoder::new(BytesWriter { buf: BytesMut::new() }),
-        }
+        Self::from_writer(BytesWriter { buf: BytesMut::new() })
     }
 
     /// Finish the text encoding and extract the bytes to send in a HTTP response.
     pub fn finish(&mut self) -> Bytes {
-        self.inner.flush().unreachable();
-        self.inner.writer.buf.split().freeze()
-    }
-}
-
-impl<T: MetricEncoding<TextEncoder<BytesWriter>>> MetricEncoding<BufferedTextEncoder> for T {
-    fn write_type(name: impl MetricNameEncoder, enc: &mut BufferedTextEncoder) -> Result<(), Infallible> {
-        Self::write_type(name, &mut enc.inner).unreachable();
-        Ok(())
-    }
-    fn collect_into(
-        &self,
-        metadata: &T::Metadata,
-        labels: impl LabelGroup,
-        name: impl MetricNameEncoder,
-        enc: &mut BufferedTextEncoder,
-    ) -> Result<(), Infallible> {
-        self.collect_into(metadata, labels, name, &mut enc.inner)
-            .unreachable();
-        Ok(())
+        self.state = State::Info;
+        self.writer.buf.split().freeze()
     }
 }
 
@@ -399,7 +390,8 @@ pub(crate) fn write_label_str_value(s: &str, b: &mut impl Write) -> io::Result<(
     b.write_all(&s.as_bytes()[i..])
 }
 
-struct BytesWriter {
+/// The in-memory writer used by [`BufferedTextEncoder`].
+pub struct BytesWriter {
     buf: BytesMut,
 }
 
@@ -425,14 +417,14 @@ impl Write for BytesWriter {
 #[cfg(test)]
 mod tests {
     use bytes::{BufMut, BytesMut};
+    use measured::label::StaticLabelSet;
+    use measured::metric::MetricFamilyEncoding;
+    use measured::metric::group::Encoding;
+    use measured::metric::histogram::Thresholds;
+    use measured::metric::name::{MetricName, Total};
+    use measured::{Counter, CounterVec, FloatGauge, Histogram};
 
     use super::{BufferedTextEncoder, write_label_str_value};
-    use crate::label::StaticLabelSet;
-    use crate::metric::MetricFamilyEncoding;
-    use crate::metric::group::Encoding;
-    use crate::metric::histogram::Thresholds;
-    use crate::metric::name::{MetricName, Total};
-    use crate::{Counter, CounterVec, FloatGauge, Histogram};
 
     #[test]
     fn write_encoded_str() {
@@ -450,22 +442,21 @@ This is on a new line"#,
         );
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
-    #[label(crate = crate, set = RequestLabelSet)]
+    #[derive(Clone, Copy, PartialEq, Debug, measured::LabelGroup)]
+    #[label(set = RequestLabelSet)]
     struct RequestLabels {
         method: Method,
         code: StatusCode,
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
-    #[label(crate = crate, rename_all = "snake_case")]
+    #[derive(Clone, Copy, PartialEq, Debug, measured::FixedCardinalityLabel)]
+    #[label(rename_all = "snake_case")]
     enum Method {
         Post,
         Get,
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
-    #[label(crate = crate)]
+    #[derive(Clone, Copy, PartialEq, Debug, measured::FixedCardinalityLabel)]
     enum StatusCode {
         Ok = 200,
         BadRequest = 400,
@@ -550,15 +541,14 @@ http_request_duration_seconds_count 4
     /// See <https://github.com/conradludgate/measured/issues/8>
     #[test]
     fn text_encoding_rename() {
-        #[derive(Clone, Copy, PartialEq, Debug, measured_derive::LabelGroup)]
-        #[label(crate = crate, set = RequestLabelSet)]
+        #[derive(Clone, Copy, PartialEq, Debug, measured::LabelGroup)]
+        #[label(set = RequestLabelSet)]
         struct RequestLabels {
             method: Method,
             code: StatusCode,
         }
 
-        #[derive(Clone, Copy, PartialEq, Debug, measured_derive::FixedCardinalityLabel)]
-        #[label(crate = crate)]
+        #[derive(Clone, Copy, PartialEq, Debug, measured::FixedCardinalityLabel)]
         enum StatusCode {
             #[label(rename = "ok")]
             Ok = 200,

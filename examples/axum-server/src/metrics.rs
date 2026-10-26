@@ -5,9 +5,10 @@ use axum::extract::{MatchedPath, Request, State};
 use axum::middleware::Next;
 use axum::response::Response;
 use measured::label::{self, LabelValue};
+use measured::metric::group::Encoding;
 use measured::metric::histogram::Thresholds;
-use measured::text::BufferedTextEncoder;
 use measured::{CounterVec, FixedCardinalityLabel, HistogramVec, LabelGroup, MetricGroup};
+use measured_prometheus_text::BufferedTextEncoder;
 use tokio::sync::Mutex;
 
 /// Defines both the metrics and the metrics encoder.
@@ -22,17 +23,18 @@ pub struct AppMetricsEncoder {
 #[metric(new(paths: Arc<lasso::ThreadedRodeo>))]
 pub struct AppMetrics {
     /// total number of HTTP requests by path and method
-    #[metric(label_set = HttpRequestsSet::new(paths.clone()))]
+    #[metric(rename = "http_requests_total", label_set = HttpRequestsSet::new(paths.clone()))]
     pub http_requests: CounterVec<HttpRequestsSet>,
 
     /// total number of HTTP responses by path, method, and status
-    #[metric(label_set = HttpResponsesSet::new(paths.clone()))]
+    #[metric(rename = "http_responses_total", label_set = HttpResponsesSet::new(paths.clone()))]
     pub http_responses: CounterVec<HttpResponsesSet>,
 
     /// duration of HTTP handlers by path and method
     #[metric(
+        rename = "http_request_duration_seconds",
         label_set = HttpRequestsSet::new(paths),
-        // starting at 0.1ms up to 6.5s
+        // starting at 0.1ms up to 3.3s
         metadata = Thresholds::exponential_buckets(0.0001, 2.0),
     )]
     pub http_request_duration: HistogramVec<HttpRequestsSet, 16>,
@@ -88,7 +90,12 @@ pub async fn handler(s: State<Arc<AppMetricsEncoder>>) -> Response {
 
     let mut encoder = encoder.lock().await;
     metrics.collect_group_into(&mut *encoder).unwrap();
-    Response::new(encoder.finish().into())
+    let mut response = Response::new(encoder.finish().into());
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static(BufferedTextEncoder::MIME_TYPE),
+    );
+    response
 }
 
 #[derive(LabelGroup)]

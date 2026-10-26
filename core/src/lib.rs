@@ -20,7 +20,6 @@ use metric::{Metric, MetricVec};
 pub mod docs;
 pub mod label;
 pub mod metric;
-pub mod text;
 
 pub use label::FixedCardinalityLabel;
 pub use label::group::LabelGroup;
@@ -263,7 +262,7 @@ pub use metric::group::MetricGroup;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a histogram with 8 buckets starting at 0.01, increasing by 2x each time up to 2.56
 /// let histogram = Histogram::with_metadata(Thresholds::<8>::exponential_buckets(0.01, 2.0));
@@ -285,8 +284,8 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::histogram::Thresholds;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
 /// use measured::{FixedCardinalityLabel, HistogramVec, LabelGroup};
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
 ///
@@ -328,7 +327,7 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 /// use measured::Counter;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a counter
 /// let counter = Counter::new();
@@ -349,8 +348,8 @@ pub type Counter = Metric<CounterState>;
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
 /// use measured::{CounterVec, FixedCardinalityLabel, LabelGroup};
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
 ///
@@ -389,7 +388,7 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 /// use measured::Gauge;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a gauge
 /// let gauge = Gauge::new();
@@ -410,8 +409,8 @@ pub type Gauge = Metric<GaugeState>;
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
 /// use measured::{FixedCardinalityLabel, GaugeVec, LabelGroup};
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
 ///
@@ -450,7 +449,7 @@ pub type GaugeVec<L> = MetricVec<GaugeState, L>;
 /// use measured::FloatGauge;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // create a gauge
 /// let gauge = FloatGauge::new();
@@ -471,8 +470,8 @@ pub type FloatGauge = Metric<FloatGaugeState>;
 /// use measured::label::StaticLabelSet;
 /// use measured::metric::MetricFamilyEncoding;
 /// use measured::metric::name::MetricName;
-/// use measured::text::BufferedTextEncoder;
 /// use measured::{FixedCardinalityLabel, FloatGaugeVec, LabelGroup};
+/// use measured_prometheus_text::BufferedTextEncoder;
 ///
 /// // Define a fixed cardinality label
 ///

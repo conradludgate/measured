@@ -7,8 +7,8 @@
 //! ```
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::metric::name::MetricName;
-//! use measured::text::BufferedTextEncoder;
 //! use measured::{Counter, MetricGroup};
+//! use measured_prometheus_text::BufferedTextEncoder;
 //!
 //! // Define a metric group, consisting of 1 or more metrics
 //! #[derive(MetricGroup)]
@@ -49,8 +49,8 @@
 //! use measured::label::StaticLabelSet;
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::metric::name::MetricName;
-//! use measured::text::BufferedTextEncoder;
 //! use measured::{CounterVec, FixedCardinalityLabel, LabelGroup, MetricGroup};
+//! use measured_prometheus_text::BufferedTextEncoder;
 //!
 //! // Define a fixed cardinality label
 //!
@@ -116,8 +116,8 @@
 //! ```
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::metric::name::MetricName;
-//! use measured::text::BufferedTextEncoder;
 //! use measured::{CounterVec, LabelGroup, MetricGroup};
+//! use measured_prometheus_text::BufferedTextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!
@@ -172,8 +172,8 @@
 //! ```
 //! use measured::metric::MetricFamilyEncoding;
 //! use measured::metric::name::MetricName;
-//! use measured::text::BufferedTextEncoder;
 //! use measured::{CounterVec, LabelGroup, MetricGroup};
+//! use measured_prometheus_text::BufferedTextEncoder;
 //!
 //! // Define a label group, consisting of 1 or more label values
 //!

@@ -314,3 +314,38 @@ impl<'a, const N: usize> Drop for HistogramTimer<'a, N> {
         }
     }
 }
+
+/// A consistent snapshot of the state of a histogram. See [`HistogramState::sample`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct HistogramSample<const N: usize> {
+    /// The number of observations in each bucket described by [`Thresholds`].
+    ///
+    /// These are *not* cumulative: `buckets[i]` counts the observations `x` where `le[i-1] < x <= le[i]`.
+    pub buckets: [u64; N],
+    /// The number of observations greater than all of the [`Thresholds`], including NaN.
+    pub inf: u64,
+    /// The sum of all observations.
+    pub sum: f64,
+}
+
+impl<const N: usize> Default for HistogramSample<N> {
+    fn default() -> Self {
+        Self { buckets: [0; N], inf: 0, sum: 0.0 }
+    }
+}
+
+impl<const N: usize> HistogramSample<N> {
+    /// The total number of observations.
+    pub fn count(&self) -> u64 {
+        self.buckets.iter().sum::<u64>() + self.inf
+    }
+}
+
+impl<const N: usize> HistogramState<N> {
+    /// Take a consistent snapshot, briefly blocking concurrent observations.
+    pub fn sample(&self) -> HistogramSample<N> {
+        let (buckets, inf, sum) = self.inner.write().sample();
+        HistogramSample { buckets, inf, sum }
+    }
+}
