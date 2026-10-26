@@ -216,3 +216,48 @@ fn state_set_in_namespace() {
         "# TYPE app:job_kind gauge\napp:job_kind{app_job_kind=\"a\"} 0\napp:job_kind{app_job_kind=\"b\"} 1\n"
     );
 }
+
+#[test]
+fn exemplars_and_created() {
+    use measured::label::LabelName;
+    use measured::metric::exemplar::Exemplar;
+    const TRACE_ID: &LabelName = LabelName::from_str("trace_id");
+
+    let counters = measured::ExemplarCounterVec::<KindSet>::new();
+    counters.inc(KindLabels { kind: Kind::A });
+    counters.inc_with_exemplar(
+        KindLabels { kind: Kind::A },
+        4,
+        Exemplar::new().with_label(TRACE_ID, "abc"),
+    );
+    assert_eq!(counters.get(KindLabels { kind: Kind::A }), 5);
+    let exemplar = counters
+        .get_metric(counters.with_labels(KindLabels { kind: Kind::A }))
+        .exemplar()
+        .unwrap();
+    assert_eq!(exemplar.value(), 4.0);
+    assert_eq!(exemplar.labels_len(), "trace_idabc".len());
+
+    let histogram = measured::ExemplarHistogram::with_metadata(Thresholds::with_buckets([1.0]));
+    histogram.observe_with_exemplar(0.5, Exemplar::new().with_label(TRACE_ID, "a"));
+    histogram.observe_with_exemplar(5.0, Exemplar::new().with_label(TRACE_ID, "b"));
+    histogram.observe(0.1);
+    assert_eq!(histogram.sample().count(), 3);
+    let exemplars = histogram.get_metric().exemplars();
+    assert_eq!(exemplars.len(), 2);
+    assert_eq!(exemplars[0].as_ref().unwrap().value(), 0.5);
+    assert_eq!(exemplars[1].as_ref().unwrap().value(), 5.0);
+
+    let before = std::time::SystemTime::now();
+    let created = measured::CreatedCounterVec::<KindSet>::new();
+    created.inc_by(KindLabels { kind: Kind::B }, 2);
+    assert_eq!(created.get(KindLabels { kind: Kind::B }), 2);
+    let at = created
+        .get_metric(created.with_labels(KindLabels { kind: Kind::B }))
+        .created();
+    assert!(before <= at && at <= std::time::SystemTime::now());
+
+    let histogram = measured::CreatedHistogram::with_metadata(Thresholds::with_buckets([1.0]));
+    histogram.observe(0.5);
+    assert_eq!(histogram.sample().count(), 1);
+}

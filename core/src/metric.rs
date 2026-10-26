@@ -13,6 +13,7 @@ use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 
 pub mod callback;
 pub mod counter;
+pub mod created;
 pub mod exemplar;
 pub mod gauge;
 pub mod group;

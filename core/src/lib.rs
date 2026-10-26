@@ -519,4 +519,28 @@ pub type GaugeHistogram<const N: usize> = Metric<metric::histogram::GaugeHistogr
 /// A collection of multiple [`GaugeHistogram`]s, keyed by [`LabelGroup`]s.
 pub type GaugeHistogramVec<L, const N: usize> = MetricVec<metric::histogram::GaugeHistogramState<N>, L>;
 
+pub use metric::exemplar::Exemplar;
 pub use metric::state_set::StateSet;
+
+/// A [`Counter`] that records when each series was created. See [`Created`](metric::created::Created)
+pub type CreatedCounter = Metric<metric::created::Created<metric::counter::CounterState>>;
+/// A [`CounterVec`] that records when each series was created. See [`Created`](metric::created::Created)
+pub type CreatedCounterVec<L> = MetricVec<metric::created::Created<metric::counter::CounterState>, L>;
+/// A [`FloatCounter`] that records when each series was created. See [`Created`](metric::created::Created)
+pub type CreatedFloatCounter = Metric<metric::created::Created<metric::counter::FloatCounterState>>;
+/// A [`FloatCounterVec`] that records when each series was created. See [`Created`](metric::created::Created)
+pub type CreatedFloatCounterVec<L> = MetricVec<metric::created::Created<metric::counter::FloatCounterState>, L>;
+/// A [`Histogram`] that records when each series was created. See [`Created`](metric::created::Created)
+pub type CreatedHistogram<const N: usize> = Metric<metric::created::Created<metric::histogram::HistogramState<N>>>;
+/// A [`HistogramVec`] that records when each series was created. See [`Created`](metric::created::Created)
+pub type CreatedHistogramVec<L, const N: usize> =
+    MetricVec<metric::created::Created<metric::histogram::HistogramState<N>>, L>;
+
+/// A [`Counter`] that records the most recent [`Exemplar`].
+pub type ExemplarCounter = Metric<metric::exemplar::ExemplarCounterState>;
+/// A [`CounterVec`] that records the most recent [`Exemplar`] of each series.
+pub type ExemplarCounterVec<L> = MetricVec<metric::exemplar::ExemplarCounterState, L>;
+/// A [`Histogram`] that records the most recent [`Exemplar`] in each bucket.
+pub type ExemplarHistogram<const N: usize> = Metric<metric::exemplar::ExemplarHistogramState<N>>;
+/// A [`HistogramVec`] that records the most recent [`Exemplar`] in each bucket of each series.
+pub type ExemplarHistogramVec<L, const N: usize> = MetricVec<metric::exemplar::ExemplarHistogramState<N>, L>;

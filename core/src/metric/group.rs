@@ -64,7 +64,7 @@ impl MetricKind {
 #[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
 pub struct SampleExtras<'a> {
-    /// When the series was created.
+    /// When the series was created. See [`Created`](super::created::Created).
     pub created: Option<SystemTime>,
     /// An example of what was counted, eg with a trace ID. Summaries do not support exemplars.
     pub exemplar: Option<&'a Exemplar>,
@@ -93,7 +93,7 @@ impl<'a> SampleExtras<'a> {
 #[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
 pub struct HistogramExtras<'a> {
-    /// When the series was created.
+    /// When the series was created. See [`Created`](super::created::Created).
     pub created: Option<SystemTime>,
     /// An exemplar for each bucket. Index `i` is for bucket `le[i]`, and the last is for `+Inf`.
     /// This can be empty if there are no exemplars.

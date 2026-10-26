@@ -9,7 +9,7 @@ use crate::label::LabelGroup;
 
 /// A gauge that is always 1, used to expose information as labels, such as a build version.
 ///
-/// The metric name should end in `_info`. The Supporting encoders encoder removes it from the metric family name, as required by Supporting encoders.
+/// The metric name should end in `_info`. The OpenMetrics encoder removes it from the metric family name, as required by OpenMetrics.
 ///
 /// ```
 /// use measured::{InfoMetric, LabelGroup, MetricGroup};
