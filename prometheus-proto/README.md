@@ -2,14 +2,33 @@
 
 Prometheus protobuf exposition format for measured.
 
-Create a `ProtoEncoder::new(writer)`, collect a metric group into it, and call `flush()` to write
-the final buffered family. Calling `into_inner()` without flushing loses that family.
+Add `measured` and `measured-prometheus-protobuf` to your dependencies. Create a
+`ProtoEncoder::new(writer)`, collect a metric group into it, and call `flush()` to
+write the final buffered family. Calling `into_inner()` without flushing loses that family.
 Use `ProtoEncoder::<W>::MIME_TYPE` through the `Encoding` trait as the HTTP Content-Type.
+
+```rust
+use measured::metric::group::Encoding;
+use measured::{Counter, MetricGroup};
+use measured_prometheus_protobuf::ProtoEncoder;
+
+#[derive(Default, MetricGroup)]
+struct Metrics {
+    requests_total: Counter,
+}
+
+let metrics = Metrics::default();
+let mut encoder = ProtoEncoder::new(Vec::new());
+metrics.collect_group_into(&mut encoder).unwrap();
+encoder.flush().unwrap();
+let bytes = encoder.into_inner();
+assert!(!bytes.is_empty());
+```
 
 The encoder supports histograms, summaries, gauge histograms, exemplars, and creation timestamps.
 
-- [First metrics tutorial](../core/src/docs/tutorial.rs)
-- [Format reference](../core/src/docs/reference.rs)
+- [First metrics tutorial](https://docs.rs/measured/latest/measured/docs/tutorial/index.html)
+- [Format reference](https://docs.rs/measured/latest/measured/docs/reference/index.html)
 - [API reference](https://docs.rs/measured-prometheus-protobuf/latest/measured_prometheus_protobuf/)
 
 ## Protobuf

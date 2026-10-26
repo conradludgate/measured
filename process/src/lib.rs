@@ -49,7 +49,7 @@ pub struct ProcessCollector {
 }
 
 impl ProcessCollector {
-    /// Create a `ProcessCollector` with the given process id and namespace.
+    /// Create a `ProcessCollector` for the given process ID.
     pub fn new(pid: pid_t) -> ProcessCollector {
         // proc_start_time init once because it is immutable
         ProcessCollector { pid, start_time: start_time(pid) }

@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Generic code no longer needs bounds like `CounterState: MetricEncoding<Enc>`. `E: Encoding` is enough.
   - `write_counter`, `write_float_counter` and `write_summary` take `SampleExtras`, and `write_histogram` takes `HistogramExtras`. These carry created timestamps and exemplars. Pass `SampleExtras::NONE` or `HistogramExtras::NONE` if there are none.
   - The `write_counter`, `write_gauge` and `write_float_gauge` free functions are removed. Call the methods on the encoder instead, after `write_family`.
-  - `MetricKind` replaces the text encoder's `MetricType` enum, which is now private. It includes `Summary` and `Custom(&'static str)`, so metric types defined outside measured can write their own `# TYPE`.
+  - `MetricKind` replaces the text encoder's `MetricType` enum, which is now private. External metric implementations can use the built-in kinds, including `Summary`, or `Custom(&'static str)` for encoder-specific types. The bundled encoders fall back to `untyped` in classic text and protobuf, or `unknown` in OpenMetrics, for custom kinds.
   - `write_histogram`, `write_summary`, `write_gauge_histogram` and `write_state_set` have default implementations in terms of the counter and gauge methods, so an encoder only needs to implement `write_family`, `write_counter`, `write_float_counter`, `write_gauge` and `write_float_gauge`.
 - The prometheus text encoder moved to the new `measured-prometheus-text` crate. Replace `measured::text::` with `measured_prometheus_text::`.
   - `TextEncoder::new(writer)` is now `TextEncoder::from_writer(writer)`. `BufferedTextEncoder::new()` is unchanged.

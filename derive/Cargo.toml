@@ -6,6 +6,7 @@ description = "A better way to measure your application statistics"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/conradludgate/measured"
+readme = "README.md"
 rust-version = "1.98"
 
 [lib]

@@ -1,29 +1,41 @@
-//! Monitor a tokio runtime.
+//! Monitor Tokio runtimes with [`measured`].
 //!
-//! # Usage
+//! `RuntimeCollector` samples the current Tokio runtime when a metric group is collected.
+//! `NamedRuntimesCollector` can sample several runtimes and add a runtime name label.
+//!
+//! Add `measured-tokio` alongside `measured`. The following example uses stable runtime metrics
+//! and exports them as Prometheus text:
 //!
 //! ```
 //! use measured::MetricGroup;
+//! use measured_prometheus_text::BufferedTextEncoder;
 //!
 //! #[derive(MetricGroup)]
 //! #[metric(new())]
-//! struct MyAppMetrics {
-//!     #[cfg(tokio_unstable)]
+//! struct AppMetrics {
 //!     #[metric(namespace = "tokio")]
 //!     #[metric(init = measured_tokio::RuntimeCollector::current())]
-//!     tokio: measured_tokio::RuntimeCollector,
-//!     // other metrics
+//!     runtime: measured_tokio::RuntimeCollector,
 //! }
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let metrics = MyAppMetrics::new();
-//!
-//!     // when you run metrics.collect_group_into(...), you will sample tokio to get runtime state.
-//!
-//!     # drop(metrics);
+//!     let metrics = AppMetrics::new();
+//!     let mut encoder = BufferedTextEncoder::new();
+//!     metrics.collect_group_into(&mut encoder).unwrap();
+//!     let body = encoder.finish();
+//!     assert!(
+//!         std::str::from_utf8(&body)
+//!             .unwrap()
+//!             .contains("tokio_alive_tasks")
+//!     );
 //! }
 //! ```
+//!
+//! By default the collector uses stable Tokio APIs. Some additional metrics require passing
+//! `--cfg tokio_unstable`. I/O driver metrics require both that cfg and this crate's `net` feature.
+//! Schedule-latency metrics additionally require `__tokio-unstable-schedule-latency`; they rely on
+//! unstable Tokio APIs and are outside this crate's semver guarantees. They require a 64-bit target.
 
 use std::borrow::Cow;
 use std::sync::RwLock;
@@ -45,7 +57,7 @@ impl NamedRuntimesCollector {
         Self { runtimes: RwLock::new(vec![]) }
     }
 
-    /// Inserts a `RuntimeCollector` with the given runtime.
+    /// Add a collector for a runtime and attach `name` as a label to its metrics.
     pub fn add(&self, rt: RuntimeMetrics, name: impl Into<Cow<'static, str>>) {
         self.runtimes
             .write()
@@ -53,7 +65,7 @@ impl NamedRuntimesCollector {
             .push(RuntimeCollector::new(rt).with_name(name))
     }
 
-    /// Inserts a `RuntimeCollector` for the current runtime.
+    /// Add a collector for the current runtime with the given name.
     ///
     /// # Panics
     ///
@@ -85,7 +97,7 @@ pub struct RuntimeCollector {
 }
 
 impl RuntimeCollector {
-    /// Create a `RuntimeCollector` with the given runtime.
+    /// Create a collector for the given runtime's metrics.
     pub fn new(runtime: RuntimeMetrics) -> Self {
         RuntimeCollector {
             runtime,
@@ -93,7 +105,7 @@ impl RuntimeCollector {
         }
     }
 
-    /// Return a `RuntimeCollector` for the current runtime.
+    /// Return a collector for the current runtime.
     ///
     /// # Panics
     ///
@@ -105,6 +117,7 @@ impl RuntimeCollector {
         RuntimeCollector::new(tokio::runtime::Handle::current().metrics())
     }
 
+    /// Attach a runtime name label to each metric from this collector.
     pub fn with_name(self, name: impl Into<Cow<'static, str>>) -> Self {
         Self {
             runtime: self.runtime,

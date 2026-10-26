@@ -136,10 +136,10 @@
 //! }
 //! let requests = CounterVec::<StaticLabelSet<Worker>>::sparse();
 //! requests.inc(Worker::Background);
-//! if let Some(id) = requests.find_labels(Worker::Background) {
-//!     assert!(requests.remove_metric(id).is_some());
-//! }
+//! let id = requests.find_labels(Worker::Background).unwrap();
+//! assert!(requests.remove_metric(id).is_some());
 //! assert_eq!(requests.get(Worker::Background), 0);
+//! assert_eq!(requests.get_cardinality().0, 0);
 //! ```
 //!
 //! Drop any metric guards before removal. A sparse vector holds shard locks during access;

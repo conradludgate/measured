@@ -15,7 +15,7 @@ The prometheus text encoder, moved out of `measured::text`. See the `measured` c
 
 ### Added
 
-- `OpenMetricsEncoder` and `BufferedOpenMetricsEncoder`, for the OpenMetrics text format. These support every `MetricKind`, exemplars, and created timestamps (as `_created` samples). Exemplars with labels longer than the OpenMetrics limit of 128 characters are not written.
+- `OpenMetricsEncoder` and `BufferedOpenMetricsEncoder`, for the OpenMetrics text format. These support the built-in metric kinds, exemplars, and created timestamps (as `_created` samples). Untyped and custom kinds are written as `unknown`. Exemplars with labels longer than the OpenMetrics limit of 128 characters are not written.
 - OpenMetrics output includes metric-family units declared with `#[metric(unit = "...")]`.
 
 ### Changed

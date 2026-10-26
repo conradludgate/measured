@@ -35,10 +35,11 @@ pub enum MetricKind {
     Info,
     /// A metric with no specific type
     Untyped,
-    /// A metric type not listed here, eg `"gaugehistogram"` from OpenMetrics.
+    /// An encoder-specific metric type not listed here.
     ///
-    /// Encoders that support the type write its name as-is. Encoders that do not, such as the
-    /// prometheus text and protobuf encoders, write the family as untyped.
+    /// Custom encoders can interpret this name. The bundled classic Prometheus text and protobuf
+    /// encoders write these families as untyped; the OpenMetrics encoder uses `unknown`.
+    /// Use a built-in variant for known types, such as [`MetricKind::GaugeHistogram`].
     Custom(&'static str),
 }
 
@@ -174,6 +175,17 @@ impl<'a> HistogramExtras<'a> {
 ///
 /// A collection is a sequence of metric families. Each family starts with [`Encoding::write_family`],
 /// followed by any number of samples for that family.
+///
+/// Use [`Encoding::write_histogram`] and [`Encoding::write_summary`] for composite samples.
+/// Encoders with native family representations, such as protobuf, use the family header's name;
+/// they cannot reconstruct a histogram or distinguish separate metrics from manually suffixed
+/// sample names. Give standalone samples their full name in `write_family` as well as in the
+/// sample-writing method. OpenMetrics handles format-specific suffixes such as a counter's
+/// `_total`; classic Prometheus text writes names as supplied.
+///
+/// Composite defaults split values into text-style samples. Native encoders must override these
+/// methods. Encoder wrappers must forward every method, including composite methods, so they
+/// preserve the wrapped encoder's representation.
 pub trait Encoding {
     /// The error type that this encoder might produce when encoding metric values.
     type Err;

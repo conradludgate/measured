@@ -571,7 +571,8 @@ text_encoder!(
 text_encoder!(
     /// The OpenMetrics text format encoder, writing into any [`Write`].
     ///
-    /// This writes the OpenMetrics text format (`version=1.0.0`), which supports every [`MetricKind`].
+    /// This writes the OpenMetrics text format (`version=1.0.0`). It supports the built-in
+    /// [`MetricKind`] variants and writes untyped and custom kinds as `unknown`.
     /// Following OpenMetrics, a `_total` suffix is removed from counter family names, and added to
     /// counter samples if it is missing. The same is done with `_info` for info metrics.
     ///

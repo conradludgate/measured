@@ -1,3 +1,31 @@
+//! Prometheus protobuf exposition encoding for [`measured`].
+//!
+//! `ProtoEncoder` writes length-delimited `MetricFamily` messages. Collect a metric group and call
+//! [`ProtoEncoder::flush`] before taking the writer; the final family remains buffered until flush.
+//!
+//! Add `measured` and `measured-prometheus-protobuf` to your
+//! dependencies. This example collects a metric group into a byte buffer:
+//!
+//! ```
+//! use measured::metric::group::Encoding;
+//! use measured::{Counter, MetricGroup};
+//! use measured_prometheus_protobuf::ProtoEncoder;
+//!
+//! #[derive(Default, MetricGroup)]
+//! struct Metrics {
+//!     requests_total: Counter,
+//! }
+//!
+//! let metrics = Metrics::default();
+//! metrics.requests_total.inc();
+//! let mut encoder = ProtoEncoder::new(Vec::new());
+//! metrics.collect_group_into(&mut encoder).unwrap();
+//! encoder.flush().unwrap();
+//! let bytes = encoder.into_inner();
+//! assert!(!bytes.is_empty());
+//! assert_eq!(ProtoEncoder::<Vec<u8>>::MIME_TYPE, "application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited");
+//! ```
+
 #![allow(clippy::cast_precision_loss)]
 
 use std::io::Write;

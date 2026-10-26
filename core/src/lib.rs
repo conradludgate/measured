@@ -252,25 +252,55 @@ pub use measured_derive::LabelGroup;
 ///
 /// # Field attributes
 ///
+/// Field initialization with `init`, `metadata`, or `label_set` requires
+/// `#[metric(new(...))]` on the struct. Without it, construct the fields yourself.
+///
 /// ## Nested groups
 /// These are for fields that also implement [`MetricGroup`]
 ///
 /// * `namespace = "..."` - The field represents a nested group with the given namespace.
 /// * `flatten` - The field represents a nested group with no namespacing.
-/// * `init` - The expression needed to initialise the nested metric group.
+/// * `init = expr` - The expression needed to initialise the nested metric group.
 ///
 /// ## Metrics
 /// These are for fields that implement [`MetricFamilyEncoding`](metric::MetricFamilyEncoding)
 ///
 /// * `rename = "..."` - By default, metrics take on the field name in snake case. rename allows renaming them.
+/// * `unit = "..."` - Optional family unit, such as `"seconds"` or `"bytes"`. The metric name
+///   (after any rename) must end in `_<unit>`, optionally followed by `_total`. This attribute
+///   cannot be used on nested groups. OpenMetrics and protobuf preserve units; classic text omits them.
 /// * `metadata = expr` - The metadata to initialise a [`Metric`] or [`MetricVec`] with.
 /// * `label_set = expr` - The [`LabelGroupSet`](label::LabelGroupSet) to initialise a [`MetricVec`] with.
 /// * `init = expr` - The expression needed to initialise the metric, if it cannot be defaulted.
+///
+/// Literal field doc comments become the metric family's help text, with surrounding whitespace
+/// trimmed. Non-literal doc attributes, such as `#[doc = include_str!(...)]`, are ignored.
+/// Family help and units are distinct from `metadata`, which configures the metric's state,
+/// such as histogram bucket boundaries.
 ///
 /// # Outputs
 ///
 /// * `impl MetricGroup for T { ... }`
 /// * `impl MetricGroup { pub fn new(...) -> Self { ... } }`
+///
+/// # Example
+///
+/// ```
+/// use measured::metric::histogram::Thresholds;
+/// use measured::{Histogram, MetricGroup};
+///
+/// #[derive(MetricGroup)]
+/// #[metric(new())]
+/// struct Metrics {
+///     /// Time spent handling requests.
+///     #[metric(unit = "seconds", metadata = Thresholds::with_buckets([0.01, 0.1, 1.0]))]
+///     request_duration_seconds: Histogram<3>,
+/// }
+///
+/// let metrics = Metrics::new();
+/// metrics.request_duration_seconds.observe(0.05);
+/// assert_eq!(metrics.request_duration_seconds.sample().count(), 1);
+/// ```
 ///
 /// `_total` is accepted only for counter families. Info and state set metrics cannot have units.
 /// Type aliases and generic fields are checked using [`MetricFamilyEncoding::KIND`](metric::MetricFamilyEncoding::KIND).
@@ -318,11 +348,13 @@ pub use metric::group::MetricGroup;
 /// // sample the histogram and encode the value to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_histogram");
-/// histogram.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// histogram
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
@@ -366,11 +398,13 @@ pub type Histogram<const N: usize> = Metric<HistogramState<N>>;
 /// // sample the histograms and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_histogram");
-/// histograms.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// histograms
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
@@ -391,11 +425,13 @@ pub type HistogramVec<L, const N: usize> = MetricVec<HistogramState<N>, L>;
 /// // sample the counter and encode the value to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_counter");
-/// counter.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// counter
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type Counter = Metric<CounterState>;
@@ -435,11 +471,13 @@ pub type Counter = Metric<CounterState>;
 /// // sample the counters and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_counter");
-/// counters.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// counters
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type CounterVec<L> = MetricVec<CounterState, L>;
@@ -460,11 +498,13 @@ pub type CounterVec<L> = MetricVec<CounterState, L>;
 /// // sample the gauge and encode the value to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_gauge");
-/// gauge.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// gauge
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type Gauge = Metric<GaugeState>;
@@ -504,11 +544,13 @@ pub type Gauge = Metric<GaugeState>;
 /// // sample the gauges and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_gauge");
-/// gauges.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// gauges
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type GaugeVec<L> = MetricVec<GaugeState, L>;
@@ -529,11 +571,13 @@ pub type GaugeVec<L> = MetricVec<GaugeState, L>;
 /// // sample the gauge and encode the value to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_gauge");
-/// gauge.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// gauge
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type FloatGauge = Metric<FloatGaugeState>;
@@ -573,11 +617,13 @@ pub type FloatGauge = Metric<FloatGaugeState>;
 /// // sample the gauges and encode the values to a textual format.
 /// let mut text_encoder = BufferedTextEncoder::new();
 /// let name = MetricName::from_str("my_first_gauge");
-/// gauges.collect_family_into(
-///     name,
-///     measured::metric::group::FamilyMeta::new(),
-///     &mut text_encoder,
-/// );
+/// gauges
+///     .collect_family_into(
+///         name,
+///         measured::metric::group::FamilyMeta::new(),
+///         &mut text_encoder,
+///     )
+///     .unwrap();
 /// let bytes = text_encoder.finish();
 /// ```
 pub type FloatGaugeVec<L> = MetricVec<FloatGaugeState, L>;
