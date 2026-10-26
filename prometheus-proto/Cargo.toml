@@ -1,6 +1,6 @@
 [package]
 name = "measured-prometheus-protobuf"
-version = "0.0.25"
+version = "0.1.0"
 edition = "2021"
 description = "Prometheus protobuf exposition format for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
@@ -10,14 +10,14 @@ readme = "README.md"
 rust-version = "1.98"
 
 [dependencies]
-measured = { path = "../core", version = "0.0.25" }
+measured = { path = "../core", version = "0.1.0" }
 bytes = "1"
 zmij = "1"
 
 [dev-dependencies]
 prost = "0.12"
 prost-types = "0.12"
-measured = { path = "../core", version = "0.0.25", features = ["lasso"] }
+measured = { path = "../core", version = "0.1.0", features = ["lasso"] }
 fake = "2.9.2"
 divan = "0.1.14"
 prometheus = { version = "0.14.0", default-features = false, features = ["protobuf"] }

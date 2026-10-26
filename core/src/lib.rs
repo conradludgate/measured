@@ -1,6 +1,7 @@
 //! # Measured. A low-overhead prometheus/metrics crate for measuring your application statistics.
 //!
-//! Getting started? See [`docs`]
+//! Start with the [tutorial](docs::tutorial), follow a [how-to guide](docs::how_to),
+//! consult the [reference](docs::reference), or read the [explanation](docs::explanation).
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg))]
 #![allow(
@@ -149,7 +150,7 @@ pub use measured_derive::FixedCardinalityLabel;
 ///
 /// # Container attributes
 ///
-/// * `set = Ident` - The name that the corresponding [`LabelGroupSet`](label::LabelGroupSet) should take on. (**required**)
+/// * `set = Ident` - The name that the corresponding [`LabelGroupSet`](label::LabelGroupSet) should take on. If omitted, no label set is generated, which is useful for labels that are only written directly, eg with an [`InfoMetric`].
 ///
 /// # Field attributes
 ///
@@ -158,6 +159,20 @@ pub use measured_derive::FixedCardinalityLabel;
 /// * `dynamic_with = Type` - The field corresponds to a [`DynamicLabelSet`](label::DynamicLabelSet)
 /// * `default` - The generated [`LabelGroupSet`](label::LabelGroupSet) can default this field.
 /// * `rename = "..."` - Rename this label.
+///
+/// Label names must be unique within the group:
+///
+/// ```compile_fail
+/// #[derive(measured::LabelGroup)]
+/// struct Labels {
+///     a: &'static str,
+///     #[label(rename = "a")]
+///     b: &'static str,
+/// }
+/// ```
+///
+/// Histograms add an `le` label, summaries add a `quantile` label, and state sets add a label named after the metric,
+/// so don't use those names in label groups for those metrics.
 ///
 /// # Outputs
 ///
@@ -171,7 +186,11 @@ pub use measured_derive::FixedCardinalityLabel;
 ///
 /// # Example
 ///
+/// Enable the `lasso` feature for this example.
+///
 /// ```
+/// # #[cfg(feature = "lasso")]
+/// # {
 /// use measured::lasso::{RodeoReader, ThreadedRodeo};
 ///
 /// #[derive(measured::LabelGroup)]
@@ -220,6 +239,7 @@ pub use measured_derive::FixedCardinalityLabel;
 ///
 /// // the dynamic value `"conradludgate"` was inserted into the set
 /// assert_eq!(set.user_name.len(), 1);
+/// # }
 /// ```
 pub use measured_derive::LabelGroup;
 /// Implement [`MetricGroup`] on a `struct`

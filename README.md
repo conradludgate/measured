@@ -1,8 +1,48 @@
 # measured
 
-A better metrics crate
+Typed metrics for Rust, with compact label storage and Prometheus and OpenMetrics encoders.
 
 [![docs](https://img.shields.io/docsrs/measured?style=flat-square)](https://docs.rs/measured/latest/measured/)
+
+## Start here
+
+Requires Rust 1.98 or newer. Add `measured = "0.1"` and `measured-prometheus-text = "0.1"` to your dependencies:
+
+```rust
+use measured::{Counter, MetricGroup};
+use measured_prometheus_text::BufferedTextEncoder;
+
+#[derive(MetricGroup, Default)]
+struct Metrics {
+    /// Number of completed requests.
+    requests_total: Counter,
+}
+
+fn main() {
+    let metrics = Metrics::default();
+    metrics.requests_total.inc();
+
+    let mut encoder = BufferedTextEncoder::new();
+    metrics.collect_group_into(&mut encoder).unwrap();
+    let body = encoder.finish();
+    print!("{}", std::str::from_utf8(&body).unwrap());
+}
+```
+
+Keep the metric group alive across requests. The example prints a HELP line, a TYPE line, and `requests_total 1`.
+
+| Your goal | Documentation |
+| --- | --- |
+| Learn by building a working example | [Tutorial](core/src/docs/tutorial.rs) |
+| Export metrics, record durations, or manage labels | [How-to guides](core/src/docs/how_to.rs) |
+| Look up APIs, features, and export formats | [Reference](core/src/docs/reference.rs) · [API docs](https://docs.rs/measured/latest/measured/) |
+| Understand the design and tradeoffs | [Explanation](core/src/docs/explanation.rs) |
+
+The core crate has no default features. Optional `lasso`, `paracord`, `indexmap`, and `phf` features add label set implementations.
+Use `BufferedOpenMetricsEncoder` from `measured-prometheus-text` to export OpenMetrics, including exemplars and creation timestamps.
+
+For an HTTP integration, see [the Axum example](examples/axum-server).
+For upgrading from 0.0.25, see [the migration notes](core/CHANGELOG.md).
 
 ## Benchmark results
 

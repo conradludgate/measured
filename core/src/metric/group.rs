@@ -22,7 +22,8 @@ pub enum MetricKind {
     Summary,
     /// A histogram of values that can decrease, eg the age of items currently in a queue.
     ///
-    /// The prometheus text format does not support this type, so it is written as untyped.
+    /// The prometheus text format does not support this type, so it is written as a histogram, like the official prometheus clients do.
+    /// Its buckets can still decrease, so queries should treat them as gauges, eg not use `rate`.
     GaugeHistogram,
     /// A set of boolean states, eg which state an enum is in.
     ///
