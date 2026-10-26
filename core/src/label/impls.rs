@@ -46,6 +46,68 @@ impl<T: LabelValue + ?Sized> LabelValue for &T {
     }
 }
 
+impl LabelValue for std::borrow::Cow<'_, str> {
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_str(self)
+    }
+}
+
+impl LabelValue for f64 {
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_float(*self)
+    }
+}
+
+impl LabelValue for bool {
+    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+        v.write_str(if *self { "true" } else { "false" })
+    }
+}
+
+macro_rules! int_label_value {
+    ($($t:ty),*) => {$(
+        impl LabelValue for $t {
+            fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+                v.write_int(i64::from(*self))
+            }
+        }
+    )*};
+}
+int_label_value!(i8, i16, i32, i64, u8, u16, u32);
+
+macro_rules! large_int_label_value {
+    ($($t:ty),*) => {$(
+        impl LabelValue for $t {
+            fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
+                match i64::try_from(*self) {
+                    Ok(x) => v.write_int(x),
+                    Err(_) => v.write_str(itoa::Buffer::new().format(*self)),
+                }
+            }
+        }
+    )*};
+}
+large_int_label_value!(u64, usize, isize);
+
+/// A range of integer label values, eg worker IDs `0..num_workers`.
+impl LabelSet for core::ops::Range<usize> {
+    type Value<'a> = usize;
+
+    fn dynamic_cardinality(&self) -> Option<usize> {
+        Some(self.len())
+    }
+
+    fn encode(&self, value: usize) -> Option<usize> {
+        self.contains(&value).then(|| value - self.start)
+    }
+
+    fn decode(&self, value: usize) -> usize {
+        self.start + value
+    }
+}
+
+impl FixedCardinalitySet for core::ops::Range<usize> {}
+
 #[cfg(feature = "paracord")]
 impl<S: core::hash::BuildHasher> DynamicLabelSet for paracord::ParaCord<S> {}
 

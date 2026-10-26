@@ -78,6 +78,15 @@ impl<M: MetricType, U: Hash + Eq + Copy> ShardedMap<U, M> {
         })
     }
 
+    pub(super) fn find_metric(&self, id: LabelIdInner<U>) -> Option<SparseLockGuard<'_, M>> {
+        let shard = &self.shards[((id.hash as usize) << 7) >> self.shift];
+
+        RwLockReadGuard::try_map(shard.read(), |shard| {
+            shard.find(id.hash, |(k, _v)| *k == id.id).map(|(_, v)| v)
+        })
+        .ok()
+    }
+
     pub(super) fn remove_metric(&self, id: LabelIdInner<U>) -> Option<M> {
         let shard = &self.shards[((id.hash as usize) << 7) >> self.shift];
 

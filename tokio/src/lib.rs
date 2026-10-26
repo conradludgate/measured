@@ -29,10 +29,7 @@ use std::borrow::Cow;
 use std::sync::RwLock;
 
 use measured::label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels};
-use measured::metric::MetricEncoding;
-use measured::metric::counter::CounterState;
-use measured::metric::gauge::{FloatGaugeState, GaugeState};
-use measured::metric::group::Encoding;
+use measured::metric::group::{Encoding, MetricKind, SampleExtras};
 use measured::metric::name::MetricName;
 use measured::{FixedCardinalityLabel, LabelGroup, MetricGroup};
 use tokio::runtime::RuntimeMetrics;
@@ -75,12 +72,7 @@ impl Default for NamedRuntimesCollector {
     }
 }
 
-impl<Enc: Encoding> MetricGroup<Enc> for NamedRuntimesCollector
-where
-    CounterState: MetricEncoding<Enc>,
-    GaugeState: MetricEncoding<Enc>,
-    FloatGaugeState: MetricEncoding<Enc>,
-{
+impl<Enc: Encoding> MetricGroup<Enc> for NamedRuntimesCollector {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), <Enc as Encoding>::Err> {
         collect(&self.runtimes.read().unwrap(), enc)
     }
@@ -121,60 +113,42 @@ impl RuntimeCollector {
     }
 }
 
-#[cfg(tokio_unstable)]
-fn histogram_le(rt: &RuntimeMetrics, bucket: usize) -> HistogramLabelLe {
-    let le = rt.poll_time_histogram_bucket_range(bucket).end;
-    let le = if le == std::time::Duration::from_nanos(u64::MAX) {
-        f64::INFINITY
-    } else {
-        le.as_secs_f64()
-    };
-    HistogramLabelLe { le }
-}
-
-fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Result<(), Enc::Err>
-where
-    CounterState: MetricEncoding<Enc>,
-    GaugeState: MetricEncoding<Enc>,
-    FloatGaugeState: MetricEncoding<Enc>,
-{
+fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Result<(), Enc::Err> {
     macro_rules! metric {
-        ($name:literal, $help:literal, |$rt:ident| $expr:expr) => {{
+        ($name:literal, $help:literal, kind = $kind:expr, |$rt:ident| $expr:expr) => {{
             #![allow(unused_macros)]
             const NAME: &MetricName = MetricName::from_str($name);
-            enc.write_help(NAME, $help)?;
+            enc.write_family(NAME, Some($help), $kind)?;
             for rt in runtimes {
                 let rt_name = &rt.name;
                 macro_rules! write_counter {
                     ($labels:expr, $val:expr) => {
-                        measured::metric::counter::write_counter(
-                            enc,
+                        enc.write_counter(
                             NAME,
                             ComposedGroup(rt_name, $labels),
                             $val,
+                            SampleExtras::NONE,
                         )?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        measured::metric::counter::write_counter(
-                            enc,
+                        enc.write_counter(
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
                             $val,
+                            SampleExtras::NONE,
                         )?
                     };
                 }
                 macro_rules! write_gauge {
                     ($labels:expr, $val:expr) => {
-                        measured::metric::gauge::write_gauge(
-                            enc,
+                        enc.write_gauge(
                             NAME,
                             ComposedGroup(rt_name, $labels),
                             $val,
                         )?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        measured::metric::gauge::write_gauge(
-                            enc,
+                        enc.write_gauge(
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
                             $val,
@@ -183,19 +157,30 @@ where
                 }
                 macro_rules! write_float_gauge {
                     ($labels:expr, $val:expr) => {
-                        measured::metric::gauge::write_float_gauge(
-                            enc,
+                        enc.write_float_gauge(
                             NAME,
                             ComposedGroup(rt_name, $labels),
                             $val,
                         )?
                     };
                     ($suffix:expr, $labels:expr, $val:expr) => {
-                        measured::metric::gauge::write_float_gauge(
-                            enc,
+                        enc.write_float_gauge(
                             NAME.with_suffix($suffix),
                             ComposedGroup(rt_name, $labels),
                             $val,
+                        )?
+                    };
+                }
+                macro_rules! write_histogram {
+                    ($labels:expr, $le:expr, $counts:expr, $inf:expr, $sum:expr) => {
+                        enc.write_histogram(
+                            NAME,
+                            ComposedGroup(rt_name, $labels),
+                            $le,
+                            $counts,
+                            $inf,
+                            $sum,
+                            measured::metric::group::HistogramExtras::NONE,
                         )?
                     };
                 }
@@ -206,8 +191,9 @@ where
     }
 
     metric!(
-        "threads_total",
+        "threads",
         "number of threads used by the runtime",
+        kind = MetricKind::Gauge,
         |rt| {
             write_gauge!(ThreadKind::Worker, rt.num_workers() as i64);
 
@@ -229,17 +215,24 @@ where
     metric!(
         "alive_tasks",
         "number of live tasks spawned in the runtime",
+        kind = MetricKind::Gauge,
         |rt| write_gauge!(NoLabels, rt.num_alive_tasks() as i64)
     );
 
     #[cfg(tokio_unstable)]
-    metric!("tasks_total", "number of tasks", |rt| {
-        write_counter!(NoLabels, rt.spawned_tasks_count());
-    });
+    metric!(
+        "tasks_total",
+        "number of tasks",
+        kind = MetricKind::Counter,
+        |rt| {
+            write_counter!(NoLabels, rt.spawned_tasks_count());
+        }
+    );
 
     metric!(
         "queued_tasks",
         "number of tasks currently in a queue",
+        kind = MetricKind::Gauge,
         |rt| {
             #[cfg(tokio_unstable)]
             write_gauge!(QueueKind::Blocking, rt.blocking_queue_depth() as i64);
@@ -249,7 +242,10 @@ where
             #[cfg(tokio_unstable)]
             for worker in 0..rt.num_workers() {
                 let queue_depth = rt.worker_local_queue_depth(worker);
-                write_gauge!(QueueKind::Worker(worker), queue_depth as i64);
+                write_gauge!(
+                    QueueKind::Worker.compose_with(Worker(worker)),
+                    queue_depth as i64
+                );
             }
         }
     );
@@ -258,6 +254,7 @@ where
     metric!(
         "scheduled_tasks_total",
         "total number of tasks scheduled into the runtime",
+        kind = MetricKind::Counter,
         |rt| {
             struct Overflow(bool);
 
@@ -288,7 +285,7 @@ where
                 );
             }
             write_counter!(
-                Remote.compose_with(Overflow(true)),
+                Remote.compose_with(Overflow(false)),
                 rt.remote_schedule_count()
             );
         }
@@ -298,6 +295,7 @@ where
     metric!(
         "budget_forced_yield_total",
         "number of tasks forced to yield after exhausting their budget",
+        kind = MetricKind::Counter,
         |rt| write_counter!(NoLabels, rt.budget_forced_yield_count())
     );
 
@@ -305,6 +303,7 @@ where
     metric!(
         "worker_mean_poll_time_seconds",
         "estimated weighted moving average of the poll time for this worker",
+        kind = MetricKind::Gauge,
         |rt| for worker in 0..rt.num_workers() {
             let poll_time = rt.worker_mean_poll_time(worker);
             write_float_gauge!(Worker(worker), poll_time.as_secs_f64());
@@ -315,6 +314,7 @@ where
     metric!(
         "worker_noop_total",
         "number of times the given worker thread woke up with no work",
+        kind = MetricKind::Counter,
         |rt| for worker in 0..rt.num_workers() {
             let noops = rt.worker_noop_count(worker);
             write_counter!(Worker(worker), noops);
@@ -324,6 +324,7 @@ where
     metric!(
         "worker_park_total",
         "number of times the given worker thread has parked",
+        kind = MetricKind::Counter,
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_park_count(worker);
             write_counter!(Worker(worker), count);
@@ -331,8 +332,9 @@ where
     );
 
     metric!(
-        "workers_park_unpark_total",
+        "worker_park_unpark_total",
         "number of times the given worker thread has parked and unparked",
+        kind = MetricKind::Counter,
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_park_unpark_count(worker);
             write_counter!(Worker(worker), count);
@@ -343,6 +345,7 @@ where
     metric!(
         "worker_steal_total",
         "number of tasks the given worker thread has stolen",
+        kind = MetricKind::Counter,
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_steal_count(worker);
             write_counter!(Worker(worker), count);
@@ -353,39 +356,57 @@ where
     metric!(
         "worker_steal_operations_total",
         "number of times the given worker thread has attempted to steal tasks",
+        kind = MetricKind::Counter,
         |rt| for worker in 0..rt.num_workers() {
             let count = rt.worker_steal_operations(worker);
             write_counter!(Worker(worker), count);
         }
     );
 
+    // without tokio_unstable, we only know the total time spent polling
+    #[cfg(tokio_unstable)]
+    const POLL_TIME_KIND: MetricKind = MetricKind::Histogram;
+    #[cfg(not(tokio_unstable))]
+    const POLL_TIME_KIND: MetricKind = MetricKind::Untyped;
+
     metric!(
         "worker_poll_time_seconds",
         "time this runtime thread has spent polling tasks",
-        |rt| for worker in 0..rt.num_workers() {
-            use measured::metric::name::Sum;
-
-            let worker_label = Worker(worker);
-
+        kind = POLL_TIME_KIND,
+        |rt| {
+            // the final bucket is unbounded, so it is the +Inf bucket
             #[cfg(tokio_unstable)]
-            {
-                use measured::metric::name::{Bucket, Count};
-                if rt.poll_time_histogram_enabled() {
-                    let buckets = rt.poll_time_histogram_num_buckets();
-                    let mut total = 0;
-                    for bucket in 0..buckets {
-                        let le = histogram_le(rt, bucket);
-                        total += rt.poll_time_histogram_bucket_count(worker, bucket);
-                        write_counter!(Bucket, worker_label.compose_with(le), total);
-                    }
+            let le: Vec<f64> = if rt.poll_time_histogram_enabled() {
+                (0..rt.poll_time_histogram_num_buckets() - 1)
+                    .map(|bucket| {
+                        rt.poll_time_histogram_bucket_range(bucket)
+                            .end
+                            .as_secs_f64()
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+
+            for worker in 0..rt.num_workers() {
+                let busy = rt.worker_total_busy_duration(worker).as_secs_f64();
+
+                #[cfg(tokio_unstable)]
+                {
+                    let counts: Vec<u64> = (0..le.len())
+                        .map(|bucket| rt.poll_time_histogram_bucket_count(worker, bucket))
+                        .collect();
+                    let inf = if rt.poll_time_histogram_enabled() {
+                        rt.poll_time_histogram_bucket_count(worker, le.len())
+                    } else {
+                        rt.worker_poll_count(worker)
+                    };
+                    write_histogram!(Worker(worker), &le, &counts, inf, busy);
                 }
 
-                let count = rt.worker_poll_count(worker);
-                write_counter!(Count, worker_label, count);
+                #[cfg(not(tokio_unstable))]
+                write_float_gauge!(measured::metric::name::Sum, Worker(worker), busy);
             }
-
-            let busy = rt.worker_total_busy_duration(worker);
-            write_float_gauge!(Sum, worker_label, busy.as_secs_f64());
         }
     );
 
@@ -395,16 +416,19 @@ where
         metric!(
             "registered_fds_total",
             "total number of file descriptors that have been registered in the runtime",
+            kind = MetricKind::Counter,
             |rt| write_counter!(NoLabels, rt.io_driver_fd_registered_count())
         );
         metric!(
             "deregistered_fds_total",
             "total number of file descriptors that have been deregistered from the runtime",
+            kind = MetricKind::Counter,
             |rt| write_counter!(NoLabels, rt.io_driver_fd_deregistered_count())
         );
         metric!(
             "io_ready_events_total",
             "total number of ready events the runtime's IO driver has processed",
+            kind = MetricKind::Counter,
             |rt| write_counter!(NoLabels, rt.io_driver_ready_count())
         );
     }
@@ -412,12 +436,7 @@ where
     Ok(())
 }
 
-impl<Enc: Encoding> MetricGroup<Enc> for RuntimeCollector
-where
-    CounterState: MetricEncoding<Enc>,
-    GaugeState: MetricEncoding<Enc>,
-    FloatGaugeState: MetricEncoding<Enc>,
-{
+impl<Enc: Encoding> MetricGroup<Enc> for RuntimeCollector {
     fn collect_group_into(&self, enc: &mut Enc) -> Result<(), Enc::Err> {
         collect(std::slice::from_ref(self), enc)
     }
@@ -431,16 +450,6 @@ impl LabelValue for I64 {
     }
 }
 
-#[cfg(tokio_unstable)]
-struct F64(f64);
-
-#[cfg(tokio_unstable)]
-impl LabelValue for F64 {
-    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
-        v.write_float(self.0)
-    }
-}
-
 #[derive(Copy, Clone)]
 struct Worker(usize);
 
@@ -448,19 +457,6 @@ impl LabelGroup for Worker {
     fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
         const LE: &LabelName = LabelName::from_str("worker");
         v.write_value(LE, &I64(self.0 as i64));
-    }
-}
-
-#[cfg(tokio_unstable)]
-struct HistogramLabelLe {
-    le: f64,
-}
-
-#[cfg(tokio_unstable)]
-impl LabelGroup for HistogramLabelLe {
-    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
-        const LE: &LabelName = LabelName::from_str("le");
-        v.write_value(LE, &F64(self.le));
     }
 }
 
@@ -492,28 +488,47 @@ enum ThreadKind {
     Blocking,
 }
 
+#[derive(FixedCardinalityLabel, Clone, Copy)]
+#[label(singleton = "kind")]
 #[allow(unused)]
 enum QueueKind {
-    Worker(usize),
+    Worker,
     Blocking,
     Global,
 }
 
-#[automatically_derived]
-impl LabelValue for QueueKind {
-    fn visit<V: LabelVisitor>(&self, v: V) -> V::Output {
-        match self {
-            QueueKind::Worker(i) => v.write_str(itoa::Buffer::new().format(*i)),
-            QueueKind::Blocking => v.write_str("blocking"),
-            QueueKind::Global => v.write_str("global"),
-        }
-    }
-}
+#[cfg(test)]
+mod tests {
+    use measured::MetricGroup;
+    use measured_prometheus_text::BufferedTextEncoder;
 
-impl LabelGroup for QueueKind {
-    fn visit_values(&self, v: &mut impl LabelGroupVisitor) {
-        const NAME: &LabelName = LabelName::from_str("kind");
-        v.write_value(NAME, self);
+    use crate::RuntimeCollector;
+
+    #[test]
+    fn types() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .build()
+            .unwrap();
+
+        let mut enc = BufferedTextEncoder::new();
+        RuntimeCollector::new(rt.metrics())
+            .collect_group_into(&mut enc)
+            .unwrap();
+        let output = String::from_utf8(enc.finish().to_vec()).unwrap();
+
+        assert!(output.contains("# TYPE alive_tasks gauge\n"));
+        assert!(output.contains("# TYPE worker_park_total counter\n"));
+
+        #[cfg(tokio_unstable)]
+        assert!(output.contains("scheduled_tasks_total{worker=\"remote\",overflow=\"false\"}"));
+
+        #[cfg(tokio_unstable)]
+        {
+            assert!(output.contains("# TYPE worker_poll_time_seconds histogram\n"));
+            assert!(output.contains("worker_poll_time_seconds_bucket{worker=\"0\",le=\"+Inf\"} "));
+            assert!(output.contains("worker_poll_time_seconds_count{worker=\"0\"} "));
+        }
     }
 }
 
@@ -521,7 +536,8 @@ impl LabelGroup for QueueKind {
 // mod tests {
 //     use std::io::Write;
 
-//     use measured::{text::BufferedTextEncoder, MetricGroup};
+//     use measured::MetricGroup;
+//     use measured_prometheus_text::BufferedTextEncoder;
 //     use tokio::task::JoinSet;
 
 //     use crate::{NamedRuntimesCollector, RuntimeCollector};

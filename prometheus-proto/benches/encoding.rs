@@ -31,10 +31,10 @@ fn measured<const N: usize>(bencher: Bencher) {
     let mut enc = ProtoEncoder::new(vec![]);
 
     bencher.bench_local(|| {
-        enc.writer.clear();
+        enc.writer_mut().clear();
         metrics.collect_group_into(&mut enc).unwrap();
         enc.flush().unwrap();
-        black_box(&enc.writer);
+        black_box(enc.writer());
     });
 }
 

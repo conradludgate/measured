@@ -3,6 +3,8 @@
 use std::io::Write;
 
 /// `MetricName` represents a type that can be encoded into the name of a metric when collected.
+/// Implementations must emit a valid UTF-8 name accepted by [`MetricName::try_from_str`],
+/// and `encode_len` must match the number of bytes emitted. Encoders rely on these contracts.
 pub trait MetricNameEncoder {
     /// Encoded this name into the given bytes buffer according to the Prometheus metric name encoding specification.
     ///
@@ -28,6 +30,7 @@ pub trait MetricNameEncoder {
 
 /// Error returned by [`MetricName::try_from_str`]
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum InvalidMetricName {
     /// The metric name contained invalid characters
     InvalidChars,
@@ -217,13 +220,41 @@ impl<S: Suffix, T: MetricNameEncoder + ?Sized> MetricNameEncoder for WithSuffix<
 }
 
 /// `_total`. A [`Suffix`] that is good for counters
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Total;
 /// `_count`. A [`Suffix`] that is used internally for histograms
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Count;
 /// `_sum`. A [`Suffix`] that is used internally for histograms
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Sum;
 /// `_bucket`. A [`Suffix`] that is used internally for histograms
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Bucket;
+/// `_gcount`. A [`Suffix`] that is used internally for gauge histograms
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GCount;
+/// `_gsum`. A [`Suffix`] that is used internally for gauge histograms
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GSum;
+
+impl Suffix for GCount {
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_gcount")
+    }
+    fn encode_len(&self) -> usize {
+        7
+    }
+}
+
+impl Suffix for GSum {
+    fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
+        b.write_all(b"_gsum")
+    }
+    fn encode_len(&self) -> usize {
+        5
+    }
+}
 
 impl Suffix for Total {
     fn encode_text(&self, b: &mut impl Write) -> std::io::Result<()> {
