@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0](https://github.com/conradludgate/measured/compare/measured-v0.0.25...measured-v0.1.0) - 2026-10-26
+
+### Fixed
+
+- fix histogram validation and metric exposition edge cases
+- fix derive code generation and validate label definitions
+
+### Other
+
+- replace weak test coverage with focused behavioral checks
+- make each crate documentation self-contained and clarify API contracts
+- add metric units through non-exhaustive FamilyMeta
+- document the 0.1 release with tutorials, guides and migration notes
+- use NumBuffer and zmij and require Rust 1.98
+- add non-inserting metric lookup, iteration and projection
+- add OpenMetrics, exemplars and metric creation timestamps
+- add float counters, callbacks, info, state sets and gauge histograms
+- redesign encoding around metric families and sample kinds
+- extract the Prometheus text encoder into its own crate
+- establish nightly rustfmt configuration and format the workspace
+
 ### Added
 
 - Metric families can expose optional unit metadata through derived `#[metric(unit = "...")]` fields.

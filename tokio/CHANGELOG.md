@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0](https://github.com/conradludgate/measured/compare/measured-tokio-v0.0.25...measured-tokio-v0.1.0) - 2026-10-26
+
+### Other
+
+- test Tokio sample names and scrape consistency across encodings
+- make each crate documentation self-contained and clarify API contracts
+- add metric units through non-exhaustive FamilyMeta
+- document the 0.1 release with tutorials, guides and migration notes
+- use NumBuffer and zmij and require Rust 1.98
+- add Tokio schedule latency metrics and fix process collection
+- redesign encoding around metric families and sample kinds
+- establish nightly rustfmt configuration and format the workspace
+
 ### Breaking
 - The minimum supported Rust version is now 1.98.
 
