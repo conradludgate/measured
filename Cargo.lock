@@ -709,7 +709,9 @@ name = "measured-tokio"
 version = "0.1.0"
 dependencies = [
  "measured",
+ "measured-prometheus-protobuf",
  "measured-prometheus-text",
+ "prost",
  "tokio",
 ]
 

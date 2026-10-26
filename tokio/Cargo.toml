@@ -23,6 +23,8 @@ tokio = { version = "1.53.0", features = ["rt"] }
 
 [dev-dependencies]
 measured-prometheus-text = { path = "../prometheus-text" }
+measured-prometheus-protobuf = { path = "../prometheus-proto" }
+prost = "0.12"
 tokio = { version = "1.53.0", features = ["rt", "rt-multi-thread", "macros"] }
 
 [package.metadata.docs.rs]

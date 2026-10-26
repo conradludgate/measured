@@ -599,54 +599,101 @@ enum QueueKind {
 #[cfg(test)]
 mod tests {
     use measured::MetricGroup;
-    use measured_prometheus_text::BufferedTextEncoder;
+    use measured_prometheus_protobuf::ProtoEncoder;
+    use measured_prometheus_text::{BufferedOpenMetricsEncoder, BufferedTextEncoder};
+    use prost::Message;
 
     use crate::RuntimeCollector;
 
-    #[test]
-    fn types() {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .build()
-            .unwrap();
+    // Decode wire fields independently of the production encoder. Unknown fields are skipped.
+    #[derive(Message)]
+    struct Family {
+        #[prost(string, tag = "1")]
+        name: String,
+        #[prost(int32, tag = "3")]
+        kind: i32,
+        #[prost(message, repeated, tag = "4")]
+        metrics: Vec<Sample>,
+    }
 
-        let mut enc = BufferedTextEncoder::new();
+    #[derive(Message)]
+    struct Sample {
+        #[prost(message, repeated, tag = "1")]
+        labels: Vec<Label>,
+        #[prost(message, optional, tag = "2")]
+        gauge: Option<Value>,
+        #[prost(message, optional, tag = "3")]
+        counter: Option<Value>,
+        #[prost(message, optional, tag = "5")]
+        untyped: Option<Value>,
+        #[prost(message, optional, tag = "7")]
+        histogram: Option<Histogram>,
+    }
+
+    #[derive(Message)]
+    struct Label {
+        #[prost(string, tag = "1")]
+        name: String,
+        #[prost(string, tag = "2")]
+        value: String,
+    }
+
+    #[derive(Message)]
+    struct Value {
+        #[prost(double, tag = "1")]
+        value: f64,
+    }
+
+    #[derive(Message)]
+    struct Histogram {
+        #[prost(uint64, tag = "1")]
+        count: u64,
+        #[prost(double, tag = "2")]
+        sum: f64,
+        #[prost(message, repeated, tag = "3")]
+        buckets: Vec<Bucket>,
+    }
+
+    #[derive(Message)]
+    struct Bucket {
+        #[prost(uint64, tag = "1")]
+        count: u64,
+        #[prost(double, tag = "2")]
+        upper_bound: f64,
+    }
+
+    fn protobuf(rt: &tokio::runtime::Runtime) -> Vec<Family> {
+        let mut enc = ProtoEncoder::new(Vec::new());
         RuntimeCollector::new(rt.metrics())
             .collect_group_into(&mut enc)
             .unwrap();
-        let output = String::from_utf8(enc.finish().to_vec()).unwrap();
-
-        assert!(output.contains("# TYPE alive_tasks gauge\n"));
-        assert!(output.contains("# TYPE worker_park_total counter\n"));
-
-        #[cfg(tokio_unstable)]
-        assert!(output.contains("scheduled_tasks_total{worker=\"remote\",overflow=\"false\"}"));
-
-        #[cfg(tokio_unstable)]
-        {
-            assert!(output.contains("# TYPE worker_poll_time_seconds histogram\n"));
-            assert!(output.contains("worker_poll_time_seconds_bucket{worker=\"0\",le=\"+Inf\"} "));
-            assert!(output.contains("worker_poll_time_seconds_count{worker=\"0\"} "));
+        enc.flush().unwrap();
+        let bytes = enc.into_inner();
+        let mut input = bytes.as_slice();
+        let mut families = Vec::new();
+        while !input.is_empty() {
+            families.push(Family::decode_length_delimited(&mut input).unwrap());
         }
+        families
     }
-}
 
-#[cfg(test)]
-#[cfg(tokio_unstable)]
-#[cfg(feature = "__tokio-unstable-schedule-latency")]
-mod schedule_latency_tests {
-    use measured::MetricGroup;
-    use measured_prometheus_text::BufferedTextEncoder;
+    fn family<'a>(families: &'a [Family], name: &str) -> &'a Family {
+        families
+            .iter()
+            .find(|family| family.name == name)
+            .unwrap_or_else(|| panic!("missing family {name}"))
+    }
 
-    use crate::RuntimeCollector;
+    fn label<'a>(sample: &'a Sample, name: &str) -> &'a str {
+        &sample
+            .labels
+            .iter()
+            .find(|label| label.name == name)
+            .unwrap_or_else(|| panic!("missing label {name}"))
+            .value
+    }
 
-    fn encode(rt: &tokio::runtime::Runtime) -> String {
-        rt.block_on(async {
-            for _ in 0..10 {
-                tokio::spawn(async {}).await.unwrap();
-            }
-        });
-
+    fn text(rt: &tokio::runtime::Runtime) -> String {
         let mut enc = BufferedTextEncoder::new();
         RuntimeCollector::new(rt.metrics())
             .collect_group_into(&mut enc)
@@ -654,84 +701,244 @@ mod schedule_latency_tests {
         String::from_utf8(enc.finish().to_vec()).unwrap()
     }
 
-    #[test]
-    fn disabled() {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .build()
+    fn openmetrics(rt: &tokio::runtime::Runtime) -> String {
+        let mut enc = BufferedOpenMetricsEncoder::new();
+        RuntimeCollector::new(rt.metrics())
+            .collect_group_into(&mut enc)
             .unwrap();
-        assert!(!encode(&rt).contains("schedule_latency"));
+        String::from_utf8(enc.finish().to_vec()).unwrap()
+    }
+
+    #[cfg(tokio_unstable)]
+    fn run_tasks(rt: &tokio::runtime::Runtime) {
+        rt.block_on(async {
+            for _ in 0..10 {
+                tokio::spawn(async { tokio::task::yield_now().await })
+                    .await
+                    .unwrap();
+            }
+        });
     }
 
     #[test]
-    fn enabled() {
+    fn ordinary_metrics_preserve_types_and_worker_labels() {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
-            .enable_metrics_schedule_latency_histogram()
             .build()
             .unwrap();
-        let output = encode(&rt);
-        assert!(output.contains("worker_schedule_latency_seconds_bucket{worker=\"0\",le=\"+Inf\"}"));
-        assert!(output.contains("worker_schedule_latency_seconds_count{worker=\"1\"}"));
+        let output = text(&rt);
+        assert!(output.contains("# TYPE alive_tasks gauge\n"));
+        assert!(output.contains("# TYPE worker_park_total counter\n"));
+        let families = protobuf(&rt);
+        let alive = family(&families, "alive_tasks");
+        assert_eq!(alive.kind, 1); // Gauge
+        assert_eq!(alive.metrics[0].gauge.as_ref().unwrap().value, 0.0);
+        let park = family(&families, "worker_park_total");
+        assert_eq!(park.kind, 0); // Counter
+        let workers: Vec<_> = park
+            .metrics
+            .iter()
+            .map(|sample| {
+                assert!(sample.counter.as_ref().unwrap().value >= 0.0);
+                label(sample, "worker")
+            })
+            .collect();
+        assert_eq!(workers, ["0", "1"]);
+        #[cfg(tokio_unstable)]
+        assert!(output.contains("scheduled_tasks_total{worker=\"remote\",overflow=\"false\"}"));
+    }
+
+    #[cfg(not(tokio_unstable))]
+    #[test]
+    fn stable_poll_sum_keeps_its_full_name_in_every_format() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        for (output, kind) in [(text(&rt), "untyped"), (openmetrics(&rt), "unknown")] {
+            assert!(output.contains(&format!("# TYPE worker_poll_time_seconds_sum {kind}\n")));
+            assert!(output.contains("worker_poll_time_seconds_sum{worker=\"0\"} "));
+        }
+        let families = protobuf(&rt);
+        assert!(
+            !families
+                .iter()
+                .any(|family| family.name == "worker_poll_time_seconds")
+        );
+        let sum = family(&families, "worker_poll_time_seconds_sum");
+        assert_eq!(sum.kind, 3); // Untyped
+        assert_eq!(sum.metrics.len(), 1);
+        assert_eq!(label(&sum.metrics[0], "worker"), "0");
+        assert!(sum.metrics[0].untyped.as_ref().unwrap().value >= 0.0);
+    }
+
+    #[cfg(tokio_unstable)]
+    #[test]
+    fn poll_histogram_exports_observations_as_a_native_histogram() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_metrics_poll_time_histogram()
+            .build()
+            .unwrap();
+        run_tasks(&rt);
+        assert!(text(&rt).contains("# TYPE worker_poll_time_seconds histogram\n"));
+        assert!(openmetrics(&rt).contains("# TYPE worker_poll_time_seconds histogram\n"));
+        let families = protobuf(&rt);
+        let polls = family(&families, "worker_poll_time_seconds");
+        assert_eq!(polls.kind, 4); // Histogram
+        assert_eq!(polls.metrics.len(), 1);
+        assert_eq!(label(&polls.metrics[0], "worker"), "0");
+        let histogram = polls.metrics[0].histogram.as_ref().unwrap();
+        assert!(histogram.count > 0);
+        assert!(histogram.sum >= 0.0);
+        assert!(!histogram.buckets.is_empty());
+        assert!(
+            histogram
+                .buckets
+                .windows(2)
+                .all(|pair| pair[0].count <= pair[1].count && pair[0].upper_bound < pair[1].upper_bound)
+        );
+        assert!(histogram.buckets.last().unwrap().count <= histogram.count);
+    }
+
+    #[cfg(all(tokio_unstable, feature = "__tokio-unstable-schedule-latency"))]
+    mod schedule_latency {
+        use super::*;
+
+        #[test]
+        fn disabled_histogram_is_omitted_in_every_format() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap();
+            assert!(!text(&rt).contains("schedule_latency"));
+            assert!(!openmetrics(&rt).contains("schedule_latency"));
+            assert!(
+                !protobuf(&rt)
+                    .iter()
+                    .any(|family| family.name.contains("schedule_latency"))
+            );
+        }
+
+        #[test]
+        fn enabled_histogram_keeps_names_labels_and_cumulative_counts() {
+            // A current-thread runtime stops polling tasks when block_on returns, so separate
+            // family collections see the same completed workload without timing assumptions.
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_metrics_schedule_latency_histogram()
+                .build()
+                .unwrap();
+            run_tasks(&rt);
+            for (output, kind) in [(text(&rt), "untyped"), (openmetrics(&rt), "unknown")] {
+                assert!(output.contains(&format!(
+                    "# TYPE worker_schedule_latency_seconds_bucket {kind}\n"
+                )));
+                assert!(output.contains(&format!(
+                    "# TYPE worker_schedule_latency_seconds_count {kind}\n"
+                )));
+                assert!(output.contains("worker_schedule_latency_seconds_bucket{worker=\"0\",le=\"+Inf\"}"));
+            }
+            let families = protobuf(&rt);
+            assert!(
+                !families
+                    .iter()
+                    .any(|family| family.name == "worker_schedule_latency_seconds")
+            );
+            let buckets = family(&families, "worker_schedule_latency_seconds_bucket");
+            let counts = family(&families, "worker_schedule_latency_seconds_count");
+            assert_eq!(buckets.kind, 3);
+            assert_eq!(counts.kind, 3);
+            assert_eq!(counts.metrics.len(), 1);
+            assert_eq!(label(&counts.metrics[0], "worker"), "0");
+            let total = counts.metrics[0].untyped.as_ref().unwrap().value;
+            assert!(
+                total > 0.0,
+                "the completed task workload must produce observations"
+            );
+            assert_eq!(
+                buckets.metrics.len(),
+                rt.metrics().schedule_latency_histogram_num_buckets()
+            );
+            let mut previous = 0.0;
+            let mut previous_bound = f64::NEG_INFINITY;
+            for sample in &buckets.metrics {
+                assert_eq!(label(sample, "worker"), "0");
+                let bound: f64 = label(sample, "le").parse().unwrap();
+                let value = sample.untyped.as_ref().unwrap().value;
+                assert!(bound > previous_bound);
+                assert!(value >= previous && value <= total);
+                previous = value;
+                previous_bound = bound;
+            }
+            assert_eq!(previous_bound, f64::INFINITY);
+            assert_eq!(previous, total);
+        }
+        #[test]
+        fn counts_match_buckets_when_observations_arrive_during_encoding() {
+            struct Writer<'a> {
+                runtime: &'a tokio::runtime::Runtime,
+                output: Vec<u8>,
+                advanced: bool,
+            }
+            impl std::io::Write for Writer<'_> {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    self.output.extend_from_slice(bytes);
+                    if !self.advanced
+                        && self
+                            .output
+                            .windows(b"worker_schedule_latency_seconds_count".len())
+                            .any(|w| w == b"worker_schedule_latency_seconds_count")
+                    {
+                        self.advanced = true;
+                        run_tasks(self.runtime);
+                    }
+                    Ok(bytes.len())
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_metrics_schedule_latency_histogram()
+                .build()
+                .unwrap();
+            run_tasks(&runtime);
+            let writer = Writer {
+                runtime: &runtime,
+                output: Vec::new(),
+                advanced: false,
+            };
+            let mut encoder = measured_prometheus_text::TextEncoder::from_writer(writer);
+            RuntimeCollector::new(runtime.metrics())
+                .collect_group_into(&mut encoder)
+                .unwrap();
+            let writer = encoder.into_inner();
+            assert!(writer.advanced);
+            let output = String::from_utf8(writer.output).unwrap();
+            let value = |prefix: &str| {
+                output
+                    .lines()
+                    .find(|line| line.starts_with(prefix))
+                    .unwrap()
+                    .rsplit(' ')
+                    .next()
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap()
+            };
+            let count = value("worker_schedule_latency_seconds_count{");
+            assert_eq!(
+                value("worker_schedule_latency_seconds_bucket{worker=\"0\",le=\"+Inf\"}"),
+                count
+            );
+            let current: u64 = (0..runtime.metrics().schedule_latency_histogram_num_buckets())
+                .map(|bucket| {
+                    runtime
+                        .metrics()
+                        .schedule_latency_histogram_bucket_count(0, bucket)
+                })
+                .sum();
+            assert!(
+                current > count,
+                "the writer must cause new observations after the bucket snapshot"
+            );
+        }
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use std::io::Write;
-
-//     use measured::MetricGroup;
-//     use measured_prometheus_text::BufferedTextEncoder;
-//     use tokio::task::JoinSet;
-
-//     use crate::{NamedRuntimesCollector, RuntimeCollector};
-
-//     #[test]
-//     fn demo() {
-//         let rt = tokio::runtime::Builder::new_multi_thread()
-//             .worker_threads(4)
-//             .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Log)
-//             .enable_metrics_poll_count_histogram()
-//             .enable_all()
-//             .build()
-//             .unwrap();
-//         rt.block_on(async {
-//             let mut js = JoinSet::new();
-//             for _ in 0..100 {
-//                 js.spawn(async {
-//                     for _ in 0..100 {
-//                         tokio::task::yield_now().await;
-//                     }
-//                 });
-//             }
-//             while js.join_next().await.is_some() {}
-//         });
-
-//         let rt2 = tokio::runtime::Builder::new_multi_thread()
-//             .worker_threads(8)
-//             .metrics_poll_count_histogram_scale(tokio::runtime::HistogramScale::Linear)
-//             .enable_metrics_poll_count_histogram()
-//             .enable_all()
-//             .build()
-//             .unwrap();
-//         rt2.block_on(async {
-//             let mut js = JoinSet::new();
-//             for _ in 0..100 {
-//                 js.spawn(async {
-//                     for _ in 0..100 {
-//                         tokio::task::yield_now().await;
-//                     }
-//                 });
-//             }
-//             while js.join_next().await.is_some() {}
-//         });
-
-//         let collector = NamedRuntimesCollector::new();
-//         collector.add(rt.metrics(), "foo");
-//         collector.add(rt2.metrics(), "bar");
-
-//         let mut enc = BufferedTextEncoder::new();
-//         collector.collect_group_into(&mut enc).unwrap();
-//         std::io::stdout().write_all(&enc.finish()).unwrap();
-//     }
-// }
