@@ -199,7 +199,11 @@ fn projection_preserves_histogram_metadata_and_labels() {
         vec.get_metric(vec.with_labels(Kind::B));
         let mut enc = BufferedTextEncoder::new();
         vec.project(|state| &state.histogram)
-            .collect_family_into(MetricName::from_str("latency"), Some("latency"), &mut enc)
+            .collect_family_into(
+                MetricName::from_str("latency"),
+                measured::metric::group::FamilyMeta::new().with_help("latency"),
+                &mut enc,
+            )
             .unwrap();
         assert_eq!(
             enc.finish(),

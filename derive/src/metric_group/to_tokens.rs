@@ -47,18 +47,30 @@ impl ToTokens for MetricGroup {
             match &attrs.kind {
                 MetricGroupFieldAttrsKind::Metric { rename } => {
                     let name_string = rename.as_ref().map_or_else(|| name.unraw().to_string(), |l| l.value());
+                    let mut meta = quote_spanned!(
+                        x.span => #krate::metric::group::FamilyMeta::new()
+                    );
+                    if let Some(doc) = attrs.docs.as_deref().map(str::trim) {
+                        meta = quote_spanned!(x.span => #meta.with_help(#doc));
+                    }
+                    if let Some(unit) = &attrs.unit {
+                        meta = quote_spanned!(x.span => #meta.with_unit(#unit));
+                    }
 
-                    let help = match attrs.docs.as_deref() {
-                        Some(doc) => {
-                            let doc = doc.trim();
-                            quote_spanned!(x.span => ::core::option::Option::Some(#doc))
-                        }
-                        None => quote_spanned!(x.span => ::core::option::Option::None),
-                    };
+                    let unit_check = attrs.unit.as_ref().map(|_| {
+                        let counter_suffix = name_string.ends_with("_total");
+                        quote_spanned! { x.span => const {
+                            use #krate::metric::group::MetricKind;
+                            let kind = <#ty as #krate::metric::MetricFamilyEncoding>::KIND;
+                            assert!(!matches!(kind, ::core::option::Option::Some(MetricKind::Info | MetricKind::StateSet)), "info and state set metrics cannot have units");
+                            assert!(!#counter_suffix || matches!(kind, ::core::option::Option::Some(MetricKind::Counter)), "only counter units may precede a _total suffix");
+                        }; }
+                    });
 
                     quote_spanned! { x.span => {
+                        #unit_check
                         const NAME: &#krate::metric::name::MetricName = #krate::metric::name::MetricName::from_str(#name_string);
-                        <#ty as #krate::metric::MetricFamilyEncoding>::collect_family_into(&self.#name, NAME, #help, enc)?;
+                        <#ty as #krate::metric::MetricFamilyEncoding>::collect_family_into(&self.#name, NAME, #meta, enc)?;
                     }}
                 },
                 MetricGroupFieldAttrsKind::Group { namespace: None } => {

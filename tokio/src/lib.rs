@@ -29,7 +29,7 @@ use std::borrow::Cow;
 use std::sync::RwLock;
 
 use measured::label::{ComposedGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor, NoLabels};
-use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+use measured::metric::group::{Encoding, FamilyMeta, MetricKind, SampleExtras};
 use measured::metric::name::MetricName;
 use measured::{FixedCardinalityLabel, LabelGroup, MetricGroup};
 use tokio::runtime::RuntimeMetrics;
@@ -129,7 +129,7 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
         ($name:literal, $help:literal, kind = $kind:expr, |$rt:ident| $expr:expr) => {{
             #![allow(unused_macros)]
             const NAME: &MetricName = MetricName::from_str($name);
-            enc.write_family(NAME, Some($help), $kind)?;
+            enc.write_family(NAME, $kind, FamilyMeta::new().with_help($help))?;
             for rt in runtimes {
                 let rt_name = &rt.name;
                 macro_rules! write_counter {
@@ -451,8 +451,8 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
             let name = MetricName::from_str("worker_schedule_latency_seconds_bucket");
             enc.write_family(
                 name,
-                Some("cumulative counts of task schedule latencies for this worker"),
                 MetricKind::Untyped,
+                FamilyMeta::new().with_help("cumulative counts of task schedule latencies for this worker"),
             )?;
             for (rt_name, worker, buckets, _) in &snapshots {
                 for (le, count) in buckets {
@@ -467,8 +467,8 @@ fn collect<Enc: Encoding>(runtimes: &[RuntimeCollector], enc: &mut Enc) -> Resul
             let name = MetricName::from_str("worker_schedule_latency_seconds_count");
             enc.write_family(
                 name,
-                Some("number of task schedule latencies recorded for this worker"),
                 MetricKind::Untyped,
+                FamilyMeta::new().with_help("number of task schedule latencies recorded for this worker"),
             )?;
             for (rt_name, worker, _, total) in &snapshots {
                 enc.write_counter(

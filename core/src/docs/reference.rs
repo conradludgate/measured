@@ -35,3 +35,23 @@
 //! Protobuf represents info metrics and state sets as gauges and has a native gauge histogram type.
 //! See [`MetricKind`](crate::metric::group::MetricKind) and each encoder's API for fallback behavior.
 //! Use `Encoding::MIME_TYPE` for the chosen encoder's HTTP content type.
+//!
+//! # Metric units
+//!
+//! Put a known unit on a derived metric field with `#[metric(unit = "seconds")]`. The declared
+//! metric name must end in `_<unit>`; counter names may have a trailing `_total`, as in
+//! `request_duration_seconds_total`. The derive checks this naming rule at compile time.
+//! OpenMetrics emits a `# UNIT` line, and protobuf preserves the unit metadata. Classic Prometheus
+//! text has no unit field and ignores it. Manual family collection can pass a unit to
+//! `collect_family_into` with `FamilyMeta::new().with_unit("seconds")`, but metric names are not
+//! checked automatically.
+//!
+//! ```compile_fail
+//! use measured::{Counter, MetricGroup};
+//!
+//! #[derive(MetricGroup)]
+//! struct Metrics {
+//!     #[metric(unit = "seconds")]
+//!     request_duration: Counter,
+//! }
+//! ```

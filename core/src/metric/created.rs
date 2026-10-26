@@ -3,7 +3,7 @@
 use core::ops::Deref;
 use std::time::SystemTime;
 
-use super::group::{Encoding, HistogramExtras, MetricKind, SampleExtras};
+use super::group::{Encoding, FamilyMeta, HistogramExtras, MetricKind, SampleExtras};
 use super::histogram::{HistogramSample, HistogramState};
 use super::name::MetricNameEncoder;
 use super::{MetricEncoding, MetricLockGuard, MetricType};
@@ -83,10 +83,10 @@ impl<E: Encoding> Encoding for WithCreated<'_, E> {
     fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
         kind: MetricKind,
+        meta: FamilyMeta<'_>,
     ) -> Result<(), E::Err> {
-        self.inner.write_family(name, help, kind)
+        self.inner.write_family(name, kind, meta)
     }
 
     fn write_counter(

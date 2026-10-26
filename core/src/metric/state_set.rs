@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use super::MetricFamilyEncoding;
-use super::group::{Encoding, MetricKind};
+use super::group::{Encoding, FamilyMeta, MetricKind};
 use super::name::MetricNameEncoder;
 use crate::label::{FixedCardinalityLabel, LabelValue, NoLabels};
 
@@ -60,13 +60,15 @@ impl<E: FixedCardinalityLabel> StateSet<E> {
 }
 
 impl<E: FixedCardinalityLabel + LabelValue> MetricFamilyEncoding for StateSet<E> {
+    const KIND: Option<MetricKind> = Some(MetricKind::StateSet);
+
     fn collect_family_into<Enc: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut Enc,
     ) -> Result<(), Enc::Err> {
-        enc.write_family(&name, help, MetricKind::StateSet)?;
+        enc.write_family(&name, MetricKind::StateSet, meta)?;
         let current = self.state.load(Ordering::Relaxed);
         let states = (0..E::cardinality()).map(|i| (E::decode(i), i == current));
         enc.write_state_set(name, NoLabels, states)

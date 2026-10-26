@@ -3,7 +3,7 @@
 use parking_lot::RwLock;
 
 use super::MetricFamilyEncoding;
-use super::group::{Encoding, MetricKind};
+use super::group::{Encoding, FamilyMeta, MetricKind};
 use super::name::MetricNameEncoder;
 use crate::label::LabelGroup;
 
@@ -64,13 +64,15 @@ impl<L: Default> Default for InfoMetric<L> {
 }
 
 impl<L: LabelGroup> MetricFamilyEncoding for InfoMetric<L> {
+    const KIND: Option<MetricKind> = Some(MetricKind::Info);
+
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err> {
-        enc.write_family(&name, help, MetricKind::Info)?;
+        enc.write_family(&name, MetricKind::Info, meta)?;
         enc.write_gauge(name, &*self.labels.read(), 1)
     }
 }

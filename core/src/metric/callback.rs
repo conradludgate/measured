@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 
 use super::counter::{CounterState, FloatCounterState};
 use super::gauge::{FloatGaugeState, GaugeState};
-use super::group::Encoding;
+use super::group::{Encoding, FamilyMeta, MetricKind};
 use super::name::MetricNameEncoder;
 use super::{MetricEncoding, MetricFamilyEncoding};
 use crate::label::NoLabels;
@@ -89,13 +89,15 @@ where
     M: MetricEncoding<Metadata = ()>,
     F: Fn() -> M,
 {
+    const KIND: Option<MetricKind> = Some(M::KIND);
+
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err> {
-        enc.write_family(&name, help, M::KIND)?;
+        enc.write_family(&name, M::KIND, meta)?;
         (self.f)().collect_into(&(), NoLabels, name, enc)
     }
 }

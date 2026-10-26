@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `#[derive(LabelGroup)]` no longer requires `#[label(set = ...)]`.
 - Generated `LabelGroupSet` impls implement `find`, for the new `LabelGroupSet::find` method.
+- `#[metric(unit = "...")]` declares metric-family units and checks the metric-name suffix.
 
 ### Fixed
 

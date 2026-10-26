@@ -8,7 +8,7 @@ type Option = u8;
 
 use measured::metric::MetricFamilyEncoding;
 use measured::{Counter, FixedCardinalityLabel, LabelGroup, MetricGroup};
-use measured_prometheus_text::BufferedTextEncoder;
+use measured_prometheus_text::{BufferedOpenMetricsEncoder, BufferedTextEncoder};
 
 #[derive(FixedCardinalityLabel, Clone, Copy)]
 enum Method {
@@ -65,6 +65,43 @@ requests{foo="get",FOO="post"} 1
     );
 }
 
+#[derive(MetricGroup)]
+struct Units {
+    #[metric(unit = "seconds")]
+    request_duration_seconds_total: Counter,
+}
+
+#[derive(MetricGroup)]
+struct NamespacedUnits {
+    #[metric(namespace = "api")]
+    requests: Units,
+}
+
+#[test]
+fn derived_metric_unit_reaches_openmetrics_and_classic_encoders() {
+    let metrics = NamespacedUnits {
+        requests: Units {
+            request_duration_seconds_total: Counter::new(),
+        },
+    };
+    metrics.requests.request_duration_seconds_total.inc();
+
+    let mut openmetrics = BufferedOpenMetricsEncoder::new();
+    metrics.collect_group_into(&mut openmetrics).unwrap();
+    assert_eq!(
+        openmetrics.finish(),
+        "# TYPE api_request_duration_seconds counter\n\
+         # UNIT api_request_duration_seconds seconds\n\
+         api_request_duration_seconds_total 1\n\
+         # EOF\n"
+    );
+
+    let mut classic = BufferedTextEncoder::new();
+    metrics.collect_group_into(&mut classic).unwrap();
+    let classic = classic.finish();
+    assert!(!classic.windows(b"# UNIT".len()).any(|w| w == b"# UNIT"));
+}
+
 /// A label set with a fixed vocabulary, usable as either a fixed or dynamic set.
 struct Words(&'static [&'static str]);
 
@@ -106,7 +143,7 @@ fn label_set_new_uses_declaration_order() {
     counter
         .collect_family_into(
             measured::metric::name::MetricName::from_str("pairs"),
-            None,
+            measured::metric::group::FamilyMeta::new(),
             &mut enc,
         )
         .unwrap();

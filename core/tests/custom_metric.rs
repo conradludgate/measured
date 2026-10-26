@@ -1,6 +1,6 @@
 //! A metric type defined outside of measured, as a third party crate would.
 
-use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+use measured::metric::group::{Encoding, FamilyMeta, MetricKind, SampleExtras};
 use measured::metric::name::MetricNameEncoder;
 use measured::metric::{MetricEncoding, MetricType};
 use measured::{LabelGroup, MetricGroup};
@@ -53,10 +53,10 @@ impl measured::metric::MetricFamilyEncoding for Flag {
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err> {
-        enc.write_family(&name, help, MetricKind::Custom("stateset"))?;
+        enc.write_family(&name, MetricKind::Custom("stateset"), meta)?;
         enc.write_gauge(name, measured::label::NoLabels, self.0.get())
     }
 }

@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use crossbeam_utils::CachePadded;
 
-use self::group::{Encoding, MetricKind};
+use self::group::{Encoding, FamilyMeta, MetricKind};
 use self::name::MetricNameEncoder;
 use crate::label::{LabelGroup, LabelGroupSet, NoLabels};
 
@@ -475,50 +475,59 @@ pub trait MetricEncoding: MetricType {
 
 /// A metric family, such as a [`Metric`] or [`MetricVec`], that can be written into any [`Encoding`].
 pub trait MetricFamilyEncoding {
-    /// Write the family header and all samples of this metric family
+    /// The family kind, when known. Used by derives to validate unit conventions.
+    const KIND: Option<MetricKind> = None;
+
+    /// Write the family header and all samples of this metric family, with an optional unit.
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err>;
 }
 
 impl<M: MetricFamilyEncoding> MetricFamilyEncoding for Option<M> {
+    const KIND: Option<MetricKind> = M::KIND;
+
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err> {
         if let Some(this) = self {
-            this.collect_family_into(name, help, enc)?;
+            this.collect_family_into(name, meta, enc)?;
         }
         Ok(())
     }
 }
 
 impl<M: MetricEncoding> MetricFamilyEncoding for Metric<M> {
+    const KIND: Option<MetricKind> = Some(M::KIND);
+
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err> {
-        enc.write_family(&name, help, M::KIND)?;
+        enc.write_family(&name, M::KIND, meta)?;
         self.metric
             .collect_into(&self.metadata, NoLabels, name, enc)
     }
 }
 
 impl<M: MetricEncoding, L: LabelGroupSet> MetricFamilyEncoding for MetricVec<M, L> {
+    const KIND: Option<MetricKind> = Some(M::KIND);
+
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err> {
-        enc.write_family(&name, help, M::KIND)?;
+        enc.write_family(&name, M::KIND, meta)?;
         self.try_for_each(|labels, metric| metric.collect_into(&self.metadata, labels, &name, enc))
     }
 }
@@ -530,7 +539,9 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     ///
     /// # Deadlocks
     /// For sparse metric vecs, the lock for a group of metrics is held while they are visited.
-    /// Do not create or remove metrics in this vec from inside `f`.
+    /// Do not access this vec from inside `f`, including through readers such as `get`,
+    /// `sample`, `find_metric` or collection. A waiting writer can make even a recursive
+    /// read lock deadlock.
     pub fn try_for_each<E>(&self, mut f: impl FnMut(L::Group<'_>, &M) -> Result<(), E>) -> Result<(), E> {
         match &self.metrics {
             VecInner::Dense(m) => {
@@ -560,7 +571,7 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     /// ```
     /// use measured::label::StaticLabelSet;
     /// use measured::metric::counter::CounterState;
-    /// use measured::metric::group::Encoding;
+    /// use measured::metric::group::{Encoding, FamilyMeta};
     /// use measured::metric::name::MetricName;
     /// use measured::metric::{MetricFamilyEncoding, MetricType, MetricVec};
     /// use measured::{FixedCardinalityLabel, MetricGroup};
@@ -591,13 +602,13 @@ impl<M: MetricType, L: LabelGroupSet> MetricVec<M, L> {
     ///         const CLOSED: &MetricName = MetricName::from_str("connections_closed_total");
     ///         const OPENED: &MetricName = MetricName::from_str("connections_opened_total");
     ///
-    ///         // closed first, so that opened - closed is never negative
+    ///         // These relaxed loads are independent, not a transactional snapshot.
     ///         self.0
     ///             .project(|m| &m.closed)
-    ///             .collect_family_into(CLOSED, None, enc)?;
+    ///             .collect_family_into(CLOSED, FamilyMeta::new(), enc)?;
     ///         self.0
     ///             .project(|m| &m.opened)
-    ///             .collect_family_into(OPENED, None, enc)
+    ///             .collect_family_into(OPENED, FamilyMeta::new(), enc)
     ///     }
     /// }
     ///
@@ -641,13 +652,15 @@ where
     N: MetricEncoding<Metadata = M::Metadata>,
     F: Fn(&M) -> &N,
 {
+    const KIND: Option<MetricKind> = Some(N::KIND);
+
     fn collect_family_into<E: Encoding>(
         &self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
+        meta: FamilyMeta<'_>,
         enc: &mut E,
     ) -> Result<(), E::Err> {
-        enc.write_family(&name, help, N::KIND)?;
+        enc.write_family(&name, N::KIND, meta)?;
         self.vec
             .try_for_each(|labels, metric| (self.project)(metric).collect_into(&self.vec.metadata, labels, &name, enc))
     }

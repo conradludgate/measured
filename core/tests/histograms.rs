@@ -15,8 +15,12 @@ fn measured() {
     }
 
     let metric = MetricName::from_str("http_request_errors");
-    h.collect_family_into(metric, Some("help text"), &mut encoder)
-        .unwrap();
+    h.collect_family_into(
+        metric,
+        measured::metric::group::FamilyMeta::new().with_help("help text"),
+        &mut encoder,
+    )
+    .unwrap();
     assert_eq!(
         encoder.finish(),
         r#"# HELP http_request_errors help text

@@ -48,6 +48,7 @@ impl ContainerAttrs {
 pub struct MetricGroupFieldAttrs {
     pub kind: MetricGroupFieldAttrsKind,
     pub docs: Option<String>,
+    pub unit: Option<LitStr>,
     pub init: Option<MetricGroupFieldAttrsInit>,
 }
 
@@ -70,6 +71,7 @@ impl MetricGroupFieldAttrs {
     pub fn parse_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut args = None;
         let mut docs = None;
+        let mut unit = None;
         let mut init = None;
 
         for attr in attrs {
@@ -86,6 +88,11 @@ impl MetricGroupFieldAttrs {
                             let arg = MetricGroupFieldAttrsKind::Group { namespace: Some(meta.value()?.parse()?) };
                             if args.replace(arg).is_some() {
                                 return Err(meta.error("duplicate `metric(namespace)` attr"));
+                            }
+                        }
+                        () if meta.path.is_ident("unit") => {
+                            if unit.replace(meta.value()?.parse()?).is_some() {
+                                return Err(meta.error("duplicate `metric(unit)` attr"));
                             }
                         }
                         () if meta.path.is_ident("flatten") => {
@@ -155,6 +162,7 @@ impl MetricGroupFieldAttrs {
         Ok(Self {
             kind: args.unwrap_or(MetricGroupFieldAttrsKind::Metric { rename: None }),
             docs,
+            unit,
             init,
         })
     }

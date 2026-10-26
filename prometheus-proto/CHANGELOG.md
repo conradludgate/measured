@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Histograms, summaries, gauge histograms and float counters can be encoded.
+- Metric-family unit metadata is encoded in the protobuf `MetricFamily`.
 - State sets and info metrics are written as gauges, as protobuf has no type for them.
 - Exemplars on counters and histogram buckets, including `+Inf`, and created timestamps on counters, histograms and summaries.
 

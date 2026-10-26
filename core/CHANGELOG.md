@@ -7,14 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Metric families can expose optional unit metadata through derived `#[metric(unit = "...")]` fields.
+- Added non-exhaustive `FamilyMeta` for family help and unit metadata, so future family metadata can be added without changing encoder method parameters. Its public fields can be inspected, and builder methods set their values.
+
 ### Breaking
 
 - The minimum supported Rust version is now 1.98, for `core::fmt::NumBuffer`.
 - Replaced the `itoa` dependency with `core::fmt::NumBuffer`, and `ryu` with `zmij`. Floats of 1e16 or more are now formatted with an explicit exponent sign, eg `1e+16` instead of `1e16`. This changes the value of `le` labels for histogram buckets of 1e16 or more.
 - The encoding traits are redesigned, so each encoder and each metric type is implemented once:
-  - `Encoding` has `write_family(name, help, kind)` followed by `write_counter`, `write_gauge`, `write_float_gauge` and `write_histogram`. It replaces `Encoding::write_help` and `MetricEncoding::write_type`.
+  - `Encoding` has `write_family(name, kind, meta)` followed by `write_counter`, `write_gauge`, `write_float_gauge` and `write_histogram`. `FamilyMeta::new().with_help(...).with_unit(...)` supplies optional family metadata. It replaces `Encoding::write_help` and `MetricEncoding::write_type`.
   - `MetricEncoding` is no longer generic over the encoder. It has a `KIND` const and a generic `collect_into<E: Encoding>` method.
-  - `MetricFamilyEncoding` is no longer generic over the encoder, and `collect_family_into` takes the help text: `collect_family_into(name, help, enc)`.
+  - `MetricFamilyEncoding` is no longer generic over the encoder, and `collect_family_into` takes metadata: `collect_family_into(name, meta, enc)`.
   - Generic code no longer needs bounds like `CounterState: MetricEncoding<Enc>`. `E: Encoding` is enough.
   - `write_counter`, `write_float_counter` and `write_summary` take `SampleExtras`, and `write_histogram` takes `HistogramExtras`. These carry created timestamps and exemplars. Pass `SampleExtras::NONE` or `HistogramExtras::NONE` if there are none.
   - The `write_counter`, `write_gauge` and `write_float_gauge` free functions are removed. Call the methods on the encoder instead, after `write_family`.

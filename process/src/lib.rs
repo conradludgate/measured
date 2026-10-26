@@ -70,7 +70,7 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
         #[cfg(target_os = "linux")]
         {
             use measured::label::NoLabels;
-            use measured::metric::group::{MetricKind, SampleExtras};
+            use measured::metric::group::{FamilyMeta, MetricKind, SampleExtras};
             use measured::metric::name::MetricName;
 
             let Ok(p) = procfs::process::Process::new(self.pid) else {
@@ -83,8 +83,8 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                 let fd = MetricName::from_str("open_fds");
                 enc.write_family(
                     fd,
-                    Some("Number of open file descriptors."),
                     MetricKind::Gauge,
+                    FamilyMeta::new().with_help("Number of open file descriptors."),
                 )?;
                 enc.write_gauge(fd, NoLabels, fd_count as i64)?;
             }
@@ -93,8 +93,8 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                     let fd = MetricName::from_str("max_fds");
                     enc.write_family(
                         fd,
-                        Some("Maximum number of open file descriptors."),
                         MetricKind::Gauge,
+                        FamilyMeta::new().with_help("Maximum number of open file descriptors."),
                     )?;
                     enc.write_gauge(fd, NoLabels, i64::try_from(max).unwrap_or(i64::MAX))?;
                 }
@@ -103,8 +103,8 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                     let name = MetricName::from_str("virtual_memory_max_bytes");
                     enc.write_family(
                         name,
-                        Some("Maximum amount of virtual memory available in bytes."),
                         MetricKind::Gauge,
+                        FamilyMeta::new().with_help("Maximum amount of virtual memory available in bytes."),
                     )?;
                     enc.write_gauge(name, NoLabels, i64::try_from(max).unwrap_or(i64::MAX))?;
                 }
@@ -115,16 +115,16 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                 let vmm = MetricName::from_str("virtual_memory_bytes");
                 enc.write_family(
                     vmm,
-                    Some("Virtual memory size in bytes."),
                     MetricKind::Gauge,
+                    FamilyMeta::new().with_help("Virtual memory size in bytes."),
                 )?;
                 enc.write_gauge(vmm, NoLabels, stat.vsize as i64)?;
 
                 let rss = MetricName::from_str("resident_memory_bytes");
                 enc.write_family(
                     rss,
-                    Some("Resident memory size in bytes."),
                     MetricKind::Gauge,
+                    FamilyMeta::new().with_help("Resident memory size in bytes."),
                 )?;
                 enc.write_gauge(rss, NoLabels, (stat.rss as i64) * pagesize())?;
 
@@ -132,8 +132,8 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                 let cpu = MetricName::from_str("cpu_seconds_total");
                 enc.write_family(
                     cpu,
-                    Some("Total user and system CPU time spent in seconds."),
                     MetricKind::Counter,
+                    FamilyMeta::new().with_help("Total user and system CPU time spent in seconds."),
                 )?;
                 enc.write_float_counter(
                     cpu,
@@ -146,8 +146,8 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                 let threads = MetricName::from_str("threads");
                 enc.write_family(
                     threads,
-                    Some("Number of OS threads in the process."),
                     MetricKind::Gauge,
+                    FamilyMeta::new().with_help("Number of OS threads in the process."),
                 )?;
                 enc.write_gauge(threads, NoLabels, stat.num_threads)?;
 
@@ -164,7 +164,7 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                     ),
                 ] {
                     let name = MetricName::from_str(name);
-                    enc.write_family(name, Some(help), MetricKind::Counter)?;
+                    enc.write_family(name, MetricKind::Counter, FamilyMeta::new().with_help(help))?;
                     enc.write_counter(name, NoLabels, value, SampleExtras::NONE)?;
                 }
             }
@@ -183,7 +183,7 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                     ),
                 ] {
                     let name = MetricName::from_str(name);
-                    enc.write_family(name, Some(help), MetricKind::Counter)?;
+                    enc.write_family(name, MetricKind::Counter, FamilyMeta::new().with_help(help))?;
                     enc.write_counter(name, NoLabels, value, SampleExtras::NONE)?;
                 }
             }
@@ -192,8 +192,8 @@ impl<Enc: Encoding> MetricGroup<Enc> for ProcessCollector {
                 let name = MetricName::from_str("start_time_seconds");
                 enc.write_family(
                     name,
-                    Some("Start time of the process since unix epoch in seconds."),
                     MetricKind::Gauge,
+                    FamilyMeta::new().with_help("Start time of the process since unix epoch in seconds."),
                 )?;
                 enc.write_gauge(name, NoLabels, start_time)?;
             }

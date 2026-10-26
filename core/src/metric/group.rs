@@ -59,6 +59,50 @@ impl MetricKind {
     }
 }
 
+/// Optional metadata associated with a metric family.
+///
+/// Use the builder methods to set known fields. The fields are public for inspection and the type
+/// is non-exhaustive so more family metadata can be added without changing the family-writing APIs.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct FamilyMeta<'a> {
+    /// Help text describing the metric family.
+    pub help: Option<&'a str>,
+    /// Unit associated with the metric family.
+    pub unit: Option<&'a str>,
+}
+
+impl<'a> FamilyMeta<'a> {
+    /// Create family metadata with no help text or unit.
+    pub const fn new() -> Self {
+        Self { help: None, unit: None }
+    }
+
+    /// Set the help text for the family.
+    #[must_use]
+    pub const fn with_help(mut self, help: &'a str) -> Self {
+        self.help = Some(help);
+        self
+    }
+
+    /// Set the unit for the family.
+    #[must_use]
+    pub const fn with_unit(mut self, unit: &'a str) -> Self {
+        self.unit = Some(unit);
+        self
+    }
+
+    /// Return the help text, if present.
+    pub const fn help(&self) -> Option<&'a str> {
+        self.help
+    }
+
+    /// Return the unit, if present.
+    pub const fn unit(&self) -> Option<&'a str> {
+        self.unit
+    }
+}
+
 /// Optional data written with a counter or summary sample.
 ///
 /// Encoders that do not support some of this data, such as the prometheus text encoder, ignore it.
@@ -139,11 +183,13 @@ pub trait Encoding {
     const MIME_TYPE: &'static str;
 
     /// Start a new metric family. Following samples belong to this family.
+    ///
+    /// `unit`, when present, should be a suffix of the family name, separated by an underscore.
     fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
         kind: MetricKind,
+        meta: FamilyMeta<'_>,
     ) -> Result<(), Self::Err>;
 
     /// Write a counter sample
@@ -364,10 +410,10 @@ impl<E: Encoding> Encoding for &mut E {
     fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
         kind: MetricKind,
+        meta: FamilyMeta<'_>,
     ) -> Result<(), Self::Err> {
-        E::write_family(self, name, help, kind)
+        E::write_family(self, name, kind, meta)
     }
 
     fn write_counter(
@@ -518,11 +564,11 @@ impl<E: Encoding> Encoding for WithNamespace<E> {
     fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
         kind: MetricKind,
+        meta: FamilyMeta<'_>,
     ) -> Result<(), Self::Err> {
         let name = WithNamespace { namespace: self.namespace, inner: name };
-        self.inner.write_family(name, help, kind)
+        self.inner.write_family(name, kind, meta)
     }
 
     fn write_counter(

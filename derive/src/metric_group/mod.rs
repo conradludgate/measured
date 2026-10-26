@@ -62,6 +62,10 @@ mod tests {
                 "not compatible",
             ),
             (
+                "unit = \"seconds\", unit = \"seconds\"",
+                "duplicate `metric(unit)`",
+            ),
+            (
                 "rename = \"one\", rename = \"two\"",
                 "duplicate `metric(rename)`",
             ),
@@ -79,5 +83,31 @@ mod tests {
             )
             .is_ok()
         );
+    }
+    #[test]
+    fn units_validate_the_final_metric_name_and_field_kind() {
+        for field in [
+            "#[metric(unit = \"seconds\")] time: Counter",
+            "#[metric(unit = \"seconds\", rename = \"wrong\")] time_seconds: Counter",
+            "#[metric(unit = \"\")] time_seconds: Counter",
+            "#[metric(unit = \"bad unit\")] time_seconds: Counter",
+            "#[metric(unit = \"seconds\", namespace = \"api\")] time_seconds: Metrics",
+            "#[metric(unit = \"seconds\", flatten)] time_seconds: Metrics",
+        ] {
+            let err = parse(&format!("struct Metrics {{ {field} }}"))
+                .err()
+                .unwrap();
+            assert!(err.to_string().contains("metric(unit)"), "{field}: {err}");
+        }
+        for field in [
+            "#[metric(unit = \"seconds\")] time_seconds: Counter",
+            "#[metric(unit = \"seconds\")] time_seconds_total: Counter",
+            "#[metric(unit = \"seconds\", rename = \"time_seconds\")] elapsed: Counter",
+        ] {
+            assert!(
+                parse(&format!("struct Metrics {{ {field} }}")).is_ok(),
+                "{field}"
+            );
+        }
     }
 }

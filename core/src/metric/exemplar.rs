@@ -377,7 +377,12 @@ mod tests {
     impl<F: Fn()> Encoding for Probe<F> {
         type Err = std::convert::Infallible;
         const MIME_TYPE: &'static str = "test/probe";
-        fn write_family(&mut self, _: impl MetricNameEncoder, _: Option<&str>, _: MetricKind) -> Result<(), Self::Err> {
+        fn write_family(
+            &mut self,
+            _: impl MetricNameEncoder,
+            _: MetricKind,
+            _: super::super::group::FamilyMeta<'_>,
+        ) -> Result<(), Self::Err> {
             (self.0)();
             Ok(())
         }

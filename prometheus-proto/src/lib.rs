@@ -8,7 +8,7 @@ use encoding::{encode_key, encode_varint, encoded_len_varint, key_len};
 use measured::LabelGroup;
 use measured::label::{LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
 use measured::metric::exemplar::Exemplar;
-use measured::metric::group::{Encoding, HistogramExtras, MetricKind, SampleExtras};
+use measured::metric::group::{Encoding, FamilyMeta, HistogramExtras, MetricKind, SampleExtras};
 use measured::metric::name::MetricNameEncoder;
 
 mod encoding;
@@ -92,9 +92,20 @@ impl<W: Write> ProtoEncoder<W> {
     fn start_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
         kind: MetricKind,
+        meta: FamilyMeta<'_>,
     ) -> Result<(), std::io::Error> {
+        if meta.unit().is_some_and(|unit| {
+            unit.is_empty()
+                || !unit
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b':')
+        }) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid metric unit",
+            ));
+        }
         self.flush_buf()?;
 
         // optional string     name   = 1;
@@ -103,7 +114,7 @@ impl<W: Write> ProtoEncoder<W> {
         name.encode_utf8(&mut self.buf)?;
 
         // optional string     help   = 2;
-        if let Some(help) = help {
+        if let Some(help) = meta.help() {
             encoding::encode_str(2, help, &mut self.buf);
         }
 
@@ -128,6 +139,14 @@ impl<W: Write> ProtoEncoder<W> {
         };
         encoding::encode_i32(3, metric_type, &mut self.buf);
 
+        // optional string     unit   = 5;
+        if let Some(unit) = meta
+            .unit()
+            .filter(|_| !matches!(kind, MetricKind::Info | MetricKind::StateSet))
+        {
+            encoding::encode_str(5, unit, &mut self.buf);
+        }
+
         self.state = State::Header;
         Ok(())
     }
@@ -143,7 +162,7 @@ impl<W: Write> ProtoEncoder<W> {
     ) -> Result<(), std::io::Error> {
         // samples should always be in a family, but don't produce an invalid message if not
         if self.state == State::Init {
-            self.start_family(name, None, MetricKind::Untyped)?;
+            self.start_family(name, MetricKind::Untyped, FamilyMeta::new())?;
         }
         if value_tag != self.value_tag {
             return Err(std::io::Error::new(
@@ -304,10 +323,10 @@ impl<W: Write> Encoding for ProtoEncoder<W> {
     fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
         kind: MetricKind,
+        meta: FamilyMeta<'_>,
     ) -> Result<(), std::io::Error> {
-        self.start_family(name, help, kind)
+        self.start_family(name, kind, meta)
     }
 
     fn write_counter(
@@ -610,6 +629,7 @@ mod tests {
 
     use bytes::{BufMut, BytesMut};
     use measured::metric::MetricFamilyEncoding;
+    use measured::metric::group::FamilyMeta;
     use measured::metric::histogram::Thresholds;
     use measured::metric::name::{MetricName, Total};
     use measured::{CounterVec, GaugeVec, HistogramVec};
@@ -641,6 +661,26 @@ mod tests {
     }
 
     #[test]
+    fn family_unit_is_encoded() {
+        use measured::metric::group::{Encoding, FamilyMeta, MetricKind};
+
+        let name = MetricName::from_str("resident_memory_bytes");
+        let mut enc = ProtoEncoder::new(BytesMut::new().writer());
+        enc.write_family(
+            name,
+            MetricKind::Gauge,
+            FamilyMeta::new().with_unit("bytes"),
+        )
+        .unwrap();
+        enc.write_gauge(name, measured::label::NoLabels, 64)
+            .unwrap();
+        enc.flush().unwrap();
+
+        let families = decode_all(enc.into_inner().into_inner().freeze());
+        assert_eq!(families[0].unit.as_deref(), Some("bytes"));
+    }
+
+    #[test]
     fn counters() {
         let requests = CounterVec::<RequestLabelSet>::new();
 
@@ -660,7 +700,11 @@ mod tests {
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
         requests
-            .collect_family_into(&name, Some("The total number of HTTP requests."), &mut enc)
+            .collect_family_into(
+                &name,
+                FamilyMeta::new().with_help("The total number of HTTP requests."),
+                &mut enc,
+            )
             .unwrap();
         enc.flush().unwrap();
         let actual_msg = enc.into_inner().into_inner();
@@ -746,7 +790,11 @@ mod tests {
 
         let name = MetricName::from_str("http_request").with_suffix(Total);
         requests
-            .collect_family_into(&name, Some("The total number of HTTP requests."), &mut enc)
+            .collect_family_into(
+                &name,
+                FamilyMeta::new().with_help("The total number of HTTP requests."),
+                &mut enc,
+            )
             .unwrap();
         enc.flush().unwrap();
         let actual_msg = enc.into_inner().into_inner();
@@ -818,7 +866,7 @@ mod tests {
         family: &CounterVec<RequestLabelSet>,
     ) -> std::io::Result<()> {
         let name = MetricName::from_str(name).with_suffix(Total);
-        family.collect_family_into(&name, Some("help"), enc)
+        family.collect_family_into(&name, FamilyMeta::new().with_help("help"), enc)
     }
 
     #[test]
@@ -856,8 +904,11 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
         let a = MetricName::from_str("a").with_suffix(Total);
         let b = MetricName::from_str("b").with_suffix(Total);
-        empty.collect_family_into(&a, None, &mut enc).unwrap();
-        full.collect_family_into(&b, None, &mut enc).unwrap();
+        empty
+            .collect_family_into(&a, FamilyMeta::new(), &mut enc)
+            .unwrap();
+        full.collect_family_into(&b, FamilyMeta::new(), &mut enc)
+            .unwrap();
         enc.flush().unwrap();
 
         let families = decode_all(enc.into_inner().into_inner().freeze());
@@ -923,7 +974,11 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
         let name = MetricName::from_str("latency_seconds");
         histograms
-            .collect_family_into(name, Some("request latency"), &mut enc)
+            .collect_family_into(
+                name,
+                FamilyMeta::new().with_help("request latency"),
+                &mut enc,
+            )
             .unwrap();
         enc.flush().unwrap();
 
@@ -971,11 +1026,12 @@ mod tests {
 
     #[test]
     fn summary() {
-        use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+        use measured::metric::group::{Encoding, FamilyMeta, MetricKind, SampleExtras};
 
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
         let name = MetricName::from_str("latency");
-        enc.write_family(name, None, MetricKind::Summary).unwrap();
+        enc.write_family(name, MetricKind::Summary, FamilyMeta::new())
+            .unwrap();
         enc.write_summary(
             name,
             measured::label::NoLabels,
@@ -987,8 +1043,8 @@ mod tests {
         .unwrap();
         enc.write_family(
             MetricName::from_str("flag"),
-            None,
             MetricKind::Custom("stateset"),
+            FamilyMeta::new(),
         )
         .unwrap();
         enc.write_gauge(MetricName::from_str("flag"), measured::label::NoLabels, 1)
@@ -1020,7 +1076,7 @@ mod tests {
         let name = MetricName::from_str("value");
         for kind in [MetricKind::Untyped, MetricKind::Custom("custom")] {
             let mut enc = ProtoEncoder::new(Vec::new());
-            enc.write_family(name, None, kind).unwrap();
+            enc.write_family(name, kind, FamilyMeta::new()).unwrap();
             assert_eq!(
                 enc.write_histogram(name, NoLabels, &[1.0], &[1], 0, 1.0, HistogramExtras::NONE)
                     .unwrap_err()
@@ -1049,7 +1105,8 @@ mod tests {
             );
         }
         let mut enc = ProtoEncoder::new(Vec::new());
-        enc.write_family(name, None, MetricKind::Counter).unwrap();
+        enc.write_family(name, MetricKind::Counter, FamilyMeta::new())
+            .unwrap();
         assert_eq!(
             enc.write_gauge(name, NoLabels, 1).unwrap_err().kind(),
             std::io::ErrorKind::InvalidInput
@@ -1057,9 +1114,28 @@ mod tests {
     }
 
     #[test]
+    fn invalid_units_are_rejected_before_output() {
+        use measured::metric::group::{Encoding, MetricKind};
+        let mut enc = ProtoEncoder::new(Vec::new());
+        for unit in ["", "a\nb", "a b"] {
+            assert_eq!(
+                enc.write_family(
+                    MetricName::from_str("value"),
+                    MetricKind::Gauge,
+                    FamilyMeta::new().with_unit(unit)
+                )
+                .unwrap_err()
+                .kind(),
+                std::io::ErrorKind::InvalidInput
+            );
+            assert!(enc.writer().is_empty());
+        }
+    }
+
+    #[test]
     fn untyped_samples_use_untyped_payloads() {
         use measured::label::NoLabels;
-        use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+        use measured::metric::group::{Encoding, FamilyMeta, MetricKind, SampleExtras};
 
         let mut enc = ProtoEncoder::new(Vec::new());
         let name = MetricName::from_str("value");
@@ -1068,7 +1144,7 @@ mod tests {
             .unwrap();
         enc.flush().unwrap();
         for kind in [MetricKind::Untyped, MetricKind::Custom("flag")] {
-            enc.write_family(name, None, kind).unwrap();
+            enc.write_family(name, kind, FamilyMeta::new()).unwrap();
             enc.write_gauge(name, NoLabels, -2).unwrap();
             enc.write_float_gauge(name, NoLabels, 1.5).unwrap();
             let exemplar = measured::metric::exemplar::Exemplar::new();
@@ -1079,7 +1155,8 @@ mod tests {
             enc.write_float_counter(name, NoLabels, 4.5, extras)
                 .unwrap();
         }
-        enc.write_family(name, None, MetricKind::Counter).unwrap();
+        enc.write_family(name, MetricKind::Counter, FamilyMeta::new())
+            .unwrap();
         enc.write_counter(name, NoLabels, 9, SampleExtras::NONE)
             .unwrap();
         enc.flush().unwrap();
@@ -1118,9 +1195,10 @@ mod tests {
         // Include a histogram whose only bucket is +Inf.
         for bounds in [vec![], vec![1.0]] {
             let mut enc = ProtoEncoder::new(Vec::new());
-            use measured::metric::group::{Encoding, HistogramExtras, MetricKind};
+            use measured::metric::group::{Encoding, FamilyMeta, HistogramExtras, MetricKind};
             let name = MetricName::from_str("latency");
-            enc.write_family(name, None, MetricKind::Histogram).unwrap();
+            enc.write_family(name, MetricKind::Histogram, FamilyMeta::new())
+                .unwrap();
             let exemplar = Exemplar::new()
                 .with_label(LabelName::from_str("trace_id"), "overflow")
                 .with_value(5.0)
@@ -1158,7 +1236,7 @@ mod tests {
     fn new_kinds() {
         use measured::FixedCardinalityLabel;
         use measured::label::NoLabels;
-        use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+        use measured::metric::group::{Encoding, FamilyMeta, MetricKind, SampleExtras};
 
         #[derive(Clone, Copy, PartialEq, Debug, FixedCardinalityLabel)]
         enum Status {
@@ -1169,18 +1247,19 @@ mod tests {
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
 
         let cpu = MetricName::from_str("cpu_seconds_total");
-        enc.write_family(cpu, None, MetricKind::Counter).unwrap();
+        enc.write_family(cpu, MetricKind::Counter, FamilyMeta::new())
+            .unwrap();
         enc.write_float_counter(cpu, NoLabels, 1.5, SampleExtras::NONE)
             .unwrap();
 
         let ages = MetricName::from_str("queue_age_seconds");
-        enc.write_family(ages, None, MetricKind::GaugeHistogram)
+        enc.write_family(ages, MetricKind::GaugeHistogram, FamilyMeta::new())
             .unwrap();
         enc.write_gauge_histogram(ages, NoLabels, &[1.0], &[1], 1, 2.5)
             .unwrap();
 
         let status = MetricName::from_str("status");
-        enc.write_family(status, None, MetricKind::StateSet)
+        enc.write_family(status, MetricKind::StateSet, FamilyMeta::new())
             .unwrap();
         enc.write_state_set(
             status,
@@ -1190,7 +1269,8 @@ mod tests {
         .unwrap();
 
         let info = MetricName::from_str("build_info");
-        enc.write_family(info, None, MetricKind::Info).unwrap();
+        enc.write_family(info, MetricKind::Info, FamilyMeta::new())
+            .unwrap();
         enc.write_gauge(info, NoLabels, 1).unwrap();
         enc.flush().unwrap();
 
@@ -1269,13 +1349,25 @@ mod tests {
 
         let mut enc = ProtoEncoder::new(BytesMut::new().writer());
         requests
-            .collect_family_into(MetricName::from_str("requests_total"), None, &mut enc)
+            .collect_family_into(
+                MetricName::from_str("requests_total"),
+                FamilyMeta::new(),
+                &mut enc,
+            )
             .unwrap();
         latency
-            .collect_family_into(MetricName::from_str("latency_seconds"), None, &mut enc)
+            .collect_family_into(
+                MetricName::from_str("latency_seconds"),
+                FamilyMeta::new(),
+                &mut enc,
+            )
             .unwrap();
         created
-            .collect_family_into(MetricName::from_str("created_total"), None, &mut enc)
+            .collect_family_into(
+                MetricName::from_str("created_total"),
+                FamilyMeta::new(),
+                &mut enc,
+            )
             .unwrap();
         enc.flush().unwrap();
 

@@ -26,7 +26,7 @@ use std::io::{self, Write};
 use bytes::{BufMut, Bytes, BytesMut};
 use measured::label::{LabelGroup, LabelGroupVisitor, LabelName, LabelValue, LabelVisitor};
 use measured::metric::exemplar::Exemplar;
-use measured::metric::group::{Encoding, MetricKind, SampleExtras};
+use measured::metric::group::{Encoding, FamilyMeta, MetricKind, SampleExtras};
 use measured::metric::name::{Bucket, Count, MetricNameEncoder, Sum};
 use memchr::memchr3_iter;
 
@@ -91,7 +91,20 @@ impl<W: Write, const OPEN_METRICS: bool> Inner<W, OPEN_METRICS> {
         Ok(())
     }
 
-    fn write_family(&mut self, name: impl MetricNameEncoder, help: Option<&str>, kind: MetricKind) -> io::Result<()> {
+    fn write_family(&mut self, name: impl MetricNameEncoder, kind: MetricKind, meta: FamilyMeta<'_>) -> io::Result<()> {
+        if meta.unit().is_some_and(|unit| {
+            unit.is_empty()
+                || !unit
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b':')
+        }) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid metric unit",
+            ));
+        }
+        let help = meta.help();
+        let unit = meta.unit();
         match Self::FORMAT {
             Format::Classic => {
                 if self.state == State::Metrics {
@@ -153,6 +166,16 @@ impl<W: Write, const OPEN_METRICS: bool> Inner<W, OPEN_METRICS> {
                 self.writer.write_all(b" ")?;
                 self.writer.write_all(kind.as_bytes())?;
                 self.writer.write_all(b"\n")?;
+
+                if let Some(unit) =
+                    unit.filter(|_| !matches!(self.family_kind, MetricKind::Info | MetricKind::StateSet))
+                {
+                    self.writer.write_all(b"# UNIT ")?;
+                    self.writer.write_all(&self.family)?;
+                    self.writer.write_all(b" ")?;
+                    self.writer.write_all(unit.as_bytes())?;
+                    self.writer.write_all(b"\n")?;
+                }
 
                 if let Some(help) = help {
                     self.writer.write_all(b"# HELP ")?;
@@ -329,10 +352,10 @@ impl<E: Encoding> Encoding for DefaultGaugeHistogram<'_, E> {
     fn write_family(
         &mut self,
         name: impl MetricNameEncoder,
-        help: Option<&str>,
         kind: MetricKind,
+        meta: FamilyMeta<'_>,
     ) -> Result<(), E::Err> {
-        self.0.write_family(name, help, kind)
+        self.0.write_family(name, kind, meta)
     }
 
     fn write_counter(
@@ -443,10 +466,10 @@ macro_rules! text_encoder {
             fn write_family(
                 &mut self,
                 name: impl MetricNameEncoder,
-                help: Option<&str>,
                 kind: MetricKind,
+                meta: FamilyMeta<'_>,
             ) -> Result<(), std::io::Error> {
-                self.0.write_family(name, help, kind)
+                self.0.write_family(name, kind, meta)
             }
 
             fn write_counter(
@@ -642,12 +665,28 @@ mod tests {
     use bytes::{BufMut, BytesMut};
     use measured::label::StaticLabelSet;
     use measured::metric::MetricFamilyEncoding;
-    use measured::metric::group::{Encoding, MetricKind};
+    use measured::metric::group::{Encoding, FamilyMeta, MetricKind};
     use measured::metric::histogram::Thresholds;
     use measured::metric::name::{MetricName, Total};
     use measured::{Counter, CounterVec, FloatGauge, Histogram};
 
     use super::{BufferedOpenMetricsEncoder, BufferedTextEncoder, write_label_str_value};
+
+    #[test]
+    fn invalid_units_are_rejected_before_output() {
+        let mut encoder = BufferedOpenMetricsEncoder::new();
+        for unit in ["", "a\nb", "a b"] {
+            let err = encoder
+                .write_family(
+                    MetricName::from_str("value"),
+                    MetricKind::Gauge,
+                    FamilyMeta::new().with_unit(unit),
+                )
+                .unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        }
+        assert_eq!(encoder.finish(), "# EOF\n");
+    }
 
     #[test]
     fn write_encoded_str() {
@@ -710,7 +749,7 @@ This is on a new line"#,
         requests
             .collect_family_into(
                 name,
-                Some("The total number of HTTP requests."),
+                FamilyMeta::new().with_help("The total number of HTTP requests."),
                 &mut encoder,
             )
             .unwrap();
@@ -742,7 +781,7 @@ http_request_total{method="get",code="400"} 3
         histogram
             .collect_family_into(
                 name,
-                Some("A histogram of the request duration."),
+                FamilyMeta::new().with_help("A histogram of the request duration."),
                 &mut encoder,
             )
             .unwrap();
@@ -809,7 +848,7 @@ http_request_duration_seconds_count 4
         requests
             .collect_family_into(
                 name,
-                Some("The total number of HTTP requests."),
+                FamilyMeta::new().with_help("The total number of HTTP requests."),
                 &mut encoder,
             )
             .unwrap();
@@ -832,8 +871,8 @@ http_request_total{method="get",code="badrequest"} 3
         encoder
             .write_family(
                 name,
-                Some("line one\nline \\two \"quoted\""),
                 MetricKind::Gauge,
+                FamilyMeta::new().with_help("line one\nline \\two \"quoted\""),
             )
             .unwrap();
 
@@ -851,7 +890,7 @@ http_request_total{method="get",code="badrequest"} 3
         let counter = Counter::new();
         counter.inc_by(u64::MAX);
         counter
-            .collect_family_into(MetricName::from_str("big"), None, &mut encoder)
+            .collect_family_into(MetricName::from_str("big"), FamilyMeta::new(), &mut encoder)
             .unwrap();
 
         for (name, x) in [
@@ -862,7 +901,7 @@ http_request_total{method="get",code="badrequest"} 3
             let gauge = FloatGauge::new();
             gauge.set(x);
             gauge
-                .collect_family_into(MetricName::from_str(name), None, &mut encoder)
+                .collect_family_into(MetricName::from_str(name), FamilyMeta::new(), &mut encoder)
                 .unwrap();
         }
 
@@ -892,7 +931,7 @@ nan NaN
 
         let mut encoder = BufferedTextEncoder::default();
         histogram
-            .collect_family_into(MetricName::from_str("h"), None, &mut encoder)
+            .collect_family_into(MetricName::from_str("h"), FamilyMeta::new(), &mut encoder)
             .unwrap();
 
         let s = String::from_utf8(encoder.finish().to_vec()).unwrap();
@@ -1117,7 +1156,7 @@ latency_seconds_count 1
                 let mut encoder = <$encoder>::new();
                 let mut enc = WithNamespace::new("http", &mut encoder);
                 let name = MetricName::from_str("latency_seconds");
-                enc.write_family(name, None, MetricKind::Summary)
+                enc.write_family(name, MetricKind::Summary, FamilyMeta::new())
                     .unwrap();
                 enc.write_summary(
                     name,
@@ -1166,13 +1205,21 @@ latency_seconds_count 1
         let mut encoder = BufferedOpenMetricsEncoder::new();
         let mut enc = WithNamespace::new("http", &mut encoder);
         counter
-            .collect_family_into(MetricName::from_str("requests_total"), None, &mut enc)
+            .collect_family_into(
+                MetricName::from_str("requests_total"),
+                FamilyMeta::new(),
+                &mut enc,
+            )
             .unwrap();
         created
-            .collect_family_into(MetricName::from_str("created_total"), None, &mut enc)
+            .collect_family_into(
+                MetricName::from_str("created_total"),
+                FamilyMeta::new(),
+                &mut enc,
+            )
             .unwrap();
         histogram
-            .collect_family_into(MetricName::from_str("latency"), None, &mut enc)
+            .collect_family_into(MetricName::from_str("latency"), FamilyMeta::new(), &mut enc)
             .unwrap();
         let output = String::from_utf8(encoder.finish().to_vec()).unwrap();
         assert!(
