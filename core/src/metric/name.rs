@@ -56,6 +56,7 @@ impl std::error::Error for InvalidMetricName {}
 ///
 /// Metric names may contain ASCII letters, digits, underscores, and colons. It must match the regex `[a-zA-Z_:][a-zA-Z0-9_:]*`.
 #[repr(transparent)]
+// Invariant: the inner str satisfies the metric-name grammar documented above.
 pub struct MetricName(str);
 
 const fn const_assert_metric_name(name: &str) {
@@ -102,8 +103,13 @@ impl MetricName {
     pub const fn from_str(value: &'static str) -> &'static Self {
         const_assert_metric_name(value);
 
-        // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
-        // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
+        // SAFETY: Creating the shared reference requires a live, aligned pointee
+        // with valid contents for the returned lifetime. repr(transparent) gives
+        // MetricName str's layout/alignment; the unsized pointer cast preserves
+        // the data pointer and byte-length metadata. The input &'static str
+        // supplies initialized UTF-8 and a shared borrow valid for 'static.
+        // Validation above establishes the semantic name invariant. The result is
+        // another shared view of the same bytes, with no extended extent/lifetime.
         unsafe { &*(std::ptr::from_ref(value) as *const MetricName) }
     }
 
@@ -114,8 +120,13 @@ impl MetricName {
     pub fn try_from_str(value: &str) -> Result<&Self, InvalidMetricName> {
         try_assert_metric_name(value)?;
 
-        // SAFETY: `MetricName` is transparent over `str`. There's no way to do this safely.
-        // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
+        // SAFETY: Creating the shared reference requires a live, aligned pointee
+        // with valid contents for the returned lifetime. repr(transparent) gives
+        // MetricName str's layout/alignment; the unsized pointer cast preserves
+        // the data pointer and byte-length metadata. The input &str supplies
+        // initialized UTF-8 and a shared borrow; the result's elided lifetime is
+        // tied to that borrow. Validation above establishes the semantic name invariant.
+        // No mutation, ownership transfer or extension of the byte extent occurs.
         Ok(unsafe { &*(std::ptr::from_ref(value) as *const MetricName) })
     }
 
