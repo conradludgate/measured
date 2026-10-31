@@ -1,6 +1,6 @@
 [package]
 name = "measured-tokio"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Tokio metrics for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
@@ -18,7 +18,7 @@ net = ["tokio/net"]
 __tokio-unstable-schedule-latency = ["tokio/schedule-latency"]
 
 [dependencies]
-measured = { path = "../core", version = "0.1.0" }
+measured = { path = "../core", version = "0.1.1" }
 tokio = { version = "1.53.0", features = ["rt"] }
 
 [dev-dependencies]
