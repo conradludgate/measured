@@ -1,6 +1,6 @@
 [package]
 name = "measured-prometheus-text"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Prometheus text exposition format for measured"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
@@ -10,7 +10,7 @@ readme = "README.md"
 rust-version = "1.98"
 
 [dependencies]
-measured = { path = "../core", version = "0.1.0" }
+measured = { path = "../core", version = "0.1.1" }
 bytes = "1"
 memchr = "2"
 zmij = "1"
