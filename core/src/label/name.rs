@@ -2,6 +2,7 @@
 ///
 /// Labels may contain ASCII letters, numbers, as well as underscores. They must match the regex `[a-zA-Z_][a-zA-Z0-9_]*`.
 #[repr(transparent)]
+// Invariant: the inner str satisfies the label-name grammar documented above.
 pub struct LabelName(str);
 
 impl LabelName {
@@ -17,8 +18,13 @@ impl LabelName {
     pub const fn from_str(value: &str) -> &Self {
         assert_label_name(value);
 
-        // SAFETY: `LabelName` is transparent over `str`. There's no way to do this safely.
-        // I could use bytemuck::TransparentWrapper, but the trait enabled users to skip this validation function.
+        // SAFETY: Creating the shared reference requires a live, aligned pointee
+        // with valid contents for the returned lifetime. repr(transparent) gives
+        // LabelName str's layout/alignment; the unsized pointer cast preserves
+        // the data pointer and byte-length metadata. The input &str supplies
+        // initialized UTF-8 and a shared borrow; the result's elided lifetime is
+        // tied to that borrow. Validation above establishes the semantic name invariant.
+        // No mutation, ownership transfer or extension of the byte extent occurs.
         unsafe { &*(value as *const str as *const LabelName) }
     }
 }
